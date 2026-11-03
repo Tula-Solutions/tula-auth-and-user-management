@@ -7,6 +7,8 @@ import {
   organizationMemberships,
   organizations,
   proposals,
+  scimGroups,
+  users,
   withTenant,
 } from '@tula-tech/db'
 import { and, eq, sql } from 'drizzle-orm'
@@ -36,6 +38,7 @@ import { PostgresOrganizationDomainStore } from '~/adapters/postgres/organizatio
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
+import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
@@ -43,6 +46,7 @@ import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
 import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { describeProposalStore } from '~/adapters/proposal-store.suite'
+import { describeScimStore } from '~/adapters/scim-store.suite'
 import { describeSessionStore } from '~/adapters/session-store.suite'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 import { describeVerificationTokenStore } from '~/adapters/verification-token-store.suite'
@@ -270,6 +274,69 @@ describeOrganizationDomainStore('Postgres on a real server', async () => {
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }
+})
+
+// The SCIM store, groups included, on a real server: the unique name of a group in an
+// organization, the cascade from a user to their memberships, and the tenant boundary.
+describeScimStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresScimStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 200 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    organization: async (tenant) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.insert(organizations).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          name: 'Acme',
+          slug: `acme-${id.slice(-8)}`,
+        })
+      )
+      return id
+    },
+    user: (tenant) =>
+      withTenant(db, tenant.environmentId, async (tx) => {
+        const id = Bun.randomUUIDv7()
+        await tx.insert(users).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          email: `${id}@acme.test`,
+          emailNormalized: `${id}@acme.test`,
+        })
+        return id
+      }),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+test('row-level security hides another environment’s SCIM group from a direct query', async () => {
+  const { a, b } = await tenants()
+  const organizationId = Bun.randomUUIDv7()
+  await withTenant(db, a.environmentId, async (tx) => {
+    await tx.insert(organizations).values({
+      id: organizationId,
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      name: 'Acme',
+      slug: `acme-${organizationId.slice(-8)}`,
+    })
+    await tx.insert(scimGroups).values({
+      id: Bun.randomUUIDv7(),
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      organizationId,
+      displayName: 'Engineering',
+    })
+  })
+  expect(await withTenant(db, b.environmentId, (tx) => tx.select().from(scimGroups))).toEqual([])
+  expect(await db.select().from(scimGroups)).toEqual([])
 })
 
 // Fresh tenants per test, for the same reason. On a real server the duplicate delivery of one

@@ -1300,7 +1300,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 78
+     * @maximum 82
      */
   eventTypes: number;
   enabled: boolean;
@@ -2098,6 +2098,144 @@ export interface UserScimProvisionedEvent {
   actor: EventActor;
   target: UserScimProvisionedEventTarget;
   data: UserScimProvisionedEventData;
+  test?: true;
+}
+
+export type UserScimUpdatedEventDataChangedItem = typeof UserScimUpdatedEventDataChangedItem[keyof typeof UserScimUpdatedEventDataChangedItem];
+
+
+export const UserScimUpdatedEventDataChangedItem = {
+  name: 'name',
+} as const;
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Names only, never a value.
+ */
+export interface UserScimUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: UserScimUpdatedEventDataChangedItem[];
+}
+
+export type UserScimUpdatedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Names only, never a value.
+ */
+export interface UserScimUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimUpdatedEventTarget;
+  data: UserScimUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupCreatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupCreatedEventTarget;
+  data: ScimGroupCreatedEventData;
+  test?: true;
+}
+
+export type ScimGroupUpdatedEventDataChangedItem = typeof ScimGroupUpdatedEventDataChangedItem[keyof typeof ScimGroupUpdatedEventDataChangedItem];
+
+
+export const ScimGroupUpdatedEventDataChangedItem = {
+  displayName: 'displayName',
+  externalId: 'externalId',
+  members: 'members',
+} as const;
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: ScimGroupUpdatedEventDataChangedItem[];
+}
+
+export type ScimGroupUpdatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupUpdatedEventTarget;
+  data: ScimGroupUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupDeletedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupDeletedEventTarget;
+  data: ScimGroupDeletedEventData;
   test?: true;
 }
 
@@ -3016,6 +3154,10 @@ export const AuditExportedEventDataAction = {
   setup_linkcreated: 'setup_link.created',
   setup_linkrevoked: 'setup_link.revoked',
   userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -3179,7 +3321,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | UserScimUpdatedEvent | ScimGroupCreatedEvent | ScimGroupUpdatedEvent | ScimGroupDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4578,6 +4720,10 @@ export const ActivityType = {
   setup_linkcreated: 'setup_link.created',
   setup_linkrevoked: 'setup_link.revoked',
   userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5503,6 +5649,10 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   setup_linkcreated: 'setup_link.created',
   setup_linkrevoked: 'setup_link.revoked',
   userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5538,7 +5688,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 78
+     * @maxItems 82
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5602,6 +5752,10 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   setup_linkcreated: 'setup_link.created',
   setup_linkrevoked: 'setup_link.revoked',
   userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5637,7 +5791,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 78
+     * @maxItems 82
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5819,6 +5973,10 @@ export const SendTestWebhookRequestEventType = {
   setup_linkcreated: 'setup_link.created',
   setup_linkrevoked: 'setup_link.revoked',
   userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',

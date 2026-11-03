@@ -44,6 +44,8 @@ const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
 const aboutSsoConnection = { type: 'sso_connection', id: SSO_CONNECTION } as const
 const SETUP_LINK = '0199c2f4-7a1b-7cde-8cfd-f0ab1e7d8cae'
 const aboutSetupLink = { type: 'setup_link', id: SETUP_LINK } as const
+const SCIM_GROUP = '0199c2f4-7a1b-7cde-8cfd-f0ab1e7d8caf'
+const aboutScimGroup = { type: 'scim_group', id: SCIM_GROUP } as const
 const aboutScimToken = { type: 'scim_token', id: SCIM_TOKEN } as const
 const directory = { type: 'directory', id: SCIM_TOKEN } as const
 const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
@@ -584,6 +586,42 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: directory,
     target: aboutUser,
     data: { organizationId: ORGANIZATION, method: 'created' },
+  },
+  'user.scim_updated': {
+    id: eventId(1434),
+    type: 'user.scim_updated',
+    schemaVersion,
+    occurredAt,
+    actor: directory,
+    target: aboutUser,
+    data: { organizationId: ORGANIZATION, changed: ['name'] },
+  },
+  'scim_group.created': {
+    id: eventId(1435),
+    type: 'scim_group.created',
+    schemaVersion,
+    occurredAt,
+    actor: directory,
+    target: aboutScimGroup,
+    data: { organizationId: ORGANIZATION },
+  },
+  'scim_group.updated': {
+    id: eventId(1436),
+    type: 'scim_group.updated',
+    schemaVersion,
+    occurredAt,
+    actor: directory,
+    target: aboutScimGroup,
+    data: { organizationId: ORGANIZATION, changed: ['members'] },
+  },
+  'scim_group.deleted': {
+    id: eventId(1437),
+    type: 'scim_group.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: directory,
+    target: aboutScimGroup,
+    data: { organizationId: ORGANIZATION },
   },
   'sso_connection.deleted': {
     id: eventId(121),

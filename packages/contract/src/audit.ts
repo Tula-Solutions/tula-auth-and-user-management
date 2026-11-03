@@ -62,6 +62,7 @@ export const AUDIT_TARGET_TYPES = [
   'native_app',
   'sso_connection',
   'scim_token',
+  'scim_group',
   'setup_link',
   'organization',
   'organization_membership',

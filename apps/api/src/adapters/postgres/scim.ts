@@ -1,9 +1,19 @@
-import { type Database, scimTokens, scimUsers, withTenant } from '@tula-tech/db'
-import { and, asc, count, desc, eq, isNull } from 'drizzle-orm'
+import {
+  type Database,
+  scimGroupMembers,
+  scimGroups,
+  scimTokens,
+  scimUsers,
+  type Transaction,
+  withTenant,
+} from '@tula-tech/db'
+import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  ScimGroupRecord,
+  ScimGroupRefusal,
   ScimStore,
   ScimTokenRecord,
   ScimUserRecord,
@@ -218,8 +228,26 @@ export class PostgresScimStore implements ScimStore {
 
   /** @inheritdoc */
   async deleteUser(environmentId: string, organizationId: string, userId: string): Promise<void> {
-    await withTenant(this.db, environmentId, (tx) =>
-      tx
+    await withTenant(this.db, environmentId, async (tx) => {
+      await tx.delete(scimGroupMembers).where(
+        and(
+          eq(scimGroupMembers.environmentId, environmentId),
+          eq(scimGroupMembers.userId, userId),
+          inArray(
+            scimGroupMembers.groupId,
+            tx
+              .select({ id: scimGroups.id })
+              .from(scimGroups)
+              .where(
+                and(
+                  eq(scimGroups.environmentId, environmentId),
+                  eq(scimGroups.organizationId, organizationId)
+                )
+              )
+          )
+        )
+      )
+      await tx
         .delete(scimUsers)
         .where(
           and(
@@ -228,6 +256,207 @@ export class PostgresScimStore implements ScimStore {
             eq(scimUsers.userId, userId)
           )
         )
+    })
+  }
+
+  /** The groups of these rows, each with its members. */
+  async #withMembers(
+    tx: Transaction,
+    rows: (typeof scimGroups.$inferSelect)[]
+  ): Promise<ScimGroupRecord[]> {
+    if (rows.length === 0) {
+      return []
+    }
+    const members = await tx
+      .select({ groupId: scimGroupMembers.groupId, userId: scimGroupMembers.userId })
+      .from(scimGroupMembers)
+      .where(
+        inArray(
+          scimGroupMembers.groupId,
+          rows.map((row) => row.id)
+        )
+      )
+      .orderBy(asc(scimGroupMembers.createdAt), asc(scimGroupMembers.id))
+    return rows.map((row) => ({
+      ...row,
+      memberIds: members.filter((m) => m.groupId === row.id).map((m) => m.userId),
+    }))
+  }
+
+  /** @inheritdoc */
+  async insertGroup(record: ScimGroupRecord, recorded: Recorded): Promise<ScimGroupRefusal | null> {
+    const activity = activityOf(recorded)
+    const { memberIds, ...row } = record
+    try {
+      await withTenant(this.db, record.environmentId, async (tx) => {
+        await tx.insert(scimGroups).values(row)
+        if (memberIds.length > 0) {
+          await tx.insert(scimGroupMembers).values(
+            [...new Set(memberIds)].map((userId) => ({
+              id: Bun.randomUUIDv7(),
+              projectId: record.projectId,
+              environmentId: record.environmentId,
+              groupId: record.id,
+              userId,
+              createdAt: record.createdAt,
+              updatedAt: record.createdAt,
+            }))
+          )
+        }
+        await recordActivity(tx, activity ? [activity] : [])
+      })
+      return null
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return 'name_taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async findGroup(environmentId: string, organizationId: string, id: string) {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(scimGroups)
+        .where(
+          and(
+            eq(scimGroups.environmentId, environmentId),
+            eq(scimGroups.organizationId, organizationId),
+            eq(scimGroups.id, id)
+          )
+        )
+      return (await this.#withMembers(tx, rows))[0] ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async findGroupByName(environmentId: string, organizationId: string, displayName: string) {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(scimGroups)
+        .where(
+          and(
+            eq(scimGroups.environmentId, environmentId),
+            eq(scimGroups.organizationId, organizationId),
+            eq(scimGroups.displayName, displayName)
+          )
+        )
+      return (await this.#withMembers(tx, rows))[0] ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async listGroups(environmentId: string, organizationId: string, offset: number, limit: number) {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const where = and(
+        eq(scimGroups.environmentId, environmentId),
+        eq(scimGroups.organizationId, organizationId)
+      )
+      const rows = await tx
+        .select()
+        .from(scimGroups)
+        .where(where)
+        .orderBy(asc(scimGroups.createdAt), asc(scimGroups.id))
+        .offset(offset)
+        .limit(limit)
+      const [totalRow] = await tx.select({ n: count() }).from(scimGroups).where(where)
+      return { records: await this.#withMembers(tx, rows), total: totalRow?.n ?? 0 }
+    })
+  }
+
+  /** @inheritdoc */
+  async replaceGroup(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    next: { displayName: string; externalId: string | null; memberIds: string[] },
+    at: Date,
+    recorded: Recorded
+  ): Promise<ScimGroupRefusal | null> {
+    const activity = activityOf(recorded)
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const rows = await tx
+          .update(scimGroups)
+          .set({ displayName: next.displayName, externalId: next.externalId, updatedAt: at })
+          .where(
+            and(
+              eq(scimGroups.environmentId, environmentId),
+              eq(scimGroups.organizationId, organizationId),
+              eq(scimGroups.id, id)
+            )
+          )
+          .returning({ projectId: scimGroups.projectId })
+        const projectId = rows[0]?.projectId
+        if (projectId === undefined) {
+          return 'missing' as const
+        }
+        await tx.delete(scimGroupMembers).where(eq(scimGroupMembers.groupId, id))
+        const wanted = [...new Set(next.memberIds)]
+        if (wanted.length > 0) {
+          await tx.insert(scimGroupMembers).values(
+            wanted.map((userId) => ({
+              id: Bun.randomUUIDv7(),
+              projectId,
+              environmentId,
+              groupId: id,
+              userId,
+              createdAt: at,
+              updatedAt: at,
+            }))
+          )
+        }
+        await recordActivity(tx, activity ? [activity] : [])
+        return null
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return 'name_taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async deleteGroup(environmentId: string, organizationId: string, id: string, recorded: Recorded) {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .delete(scimGroups)
+        .where(
+          and(
+            eq(scimGroups.environmentId, environmentId),
+            eq(scimGroups.organizationId, organizationId),
+            eq(scimGroups.id, id)
+          )
+        )
+        .returning({ id: scimGroups.id })
+      if (rows.length === 0) {
+        return false
+      }
+      await recordActivity(tx, activity ? [activity] : [])
+      return true
+    })
+  }
+
+  /** @inheritdoc */
+  async groupNamesOfUser(environmentId: string, organizationId: string, userId: string) {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ name: scimGroups.displayName })
+        .from(scimGroupMembers)
+        .innerJoin(scimGroups, eq(scimGroups.id, scimGroupMembers.groupId))
+        .where(
+          and(
+            eq(scimGroupMembers.environmentId, environmentId),
+            eq(scimGroupMembers.userId, userId),
+            eq(scimGroups.organizationId, organizationId)
+          )
+        )
     )
+    return rows.map((row) => row.name)
   }
 }

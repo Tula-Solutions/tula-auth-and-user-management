@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { organizations, scimTokens, users, withTenant } from '@tula-tech/db'
+import { organizations, scimGroups, scimTokens, users, withTenant } from '@tula-tech/db'
 import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula-tech/db/testing'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
@@ -75,4 +75,23 @@ test('row-level security hides another environment’s SCIM token from a direct 
     await withTenant(testDb.db, b.environmentId, (tx) => tx.select().from(scimTokens))
   ).toEqual([])
   expect(await testDb.db.select().from(scimTokens)).toEqual([])
+})
+
+test('row-level security hides another environment’s SCIM group from a direct query', async () => {
+  const a = await createTestTenant(testDb.db)
+  const b = await createTestTenant(testDb.db, 'production')
+  const organizationId = await organization(a)
+  await withTenant(testDb.db, a.environmentId, (tx) =>
+    tx.insert(scimGroups).values({
+      id: Bun.randomUUIDv7(),
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      organizationId,
+      displayName: 'Engineering',
+    })
+  )
+  expect(
+    await withTenant(testDb.db, b.environmentId, (tx) => tx.select().from(scimGroups))
+  ).toEqual([])
+  expect(await testDb.db.select().from(scimGroups)).toEqual([])
 })

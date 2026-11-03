@@ -776,6 +776,29 @@ export const EVENT_DATA_SCHEMAS = {
       method: z.enum(['created', 'linked']),
     }
   ),
+  'user.scim_updated': data(
+    'UserScimUpdated',
+    "An organization's directory changed a user it manages (ADR 0067). Names only, never a value.",
+    { organizationId: id(), changed: z.array(z.enum(['name'])) }
+  ),
+  'scim_group.created': data(
+    'ScimGroupCreated',
+    "An organization's directory pushed a new group. The group's name is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_group.updated': data(
+    'ScimGroupUpdated',
+    "A group of an organization's directory changed. Which fields, never their values.",
+    {
+      organizationId: id(),
+      changed: z.array(z.enum(['displayName', 'externalId', 'members'])),
+    }
+  ),
+  'scim_group.deleted': data(
+    'ScimGroupDeleted',
+    "A group of an organization's directory was removed.",
+    { organizationId: id() }
+  ),
   // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
   // member's address and name are operator or user text, and never in an event.
   'organization.created': data(

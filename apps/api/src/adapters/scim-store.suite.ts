@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
-import type { ScimStore, ScimTokenRecord, ScimUserRecord } from '~/ports/scim-store'
+import type {
+  ScimGroupRecord,
+  ScimStore,
+  ScimTokenRecord,
+  ScimUserRecord,
+} from '~/ports/scim-store'
 
 /** A tenant for the suite. */
 export interface ScimSuiteTenant {
@@ -37,7 +42,13 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
 
   function entry(
     tenant: ScimSuiteTenant,
-    type: 'scim_token.created' | 'scim_token.revoked' | 'user.scim_provisioned',
+    type:
+      | 'scim_token.created'
+      | 'scim_token.revoked'
+      | 'user.scim_provisioned'
+      | 'scim_group.created'
+      | 'scim_group.updated'
+      | 'scim_group.deleted',
     id: string
   ): Activity {
     const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
@@ -50,6 +61,22 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
         actor,
         target: { type: 'user', id },
         data: { organizationId, method: 'created' },
+      })
+    }
+    if (type === 'scim_group.created' || type === 'scim_group.deleted') {
+      return Audit.entry(deps, scope, {
+        type,
+        actor,
+        target: { type: 'scim_group', id },
+        data: { organizationId },
+      })
+    }
+    if (type === 'scim_group.updated') {
+      return Audit.entry(deps, scope, {
+        type,
+        actor,
+        target: { type: 'scim_group', id },
+        data: { organizationId, changed: ['members'] },
       })
     }
     return Audit.entry(deps, scope, {
@@ -252,6 +279,155 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
       await ctx.store.deleteUser(ctx.a.environmentId, org, record.userId)
       await ctx.store.deleteUser(ctx.a.environmentId, org, record.userId)
       expect(await ctx.store.findUser(ctx.a.environmentId, org, record.userId)).toBeNull()
+    })
+
+    function group(memberIds: string[], overrides: Partial<ScimGroupRecord> = {}): ScimGroupRecord {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: ctx.a.projectId,
+        environmentId: ctx.a.environmentId,
+        organizationId: org,
+        displayName: `Group-${Bun.randomUUIDv7()}`,
+        externalId: null,
+        memberIds,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+      }
+    }
+
+    test('stores a group with its members and audit entry, and finds it by id and by name', async () => {
+      const one = await member('g1')
+      await add(one)
+      const record = group([one.userId])
+      expect(
+        await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      ).toBeNull()
+      expect(await ctx.store.findGroup(ctx.a.environmentId, org, record.id)).toEqual(record)
+      expect(
+        (await ctx.store.findGroupByName(ctx.a.environmentId, org, record.displayName))?.id
+      ).toBe(record.id)
+      expect(await ctx.store.groupNamesOfUser(ctx.a.environmentId, org, one.userId)).toEqual([
+        record.displayName,
+      ])
+      expect(await ctx.recorded()).toContain('scim_group.created')
+    })
+
+    test('refuses a taken name in the organization, writing nothing', async () => {
+      const first = group([])
+      await ctx.store.insertGroup(first, entry(ctx.a, 'scim_group.created', first.id))
+      const second = group([], { displayName: first.displayName })
+      const before = (await ctx.recorded()).length
+      expect(
+        await ctx.store.insertGroup(second, entry(ctx.a, 'scim_group.created', second.id))
+      ).toBe('name_taken')
+      expect(await ctx.store.findGroup(ctx.a.environmentId, org, second.id)).toBeNull()
+      expect((await ctx.recorded()).length).toBe(before)
+    })
+
+    test('replaces name, external id and members; refuses a taken name or a missing group', async () => {
+      const one = await member('g2')
+      const two = await member('g3')
+      await add(one)
+      await add(two)
+      const record = group([one.userId])
+      const other = group([])
+      await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      await ctx.store.insertGroup(other, entry(ctx.a, 'scim_group.created', other.id))
+      const next = { displayName: 'Renamed', externalId: 'ext-g', memberIds: [two.userId] }
+      expect(
+        await ctx.store.replaceGroup(
+          ctx.a.environmentId,
+          org,
+          record.id,
+          next,
+          later,
+          entry(ctx.a, 'scim_group.updated', record.id)
+        )
+      ).toBeNull()
+      const stored = await ctx.store.findGroup(ctx.a.environmentId, org, record.id)
+      expect(stored).toMatchObject(next)
+      expect(stored?.updatedAt.toISOString()).toBe(later.toISOString())
+      expect(await ctx.store.groupNamesOfUser(ctx.a.environmentId, org, one.userId)).toEqual([])
+      expect(
+        await ctx.store.replaceGroup(
+          ctx.a.environmentId,
+          org,
+          record.id,
+          { ...next, displayName: other.displayName },
+          later,
+          entry(ctx.a, 'scim_group.updated', record.id)
+        )
+      ).toBe('name_taken')
+      expect(
+        await ctx.store.replaceGroup(
+          ctx.a.environmentId,
+          org,
+          Bun.randomUUIDv7(),
+          next,
+          later,
+          entry(ctx.a, 'scim_group.updated', record.id)
+        )
+      ).toBe('missing')
+    })
+
+    test('lists a page of groups with the total, and deletes one once', async () => {
+      const records = [group([]), group([]), group([])]
+      for (const record of records) {
+        await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      }
+      const page = await ctx.store.listGroups(ctx.a.environmentId, org, 1, 1)
+      expect(page.total).toBe(3)
+      expect(page.records).toHaveLength(1)
+      const [gone] = records
+      if (!gone) {
+        throw new Error('no group')
+      }
+      expect(
+        await ctx.store.deleteGroup(
+          ctx.a.environmentId,
+          org,
+          gone.id,
+          entry(ctx.a, 'scim_group.deleted', gone.id)
+        )
+      ).toBe(true)
+      expect(
+        await ctx.store.deleteGroup(
+          ctx.a.environmentId,
+          org,
+          gone.id,
+          entry(ctx.a, 'scim_group.deleted', gone.id)
+        )
+      ).toBe(false)
+    })
+
+    test('a group is invisible from another environment and another organization', async () => {
+      const record = group([])
+      await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      expect(await ctx.store.findGroup(ctx.b.environmentId, org, record.id)).toBeNull()
+      expect(
+        await ctx.store.findGroup(ctx.a.environmentId, Bun.randomUUIDv7(), record.id)
+      ).toBeNull()
+      expect(
+        await ctx.store.deleteGroup(
+          ctx.b.environmentId,
+          org,
+          record.id,
+          entry(ctx.b, 'scim_group.deleted', record.id)
+        )
+      ).toBe(false)
+      expect(await ctx.store.findGroup(ctx.a.environmentId, org, record.id)).not.toBeNull()
+    })
+
+    test('deleting a directory user takes them out of their groups', async () => {
+      const one = await member('g4')
+      await add(one)
+      const record = group([one.userId])
+      await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      await ctx.store.deleteUser(ctx.a.environmentId, org, one.userId)
+      expect((await ctx.store.findGroup(ctx.a.environmentId, org, record.id))?.memberIds).toEqual(
+        []
+      )
     })
   })
 }

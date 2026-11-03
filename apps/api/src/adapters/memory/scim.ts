@@ -1,6 +1,8 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  ScimGroupRecord,
+  ScimGroupRefusal,
   ScimStore,
   ScimTokenRecord,
   ScimUserRecord,
@@ -11,12 +13,14 @@ import type {
 export class MemoryScimStore implements ScimStore {
   readonly #tokens: Map<string, ScimTokenRecord>
   readonly #users: ScimUserRecord[]
+  readonly #groups: ScimGroupRecord[]
   readonly #activityLog: MemoryActivityLog
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     this.#tokens = new Map()
     this.#users = []
+    this.#groups = []
     this.#activityLog = activityLog
   }
 
@@ -191,5 +195,119 @@ export class MemoryScimStore implements ScimStore {
     if (index >= 0) {
       this.#users.splice(index, 1)
     }
+    for (const group of this.#groups) {
+      if (group.environmentId === environmentId && group.organizationId === organizationId) {
+        group.memberIds = group.memberIds.filter((id) => id !== userId)
+      }
+    }
+  }
+
+  #group(environmentId: string, organizationId: string, id: string) {
+    return this.#groups.find(
+      (one) =>
+        one.environmentId === environmentId &&
+        one.organizationId === organizationId &&
+        one.id === id
+    )
+  }
+
+  #nameTaken(environmentId: string, organizationId: string, name: string, except?: string) {
+    return this.#groups.some(
+      (one) =>
+        one.environmentId === environmentId &&
+        one.organizationId === organizationId &&
+        one.displayName === name &&
+        one.id !== except
+    )
+  }
+
+  /** @inheritdoc */
+  async insertGroup(record: ScimGroupRecord, recorded: Recorded): Promise<ScimGroupRefusal | null> {
+    if (this.#nameTaken(record.environmentId, record.organizationId, record.displayName)) {
+      return 'name_taken'
+    }
+    this.#groups.push(structuredClone({ ...record, memberIds: [...new Set(record.memberIds)] }))
+    this.#record(recorded)
+    return null
+  }
+
+  /** @inheritdoc */
+  async findGroup(environmentId: string, organizationId: string, id: string) {
+    const found = this.#group(environmentId, organizationId, id)
+    return found ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async findGroupByName(environmentId: string, organizationId: string, displayName: string) {
+    const found = this.#groups.find(
+      (one) =>
+        one.environmentId === environmentId &&
+        one.organizationId === organizationId &&
+        one.displayName === displayName
+    )
+    return found ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async listGroups(environmentId: string, organizationId: string, offset: number, limit: number) {
+    const all = this.#groups
+      .filter((one) => one.environmentId === environmentId && one.organizationId === organizationId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+    return {
+      records: all.slice(offset, offset + limit).map((one) => structuredClone(one)),
+      total: all.length,
+    }
+  }
+
+  /** @inheritdoc */
+  async replaceGroup(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    next: { displayName: string; externalId: string | null; memberIds: string[] },
+    at: Date,
+    recorded: Recorded
+  ): Promise<ScimGroupRefusal | null> {
+    const found = this.#group(environmentId, organizationId, id)
+    if (!found) {
+      return 'missing'
+    }
+    if (this.#nameTaken(environmentId, organizationId, next.displayName, id)) {
+      return 'name_taken'
+    }
+    found.displayName = next.displayName
+    found.externalId = next.externalId
+    found.memberIds = [...new Set(next.memberIds)]
+    found.updatedAt = at
+    this.#record(recorded)
+    return null
+  }
+
+  /** @inheritdoc */
+  async deleteGroup(environmentId: string, organizationId: string, id: string, recorded: Recorded) {
+    const index = this.#groups.findIndex(
+      (one) =>
+        one.environmentId === environmentId &&
+        one.organizationId === organizationId &&
+        one.id === id
+    )
+    if (index < 0) {
+      return false
+    }
+    this.#groups.splice(index, 1)
+    this.#record(recorded)
+    return true
+  }
+
+  /** @inheritdoc */
+  async groupNamesOfUser(environmentId: string, organizationId: string, userId: string) {
+    return this.#groups
+      .filter(
+        (one) =>
+          one.environmentId === environmentId &&
+          one.organizationId === organizationId &&
+          one.memberIds.includes(userId)
+      )
+      .map((one) => one.displayName)
   }
 }

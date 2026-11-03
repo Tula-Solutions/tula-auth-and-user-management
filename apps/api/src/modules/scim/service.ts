@@ -9,14 +9,12 @@ import * as Users from '~/modules/user/service'
 import type { ScimUserRecord } from '~/ports/scim-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { invalidValue, ScimError, uniqueness } from './errors'
+import * as Roles from './roles'
 import { LIST_SCHEMA, type ScimUserInput, type ScimUserResource, USER_SCHEMA } from './schema'
 
 // The SCIM Users resource (ADR 0067, "SCIM"). The directory is the organization's: it can
 // provision, deactivate and remove its own people, and can never ban or delete an account it
 // did not create or one that belongs to another organization as well.
-
-/** The role a provisioned member gets; an operator changes it afterwards. */
-const MEMBER_ROLE = 'member'
 
 /** Most resources one list answers. */
 export const MAX_COUNT = 200
@@ -111,9 +109,11 @@ async function setActive(
         deps,
         ctx.tenant,
         ctx.organizationId,
-        { userId: user.id, role: MEMBER_ROLE },
+        { userId: user.id, role: Roles.MEMBER_ROLE },
         ctx.actor
       )
+      // A user let back in gets the role their directory groups give (none mapped: unchanged).
+      await Roles.sync(deps, ctx, user.id)
     }
     if (managed && user.bannedAt !== null) {
       await Users.unban(deps, ctx.tenant, user.id, ctx.actor)
