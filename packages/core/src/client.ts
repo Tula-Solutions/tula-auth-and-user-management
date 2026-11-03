@@ -1451,13 +1451,10 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     links,
     scope,
     passkeys,
-  }
-
-  const oauth = {
-    ...flows,
     oauth: createOAuthStore(environment, scope),
     held: createOAuthTicketHolder(),
   }
+  const oauth = flows
   let config: Promise<ClientConfig> | null = null
 
   /** A 200 that is not what the operation answers is not this API: nothing is built from it. */
