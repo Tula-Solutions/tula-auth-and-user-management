@@ -335,7 +335,7 @@ describe('the SSO section', () => {
     const { user } = start(api)
     await user.click(await screen.findByRole('button', { name: 'Delete Used' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Delete connection' }))
-    expect(await within(dialog()).findByText(/Disable it instead of deleting it/)).toBeTruthy()
+    expect(await within(dialog()).findByText(/Disable it before deleting it/)).toBeTruthy()
     await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
     await user.click(screen.getByRole('button', { name: 'Delete Okta' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Delete connection' }))
