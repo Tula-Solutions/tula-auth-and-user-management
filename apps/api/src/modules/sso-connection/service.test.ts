@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MOCK_SAML_KEYS } from '~/adapters/oauth/mock-saml'
 import { createApp } from '~/index'
+import * as Outbound from '~/lib/outbound'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import * as Sso from '~/modules/sso-connection/service'
@@ -511,10 +512,15 @@ describe('SAML connections', () => {
     await verified(o.id, 'acme.test')
     let body = metadata()
     let status = 200
-    const server = Bun.serve({ port: 0, fetch: () => new Response(body, { status }) })
+    // No socket: a real local server answered a non-200 now and then under a loaded run.
+    // The guard's own behaviour is tested in lib/outbound.test.ts.
+    const request = spyOn(Outbound, 'request').mockImplementation(async () => ({
+      status,
+      headers: new Headers(),
+      body: new TextEncoder().encode(body),
+    }))
     try {
-      deps.outbound.point('localhost', '127.0.0.1')
-      const url = `http://localhost:${server.port}/metadata`
+      const url = 'https://idp.example.test/metadata'
       const made = await Sso.create(deps, TENANT, saml(o.id, { metadataUrl: url }), TEST_ACTOR)
       expect(made.saml?.metadataUrl).toBe(url)
       body = metadata().replace('/sso"', '/sso2"')
@@ -526,7 +532,7 @@ describe('SAML connections', () => {
         params: { reason: 'fetch_failed' },
       })
     } finally {
-      server.stop(true)
+      request.mockRestore()
     }
   })
 
