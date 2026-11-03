@@ -1239,7 +1239,8 @@ export async function signIn(
  *   `needs_new_password` (`reason: 'expired'`), without tokens, for a password that is right
  *   and too old.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
- *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
+ *   `auth.invalid_credentials` (also for a non-member of an enforced SSO domain) or
+ *   `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
@@ -1253,7 +1254,9 @@ export async function submitPassword(
   const strategies = state.strategies ?? []
   const event = { type: 'first_factor_verified', strategy: 'password' } as const
   assertAccepts(attempt.kind, attempt.status, event, strategies)
-  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'password')
+  // Not refused here: `auth.method_disabled` for a non-member would tell a break-glass member
+  // from anyone else. The verdict is folded into the one failure below (ADR 0067).
+  const enforcedOut = await Sso.refuses(deps, tenant, attempt.identifier, 'password')
   await requirePasswordMethod(deps, tenant)
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
@@ -1276,7 +1279,8 @@ export async function submitPassword(
       password,
       found && Foreign.opener(deps, tenant.environmentId, found.user.id)
     )) ||
-    !found
+    !found ||
+    enforcedOut
   ) {
     throw new AuthError('auth.invalid_credentials')
   }

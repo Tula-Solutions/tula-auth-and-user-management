@@ -73,13 +73,19 @@ and passes the same table of refusals.
   other first factor for the addresses of its verified domains: the start offers only `sso`
   (the attempt's state keeps the full list so that a disabled strategy is still
   `flow.invalid_step`), and each other first factor's own route (password, emailed code and
-  link, passkey, provider callback, texted code) refuses with `auth.method_disabled` through
-  `Sso.requireNotEnforced`. An unknown address on an enforced domain gets the same answer as
+  link, passkey, provider callback, texted code) refuses through `Sso.requireNotEnforced` with
+  `auth.method_disabled`. An unknown address on an enforced domain gets the same answer as
   a known one. A texted code is judged by the holder's address, not by the phone number.
 - **Break-glass.** `breakGlassRole` names an organization role. A member of the connection's
-  organization holding that role passes `requireNotEnforced` and may sign in with a password.
-  The check is at the route, not at the start, so the start never reveals membership; a
-  route answer does (a known limitation: a non-member is refused where a member is not).
+  organization holding that role may sign in with a **password**, and with nothing else.
+  **The rule: an answer that depends on who the address belongs to must not differ between
+  members and non-members.** So the password step never says `auth.method_disabled`: for an
+  enforced domain it runs the same (dummy or real) verify and answers `auth.invalid_credentials`
+  (`Sso.refuses`) for an unknown address, a non-member and a member with a wrong password
+  alike; only a member with the right password signs in. Every other first factor refuses
+  `auth.method_disabled` whoever asks, because break-glass does not cover it, so that answer
+  is a fact about the domain. The check is at the route, not at the start, so the start never
+  reveals membership either.
 - **MFA trust.** With `trustIdpMfa: true` an SSO sign-in records `amr` `sso` and `mfa` and
   requires no further factor, also under `mfa.policy: required`. Off, it stops at
   `needs_second_factor` or `needs_factor_enrolment` like any first factor.

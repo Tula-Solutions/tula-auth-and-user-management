@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "sso enforcement removes the other first factors of a domain",
-  "description": "A connection with enforced on is the only way in for the domains it binds (ADR 0067): the strategies offered are single sign-on alone, the same for an address with an account and one without, and the password route refuses both with auth.method_disabled. A break-glass role changes nothing for an address that is not a member. The connection and the settings are put back afterwards.",
+  "description": "A connection with enforced on is the only way in for the domains it binds (ADR 0067): the strategies offered are single sign-on alone, the same for an address with an account and one without, and the password route answers both with the generic auth.invalid_credentials, so that a break-glass member's failure is no different. A break-glass role changes nothing for an address that is not a member. The connection and the settings are put back afterwards.",
   "needsSecretKey": true,
   "variables": {
     "suffix": {
@@ -310,9 +310,9 @@
         }
       },
       "expect": {
-        "status": 403,
+        "status": 401,
         "body": {
-          "code": "auth.method_disabled"
+          "code": "auth.invalid_credentials"
         }
       }
     },
@@ -328,9 +328,9 @@
         }
       },
       "expect": {
-        "status": 403,
+        "status": 401,
         "body": {
-          "code": "auth.method_disabled"
+          "code": "auth.invalid_credentials"
         }
       }
     },
@@ -386,9 +386,9 @@
         }
       },
       "expect": {
-        "status": 403,
+        "status": 401,
         "body": {
-          "code": "auth.method_disabled"
+          "code": "auth.invalid_credentials"
         }
       }
     },
