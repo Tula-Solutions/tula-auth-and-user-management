@@ -330,13 +330,12 @@
       }
     },
     {
-      "name": "an administrator creates a SAML connection from the provider's metadata, as a draft",
+      "name": "the organization admin creates a SAML connection from the provider's metadata, bound to the verified domain, as a draft",
       "request": {
         "method": "POST",
-        "path": "/v1/admin/sso-connections",
-        "auth": "secret",
+        "path": "/v1/client/me/organizations/{{orgId}}/sso-connections",
+        "accessToken": "{{adminToken}}",
         "body": {
-          "organizationId": "{{orgId}}",
           "protocol": "saml",
           "name": "Mock SAML IdP",
           "saml": {
