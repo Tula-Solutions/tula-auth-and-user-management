@@ -123,6 +123,17 @@ export interface AdminClient {
    *   request).
    */
   call<Id extends AdminOperationId>(id: Id, ...input: CallArguments<Id>): Promise<AdminResponse<Id>>
+  /**
+   * Call one operation whose answer is a stream of text (`exportAuditLogs`), and hand back the
+   * response with its body unread, so that a long answer is never held in memory. The timeout
+   * covers the wait for the answer to start; stop a stalled body with `signal`.
+   *
+   * @param id - The operation's id in the OpenAPI document.
+   * @param input - Its parameters and body.
+   * @returns The successful response, its body not yet read.
+   * @throws TulaAdminError for every failure before the body starts, as {@link AdminClient.call}.
+   */
+  stream<Id extends AdminOperationId>(id: Id, ...input: CallArguments<Id>): Promise<Response>
 }
 
 /**
@@ -339,7 +350,7 @@ function createCaller(
     AdminClientOptions,
     'baseUrl' | 'fetch' | 'timeoutMs' | 'userAgent' | 'allowInsecureHttp'
   >
-): (id: string, input: unknown) => Promise<RawResponse> {
+): (id: string, input: unknown, streaming?: boolean) => Promise<RawResponse> {
   const globals = globalThis as { window?: unknown; document?: unknown }
   if (globals.window !== undefined && globals.document !== undefined) {
     throw clientError('client.browser')
@@ -349,7 +360,7 @@ function createCaller(
   const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const userAgent = options.userAgent
 
-  return async function call(id: string, rest: unknown): Promise<RawResponse> {
+  return async function call(id: string, rest: unknown, streaming = false): Promise<RawResponse> {
     const input = (rest ?? {}) as {
       params?: Record<string, string>
       query?: Record<string, unknown>
@@ -404,6 +415,9 @@ function createCaller(
         // not an answer of this API.
         redirect: 'manual',
       })
+      if (streaming && response.ok) {
+        return { data: response, status: response.status, etag: null, date: null }
+      }
       // Read inside the timeout: a stalled body is the same failure as a stalled request.
       const text = await response.text()
       payload = response.status === 204 || text === '' ? undefined : parseJson(text)
@@ -479,6 +493,8 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
   return {
     call: <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
       send(id, rest[0]) as Promise<AdminResponse<Id>>,
+    stream: async <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
+      (await send(id, rest[0], true)).data as Response,
   }
 }
 
@@ -550,6 +566,8 @@ export function createAgentClient(options: AgentClientOptions): AdminClient {
   return {
     call: <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
       send(id, rest[0]) as Promise<AdminResponse<Id>>,
+    stream: async <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
+      (await send(id, rest[0], true)).data as Response,
   }
 }
 

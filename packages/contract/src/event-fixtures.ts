@@ -716,6 +716,15 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     target: aboutProposal,
     data: { ...proposed, approvedBy: admin, reason: 'target_not_found' },
   },
+  'audit.exported': {
+    id: eventId(46),
+    type: 'audit.exported',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutEnvironment,
+    data: { format: 'ndjson', rowCount: 1200, resumed: false, actorType: 'user' },
+  },
   'sign_in_test.started': {
     id: eventId(44),
     type: 'sign_in_test.started',

@@ -2834,7 +2834,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 68
+            "maximum": 69
           },
           "enabled": {
             "type": "boolean"
@@ -5685,6 +5685,202 @@
         ],
         "description": "An approved proposal’s operation was not carried out. The proposal is spent all the same."
       },
+      "AuditExportedEventData": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "ndjson",
+              "csv"
+            ]
+          },
+          "rowCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "resumed": {
+            "type": "boolean"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "user.created",
+              "user.imported",
+              "user.email_verified",
+              "user.banned",
+              "user.unbanned",
+              "user.deleted",
+              "user.password_changed",
+              "user.mfa_enabled",
+              "user.mfa_disabled",
+              "user.backup_codes_regenerated",
+              "user.backup_code_used",
+              "user.identity_linked",
+              "user.identity_unlinked",
+              "user.email_added",
+              "user.passkey_added",
+              "user.passkey_renamed",
+              "user.passkey_removed",
+              "user.passkey_counter_regressed",
+              "user.phone_number_added",
+              "user.phone_number_removed",
+              "user.sms_factor_enabled",
+              "user.sms_factor_removed",
+              "session.created",
+              "session.revoked",
+              "session.reuse_detected",
+              "session.stepped_up",
+              "session.refresh_proof_refused",
+              "api_key.created",
+              "api_key.revoked",
+              "signing_key.rotated",
+              "environment.settings_updated",
+              "oauth_provider.updated",
+              "oauth_provider.deleted",
+              "webhook_endpoint.created",
+              "webhook_endpoint.updated",
+              "webhook_endpoint.deleted",
+              "webhook_endpoint.disabled",
+              "webhook_endpoint.secret_rotated",
+              "webhook_endpoint.previous_secret_revoked",
+              "hook.created",
+              "hook.updated",
+              "hook.deleted",
+              "native_app.created",
+              "native_app.updated",
+              "native_app.deleted",
+              "organization.created",
+              "organization.updated",
+              "organization.deleted",
+              "organization_membership.added",
+              "organization_membership.role_changed",
+              "organization_membership.removed",
+              "organization_role.created",
+              "organization_role.updated",
+              "organization_role.deleted",
+              "organization_domain.claimed",
+              "organization_domain.verified",
+              "organization_domain.updated",
+              "organization_domain.removed",
+              "organization_invitation.created",
+              "organization_invitation.accepted",
+              "organization_invitation.declined",
+              "organization_invitation.revoked",
+              "proposal.created",
+              "proposal.approved",
+              "proposal.executed",
+              "proposal.failed",
+              "audit.exported",
+              "sign_in_test.started",
+              "sign_in_test.finished"
+            ]
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin",
+              "system",
+              "agent",
+              "instance_admin"
+            ]
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "format",
+          "rowCount",
+          "resumed"
+        ],
+        "description": "An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export."
+      },
+      "AuditExportedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "audit.exported"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "environment"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuditExportedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export."
+      },
       "SignInTestStartedEventData": {
         "type": "object",
         "properties": {},
@@ -6042,6 +6238,9 @@
           },
           {
             "$ref": "#/components/schemas/ProposalFailedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/AuditExportedEvent"
           },
           {
             "$ref": "#/components/schemas/SignInTestStartedEvent"
@@ -9340,6 +9539,7 @@
           "proposal.approved",
           "proposal.executed",
           "proposal.failed",
+          "audit.exported",
           "sign_in_test.started",
           "sign_in_test.finished"
         ]
@@ -9391,6 +9591,61 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          }
+        }
+      },
+      "AuditExportRequest": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ActivityType"
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "targetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin",
+              "system",
+              "agent",
+              "instance_admin"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "format": {
+            "default": "ndjson",
+            "type": "string",
+            "enum": [
+              "ndjson",
+              "csv"
+            ]
+          },
+          "after": {
+            "type": "string",
+            "pattern": "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z)~([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
           }
         }
       },
@@ -11384,7 +11639,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 68,
+            "maxItems": 69,
             "type": "array",
             "items": {
               "type": "string",
@@ -11455,6 +11710,7 @@
                 "proposal.approved",
                 "proposal.executed",
                 "proposal.failed",
+                "audit.exported",
                 "sign_in_test.started",
                 "sign_in_test.finished"
               ]
@@ -11482,7 +11738,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 68,
+            "maxItems": 69,
             "type": "array",
             "items": {
               "type": "string",
@@ -11553,6 +11809,7 @@
                 "proposal.approved",
                 "proposal.executed",
                 "proposal.failed",
+                "audit.exported",
                 "sign_in_test.started",
                 "sign_in_test.finished"
               ]
@@ -12011,6 +12268,7 @@
               "proposal.approved",
               "proposal.executed",
               "proposal.failed",
+              "audit.exported",
               "sign_in_test.started",
               "sign_in_test.finished"
             ]
@@ -25114,6 +25372,131 @@
             }
           }
         ]
+      }
+    },
+    "/v1/admin/audit-logs/export": {
+      "post": {
+        "operationId": "exportAuditLogs",
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Export the audit log",
+        "description": "Streams the secret key’s environment’s audit log, **oldest first**, as NDJSON (one entry per line, the fields of the list) or CSV (a header, then one row per entry; a cell that a spreadsheet would run as a formula is prefixed with `'`). Takes the list’s filters and `organizationId`. One request writes at most 100,000 entries: to continue, send `after` with the last entry’s `occurredAt` and `id` joined by `~`. Every export is itself recorded (`audit.exported`) with its filters and row count. A POST because it writes that entry, which also means an agent key is refused.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entries, streamed.",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditExportRequest"
+              }
+            }
+          }
+        }
       }
     },
     "/v1/admin/settings": {

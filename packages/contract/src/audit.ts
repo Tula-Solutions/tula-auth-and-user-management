@@ -86,6 +86,46 @@ export const AuditLogSchema = z
   })
   .meta({ ref: 'AuditLog' })
 
+/** The formats an audit export is written in: one JSON object per line, or CSV. */
+export const AUDIT_EXPORT_FORMATS = ['ndjson', 'csv'] as const
+
+/** One of {@link AUDIT_EXPORT_FORMATS}. */
+export type AuditExportFormat = (typeof AUDIT_EXPORT_FORMATS)[number]
+
+/** The most entries one export request returns; a longer trail is fetched by resuming. */
+export const MAX_AUDIT_EXPORT_ROWS = 100_000
+
+const CURSOR_PATTERN =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)~([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
+
+/**
+ * A position in an audit export: the `occurredAt` and the `id` of the last entry written,
+ * which is the key the export is ordered and paged by. An export asked to continue `after` it
+ * writes the entries that follow it, with no gap and no duplicate.
+ */
+export const AuditExportCursorSchema = z.string().regex(CURSOR_PATTERN)
+
+/**
+ * The cursor that resumes an export after an entry.
+ *
+ * @param entry - The last entry an export wrote (its `occurredAt` and `id`).
+ * @returns The value for the export's `after` parameter.
+ */
+export function auditExportCursor(entry: { id: string; occurredAt: string }): string {
+  return `${entry.occurredAt}~${entry.id}`
+}
+
+/**
+ * Take a cursor apart.
+ *
+ * @param cursor - A value of {@link AuditExportCursorSchema}.
+ * @returns The instant and the entry id, or `null` when it is not a cursor.
+ */
+export function parseAuditExportCursor(cursor: string): { occurredAt: string; id: string } | null {
+  const match = CURSOR_PATTERN.exec(cursor)
+  return match ? { occurredAt: match[1] as string, id: match[2] as string } : null
+}
+
 /** One page of audit log entries, newest first. */
 export const AuditLogListSchema = z
   .object({ meta: PaginationMetaSchema, data: z.array(AuditLogSchema) })
