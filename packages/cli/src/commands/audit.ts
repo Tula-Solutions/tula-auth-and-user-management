@@ -42,8 +42,16 @@ function takeRecords(buffer: string): { records: string[]; rest: string } {
   return { records, rest: buffer.slice(start) }
 }
 
-/** The resume cursor of one record: its `occurredAt` and `id`, the same two fields in both formats. */
-function cursorOf(record: string, format: AuditExportFormat): string | null {
+/**
+ * The resume cursor of one record: its `occurredAt` and `id`, the same two fields in both formats.
+ * A CSV row is read by position: the first two columns must stay `id` and `occurredAt`
+ * (`EXPORT_CSV_COLUMNS` in the API; `audit.test.ts` holds the two together).
+ *
+ * @param record - One whole record, without its line break.
+ * @param format - The export's format.
+ * @returns The cursor, or `null` for the CSV header or a record that cannot be read.
+ */
+export function cursorOf(record: string, format: AuditExportFormat): string | null {
   try {
     if (format === 'ndjson') {
       const row = JSON.parse(record) as { id: string; occurredAt: string }
@@ -57,18 +65,13 @@ function cursorOf(record: string, format: AuditExportFormat): string | null {
   }
 }
 
-async function run(context: CommandContext): Promise<number> {
-  const { flags, io, output, positionals } = context
-  if (positionals[0] !== 'export') {
-    throw new UsageError(
-      'Usage: tula audit export [--format ndjson|csv] [--from <time>] [--to <time>]'
-    )
-  }
+/** The request body from the flags; a bad format or time is a usage error. */
+function requestOf(flags: CommandContext['flags']) {
   const format = typeof flags.format === 'string' ? flags.format : 'ndjson'
   if (!(AUDIT_EXPORT_FORMATS as readonly string[]).includes(format)) {
     throw new UsageError(`--format is one of ${AUDIT_EXPORT_FORMATS.join(', ')}.`)
   }
-  const body = {
+  return {
     format: format as AuditExportFormat,
     from: instant('from', flags.from),
     to: instant('to', flags.to),
@@ -77,6 +80,51 @@ async function run(context: CommandContext): Promise<number> {
     action: typeof flags.action === 'string' ? (flags.action as ActivityType) : undefined,
     organizationId: typeof flags.organization === 'string' ? flags.organization : undefined,
   }
+}
+
+/** Write a streamed export to the output, record by record, and count it. */
+async function drain(
+  response: Response,
+  format: AuditExportFormat,
+  output: CommandContext['output']
+): Promise<{ rows: number; last: string | null; failed: boolean }> {
+  let rows = 0
+  let last: string | null = null
+  let failed = false
+  const emit = (records: string[]) => {
+    for (const record of records) {
+      output.line(record)
+      // The CSV header is a record too, and has no cursor: only data rows count.
+      const cursor = cursorOf(record, format)
+      if (cursor !== null) {
+        rows += 1
+        last = cursor
+      }
+    }
+  }
+  let buffer = ''
+  try {
+    const decoder = new TextDecoder()
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      const taken = takeRecords(buffer + decoder.decode(chunk, { stream: true }))
+      buffer = taken.rest
+      emit(taken.records)
+    }
+    emit(takeRecords(`${buffer}\n`).records.filter(Boolean))
+  } catch {
+    failed = true
+  }
+  return { rows, last, failed }
+}
+
+async function run(context: CommandContext): Promise<number> {
+  const { flags, io, output, positionals } = context
+  if (positionals[0] !== 'export') {
+    throw new UsageError(
+      'Usage: tula audit export [--format ndjson|csv] [--from <time>] [--to <time>]'
+    )
+  }
+  const body = requestOf(flags)
   const name = typeof flags.env === 'string' ? flags.env : 'default'
   const target = await resolveTarget({ name, environment: {}, flags, io, output }).catch(
     (error: unknown) => {
@@ -100,33 +148,7 @@ async function run(context: CommandContext): Promise<number> {
     throw error
   }
 
-  let rows = 0
-  let last: string | null = null
-  let failed = false
-  const emit = (records: string[]) => {
-    for (const record of records) {
-      output.line(record)
-      // The CSV header is a record too, and has no cursor: only data rows count.
-      const cursor = cursorOf(record, body.format)
-      if (cursor !== null) {
-        rows += 1
-        last = cursor
-      }
-    }
-  }
-  let buffer = ''
-  try {
-    const decoder = new TextDecoder()
-    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-      const taken = takeRecords(buffer + decoder.decode(chunk, { stream: true }))
-      buffer = taken.rest
-      emit(taken.records)
-    }
-    emit(takeRecords(`${buffer}\n`).records.filter(Boolean))
-  } catch {
-    failed = true
-  }
-
+  const { rows, last, failed } = await drain(response, body.format, output)
   output.error(`${rows} ${rows === 1 ? 'entry' : 'entries'} exported.`)
   if (failed) {
     output.error(`${output.errorStyle.red('error:')} The stream ended early.`)

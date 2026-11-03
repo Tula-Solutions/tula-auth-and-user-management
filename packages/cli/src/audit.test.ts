@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { AdminFetch } from '@tula-tech/admin'
+import { auditExportCursor } from '@tula-tech/contract'
 import { createApp } from '../../../apps/api/src/index'
 import * as Audit from '../../../apps/api/src/modules/audit/service'
 import {
@@ -8,6 +9,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '../../../apps/api/src/testing'
+import { cursorOf } from './commands/audit'
 import { COMMANDS, runCli } from './index'
 
 // `tula audit export` against the real API in process (TULA-137).
@@ -149,5 +151,21 @@ describe('tula audit export', () => {
   test('refuses a format it does not know and a missing subcommand', async () => {
     expect((await tula(['audit', 'export', '--format', 'xml'])).code).not.toBe(0)
     expect((await tula(['audit'])).code).not.toBe(0)
+  })
+
+  test('the resume cursor of a CSV row reads the columns the server writes, by position', () => {
+    // cursorOf reads the first two cells; the server's column order is what it relies on.
+    expect(Audit.EXPORT_CSV_COLUMNS.slice(0, 2)).toEqual(['id', 'occurredAt'])
+    const cells = Audit.EXPORT_CSV_COLUMNS.map((column) =>
+      column === 'id'
+        ? '0198f4a0-0000-7000-8000-000000000001'
+        : column === 'occurredAt'
+          ? '2026-01-02T03:04:05.000Z'
+          : ''
+    )
+    expect(cursorOf(cells.join(','), 'csv')).toBe(
+      auditExportCursor({ id: cells[0] as string, occurredAt: cells[1] as string })
+    )
+    expect(cursorOf(Audit.EXPORT_CSV_COLUMNS.join(','), 'csv')).toBeNull()
   })
 })
