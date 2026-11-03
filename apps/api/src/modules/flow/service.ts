@@ -1063,6 +1063,8 @@ function owesNewPassword(state: Pick<State, 'expiredPasswordSetAt'>): boolean {
  *   sign-up relies on (passwords, or the email code for a sign-up without one), or
  *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
  *   allow.
+ * @throws AuthError `auth.method_disabled` when the address's domain is enforced by an organization's
+ *   single sign-on (DECISIONS 12): refused at the start, as a password sign-in there is.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -3099,6 +3101,8 @@ export async function exchangeOAuthLink(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`; for a sign-up, the
  *   `before_sign_up` hook's `hook.denied` or `hook.unavailable` (the attempt has then ended).
+ * @throws AuthError `auth.method_disabled` for a sign-up whose domain became enforced by single
+ *   sign-on after the start: no account is made.
  */
 export async function verifyEmail(
   deps: Deps,
@@ -3299,6 +3303,9 @@ async function clearSignUp(
  * complete. A banned user is sent a code like anyone else and learns of the ban only after
  * proving they own the address.
  *
+ * An address on a domain enforced by single sign-on gets the decoy attempt of an unknown address,
+ * so the answer does not tell it apart (DECISIONS 12).
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param input - The email address.
@@ -3373,6 +3380,8 @@ export async function startPasswordReset(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
+ * @throws AuthError `verification.invalid_code` (as for a decoy) when the account's domain became
+ *   enforced by single sign-on after the code was sent: nothing is stored.
  */
 export async function resetPassword(
   deps: Deps,
