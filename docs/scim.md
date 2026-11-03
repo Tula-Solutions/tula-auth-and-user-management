@@ -30,16 +30,27 @@ each organization to 1,200 across its tokens.
 | `POST /Users` | Create a user, or link the existing user with that address. |
 | `GET /Users` | List, with `startIndex`, `count` (at most 200) and `filter=userName eq "…"` or `filter=externalId eq "…"`. Any other filter is 400 `invalidFilter`. |
 | `GET /Users/:id` | Read one. |
-| `PUT /Users/:id` | Replace: `active` and `externalId` are applied. |
+| `PUT /Users/:id` | Replace: `active` and `externalId` are applied, and so are `name.givenName` and `name.familyName` for a user the directory manages. |
 | `PATCH /Users/:id` | `add`, `replace` and `remove` (any case) on `active` and `externalId`, with a path or an object value. `active` may be a boolean or the string `"True"` or `"False"`, as Entra sends it. Other attributes are accepted and ignored. |
 | `DELETE /Users/:id` | Remove the user from the organization. |
 | `GET /ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | Discovery. |
 
-Groups, bulk, sorting and ETags are not supported, and discovery says so. Errors on these
+Bulk, sorting and ETags are not supported, and discovery says so. Groups are covered
+[below](#groups). Errors on these
 routes are SCIM error documents (RFC 7644) with `application/scim+json`, for example a
 duplicate `userName` is 409 with `scimType: "uniqueness"`.
 
-## Whose account it is
+## Attribute mapping
+
+| SCIM attribute | In Tula |
+| --- | --- |
+| `userName` (else the primary of `emails`) | The user's email address. It must be an address; it is **never changed** by SCIM afterwards, and a managed user cannot change it from a client. |
+| `externalId` | The directory's own id, kept to find the user again (`filter=externalId eq "…"`). |
+| `name.givenName`, `name.familyName` | First and last name (at most 100 characters each). For a user the directory manages, a `PUT` or `PATCH` updates them (TULA-150); for anyone else they are left alone. |
+| `active` | `false` deactivates (below), `true` restores. |
+| Any other attribute | Accepted and ignored. |
+
+## Whose account it is, and what deactivation does
 
 A user the directory creates is **managed by the directory** and gets a membership. A user who
 already exists is linked only when the address is on a [verified domain](verified-domains.md) of
@@ -58,3 +69,52 @@ managed user cannot change it from a client.
 
 Every change is an audit entry whose actor is the `directory` (the token's id), and its event
 carries ids and flags only.
+
+## Identity provider notes
+
+> [!NOTE]
+> The console wording is **not verified** against a live console (TULA-152); what follows is the values
+> Tula expects and what its code accepts.
+
+### Okta
+
+Base URL `https://<your api>/v1/scim/v2`; the SCIM token is sent as a bearer token; `userName` carries
+the email address. Push new users, profile updates and deactivation (`active: false`); where Okta
+asks for these: not verified.
+<!-- Vendor docs: https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_saml.htm covers the app wizard only; the SCIM provisioning page was not located. -->
+
+### Microsoft Entra ID
+
+Tenant URL `https://<your api>/v1/scim/v2` and the SCIM token as the secret token. Entra sends `active` as
+the string `"True"` or `"False"` and patch operations with any case of `op`; Tula accepts both.
+<!-- Vendor docs, resolves 2026-11-03, content not compared: https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups -->
+
+## Groups
+
+> [!WARNING]
+> **TULA-150 section.** This section is written from the ticket (SCIM Groups, built in parallel) and
+> not from merged code. Check the routes and the error answers against `modules/scim` once it lands.
+
+The identity provider can push **groups** to `/v1/scim/v2/Groups`: create, get, list (with
+`filter=displayName eq "…"`, `startIndex` and `count`), replace (`PUT`), patch (members added and removed) and
+delete. `ServiceProviderConfig`, `ResourceTypes` and `Schemas` say that Groups are supported.
+
+- **A group's members get the role the group is mapped to.** The mapping is the organization's
+  group-to-role mapping, the same one single sign-on uses ([the guide](enterprise-sso.md#map-attributes-and-groups)),
+  with the same precedence: the first mapped group in the saved order wins. A change of a group's
+  members in the directory changes the member's role at their **next refresh**.
+- **An unmapped group is stored and has no effect.**
+- **Member patches** accept Okta's and Entra's shapes: `members` with `add`, `remove` and `replace`, `op`
+  in any case, and `value` as an array of `{ "value": "<user id>" }`.
+- **Atomic.** A patch that would remove the organization's **last manager** is answered 409 and
+  **nothing** in the patch is applied.
+- **Group names are directory data.** A group's `displayName` is never in an audit entry or an event;
+  entries carry ids and counts only.
+- Membership changes go through the organization service, so every rule of
+  [organizations](organizations.md) (the last manager among them) holds.
+
+### Getting the token from the setup portal
+
+The organization's IT administrator can create the organization's SCIM token in the
+[setup portal](enterprise-sso.md#the-setup-portal), in the same sitting as the connection. It is shown
+**once**, never again, is limited to the link's organization and is recorded with the actor `setup_link`.
