@@ -66,3 +66,25 @@ and passes the same table of refusals.
   shared completion path (TULA-136).
 - [ADR 0050](0050-native-type-generation.md): native types will be generated for the SSO
   operations once their routes exist.
+
+## Enforced connections, the break-glass role and MFA trust (TULA-140)
+
+- **Enforcement is by domain.** An active connection with `enforced: true` removes every
+  other first factor for the addresses of its verified domains: the start offers only `sso`
+  (the attempt's state keeps the full list so that a disabled strategy is still
+  `flow.invalid_step`), and each other first factor's own route (password, emailed code and
+  link, passkey, provider callback, texted code) refuses with `auth.method_disabled` through
+  `Sso.requireNotEnforced`. An unknown address on an enforced domain gets the same answer as
+  a known one. A texted code is judged by the holder's address, not by the phone number.
+- **Break-glass.** `breakGlassRole` names an organization role. A member of the connection's
+  organization holding that role passes `requireNotEnforced` and may sign in with a password.
+  The check is at the route, not at the start, so the start never reveals membership; a
+  route answer does (a known limitation: a non-member is refused where a member is not).
+- **MFA trust.** With `trustIdpMfa: true` an SSO sign-in records `amr` `sso` and `mfa` and
+  requires no further factor, also under `mfa.policy: required`. Off, it stops at
+  `needs_second_factor` or `needs_factor_enrolment` like any first factor.
+- **Weakenings.** Switching enforcement off, turning on `trustIdpMfa` and setting a
+  break-glass role are weakenings (`weakens` in `modules/sso-connection/service.ts`): the
+  connection-update audit entry says `weakened: true`. Connections are not in `tula apply`
+  (only `settings.sso.enabled` is), so the classification lives on that entry; the
+  dashboard screen arrives with TULA-146.

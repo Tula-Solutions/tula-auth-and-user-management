@@ -1844,6 +1844,9 @@ export const SsoConnectionUpdatedEventDataChangedItem = {
   clientId: 'clientId',
   clientSecret: 'clientSecret',
   defaultRole: 'defaultRole',
+  enforced: 'enforced',
+  breakGlassRole: 'breakGlassRole',
+  trustIdpMfa: 'trustIdpMfa',
   domains: 'domains',
   status: 'status',
 } as const;
@@ -1864,7 +1867,7 @@ export interface SsoConnectionUpdatedEventData {
   protocol: SsoConnectionUpdatedEventDataProtocol;
   /**
      * @minItems 1
-     * @maxItems 7
+     * @maxItems 10
      */
   changed: SsoConnectionUpdatedEventDataChangedItem[];
   status: SsoConnectionUpdatedEventDataStatus;
@@ -6339,6 +6342,10 @@ export interface SsoConnection {
   clientId: string;
   clientSecretSet: true;
   defaultRole: string;
+  enforced: boolean;
+  /** @nullable */
+  breakGlassRole: string | null;
+  trustIdpMfa: boolean;
   domains: string[];
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
@@ -6411,6 +6418,9 @@ export interface UpdateSsoConnectionRequest {
      */
   clientSecret?: string;
   defaultRole?: OrganizationRoleKey;
+  enforced?: boolean;
+  breakGlassRole?: OrganizationRoleKey | null;
+  trustIdpMfa?: boolean;
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
   status?: UpdateSsoConnectionRequestStatus;

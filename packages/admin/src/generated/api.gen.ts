@@ -1714,6 +1714,9 @@ export interface Schemas {
     clientId: string
     clientSecretSet: true
     defaultRole: string
+    enforced: boolean
+    breakGlassRole: string | null
+    trustIdpMfa: boolean
     domains: string[]
     createdAt: string
     updatedAt: string
@@ -1770,7 +1773,7 @@ export interface Schemas {
   }
   SsoConnectionUpdatedEventData: {
     protocol: 'oidc'
-    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'defaultRole' | 'domains' | 'status')[]
+    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'defaultRole' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa' | 'domains' | 'status')[]
     status: 'draft' | 'active' | 'disabled'
     weakened?: boolean
   }
@@ -1814,6 +1817,9 @@ export interface Schemas {
     clientId?: string
     clientSecret?: string
     defaultRole?: Schemas['OrganizationRoleKey']
+    enforced?: boolean
+    breakGlassRole?: Schemas['OrganizationRoleKey'] | null
+    trustIdpMfa?: boolean
     domains?: Schemas['OrganizationDomainName'][]
     status?: 'draft' | 'active' | 'disabled'
   }

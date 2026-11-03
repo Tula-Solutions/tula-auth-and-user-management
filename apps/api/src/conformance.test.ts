@@ -54,6 +54,8 @@ describe('conformance scenarios, in process', () => {
       'sso oidc sign-in',
       'sso home-realm discovery is by domain',
       'attempt binding',
+      'sso enforcement removes the other first factors of a domain',
+      'sso trust in the provider for two-step verification',
       'email code sign-in',
       'email link sign-in',
       'passwordless sign-up',
