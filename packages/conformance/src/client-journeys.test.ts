@@ -102,7 +102,7 @@ describe('the committed list', () => {
     // TULA-76: the native clients' emailed link. TULA-130: member management in the native clients.
     // TULA-132: the invitee's own list of invitations in the native clients.
     expect(Object.fromEntries(perTicket)).toEqual({
-      'TULA-130': 1,
+      'TULA-130': 3,
       'TULA-132': 1,
       'TULA-142': 8,
       'TULA-76': 1,

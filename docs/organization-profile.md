@@ -1,6 +1,6 @@
 # OrganizationProfile
 
-`<OrganizationProfile>` is the prebuilt page for managing one organization: its details, members, invitations and verified domains. It draws only the tabs and controls the user's role permits, and the server checks every call again. It is in `@tula-tech/react` and in `@tula-tech/nextjs`. [`<OrganizationSwitcher>`](organization-switcher.md) links to it, or draws it in a dialog when you give it no page.
+`<OrganizationProfile>` is the prebuilt page for managing one organization: its details, members, invitations, verified domains and single sign-on. It draws only the tabs and controls the user's role permits, and the server checks every call again. It is in `@tula-tech/react` and in `@tula-tech/nextjs`. [`<OrganizationSwitcher>`](organization-switcher.md) links to it, or draws it in a dialog when you give it no page.
 
 ## Use it
 
@@ -25,7 +25,7 @@ It manages the organization the session acts in. Name another one with `organiza
 | Prop | Type | What it does |
 | --- | --- | --- |
 | `organizationId` | `string` | The organization to manage. Defaults to the active one. |
-| `section` | `'general' \| 'members' \| 'invitations' \| 'domains'` | The tab to open first. A value this version does not know is shown as "This section is not supported", with a button to the general settings. |
+| `section` | `'general' \| 'members' \| 'invitations' \| 'domains' \| 'sso'` | The tab to open first. A value this version does not know is shown as "This section is not supported", with a button to the general settings. |
 | `invitationUrl` | `string` | The page an invitation email's link leads to. Overrides the provider's. Without either, the Invitations tab cannot send invitations. |
 | `afterLeaveUrl` | `string` | Where to go after the user left the organization. |
 | `afterDeleteUrl` | `string` | Where to go after the user deleted it. |
@@ -43,6 +43,7 @@ A tab is drawn when the user's role holds its permission (read from the organiza
 | Members | `org:sys:memberships:read` or `:manage` | Lists the members and their roles. With `org:sys:memberships:manage` a role can be changed (among the roles the user may give) and a member removed. |
 | Invitations | `org:sys:invitations:manage` | Invite an address with a role, see the pending invitations, revoke one. |
 | Domains | `org:sys:domains:manage` | Claim a domain, verify it with the emailed code, choose what a verified domain does, remove it. |
+| Single sign-on | `org:sys:sso:manage` | Add an OIDC connection, turn it on or off, require it, delete it. |
 
 With the built-in roles, an `admin` sees all four and a `member` sees General and Members.
 
@@ -66,6 +67,10 @@ Needs the page the link leads to: `invitationUrl` here or on the provider. Witho
 
 Claim a domain by giving it and an address on it; the code is emailed to that address. Typing the six digits verifies it (five guesses). A verified domain either suggests the organization to people who sign up with a verified address on it (`suggest`) or adds them (`auto_join`). A verification lasts a year: a domain whose year has passed is marked "Needs verifying again", matches nobody, and is offered a new code (see [Verified domains](verified-domains.md#a-verification-lasts-a-year)). A mode this version does not know is shown as "Not supported by this version" and kept as it is. A public email domain cannot be claimed, and a domain another organization verified is refused.
 
+## Single sign-on
+
+Lists the organization's enterprise connections with their state (draft, on, off, required). "Add connection" takes a name, the issuer, the client ID and the client secret; the connection starts as a draft that signs nobody in until it is turned on. The client secret is typed into a password field, sent once and cleared; it is never returned, so the list only says whether one is saved. Switching enforcement off is a weakening, so the server asks for a recent sign-in (`auth.step_up_required`): the "Confirm it is you" dialog opens and the change repeats after it. A connection someone has signed in through cannot be deleted (`sso.connection_in_use`): turn it off. SAML connections and the group-to-role mapping are available through `organizations.sso` in `@tula-tech/core`; see [the SSO method](methods/sso.md).
+
 ## When access changes
 
 The server answers `organization.permission_required` or `auth.forbidden` when the user's role changed, and `organization.not_a_member` when they were removed. The component reads the user's organizations again and says "Your permissions in this organization changed. What you can do was updated." The control that was refused disappears; a user who is no longer a member is told "You are no longer a member of this organization." and the tabs go.
@@ -84,7 +89,7 @@ Every result belongs to the session it was asked for: an answer that arrives aft
 
 ## Words and styling
 
-The words are the `organizationProfile` group of the [localization](reference/react.md). The parts you can style by `appearance.elements` are `tabList`, `tab`, `tabPanel`, `memberList`, `memberItem`, `invitationList`, `invitationItem`, `domainList`, `domainItem`, `select` and `dangerZone`, beside the shared ones. The tabs follow the ARIA tabs pattern: arrow keys, Home and End move between them and select them, and only the selected one is in the tab order.
+The words are the `organizationProfile` group of the [localization](reference/react.md). The parts you can style by `appearance.elements` are `tabList`, `tab`, `tabPanel`, `memberList`, `memberItem`, `invitationList`, `invitationItem`, `domainList`, `domainItem`, `ssoList`, `ssoItem`, `select` and `dangerZone`, beside the shared ones. The tabs follow the ARIA tabs pattern: arrow keys, Home and End move between them and select them, and only the selected one is in the tab order.
 
 ## See also
 

@@ -72,6 +72,8 @@ describe('conformance scenarios, in process', () => {
       'setup links: create, use, revoke',
       'setup portal: a whole OIDC setup with a link',
       'setup portal: a link is confined to its organization',
+      "organization admin manages the organization's single sign-on",
+      'single sign-on client routes refuse a member without the permission',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',

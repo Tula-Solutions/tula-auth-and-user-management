@@ -220,6 +220,16 @@ The body of `organizations.invitations.invite()`: the address, a role's key and 
 export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
 ```
 
+### `CreateOrganizationSsoConnectionInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.sso.create()`: the organization is the one of the call.
+
+```ts
+export type CreateOrganizationSsoConnectionInput = Schemas['CreateMySsoConnectionRequest']
+```
+
 ### `DEFAULT_TIMEOUT_MS`
 
 _constant_, defined in `packages/core/src/client.ts`
@@ -1024,6 +1034,56 @@ A page of an organization's members.
 
 ```ts
 export type OrganizationMemberList = Schemas['OrganizationMemberList']
+```
+
+### `OrganizationSsoConnection`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An SSO connection of an organization, as its admins see it: never with the client secret.
+
+```ts
+export type OrganizationSsoConnection = Schemas['SsoConnection']
+```
+
+### `OrganizationSsoConnectionList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization's SSO connections.
+
+```ts
+export type OrganizationSsoConnectionList = Schemas['SsoConnectionList']
+```
+
+### `OrganizationSsoGroupRoles`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization's IdP group to role mapping, in precedence order.
+
+```ts
+export type OrganizationSsoGroupRoles = Schemas['SsoGroupRoles']
+```
+
+### `OrganizationSsoTestResult`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A test sign-in's result.
+
+```ts
+export type OrganizationSsoTestResult = Schemas['SsoTestResult']
+```
+
+### `OrganizationSsoTestStart`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A started test sign-in: where to send the browser, and the id it returns with.
+
+```ts
+export type OrganizationSsoTestStart = Schemas['SsoTestStart']
 ```
 
 ### `OrganizationSuggestion`
@@ -2498,6 +2558,162 @@ export interface TulaClient {
       remove(organizationId: string, domainId: string): Promise<void>
     }
     /**
+     * An organization's single sign-on (ADR 0067), for a member whose role holds
+     * `org:sys:sso:manage`, which the API reads from the membership on every call. The client
+     * secret is write-only: no answer returns it. Switching enforcement off, trusting the
+     * identity provider for MFA and naming a break-glass role need a recent sign-in
+     * (`auth.step_up_required`: step up, then repeat the call).
+     */
+    readonly sso: {
+      /**
+       * The organization's connections, with the service provider values to give the IdP.
+       *
+       * @param organizationId - The organization.
+       * @returns The connections.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { connections } = await tula.organizations.sso.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationSsoConnectionList>
+      /**
+       * One connection.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * const connection = await tula.organizations.sso.get(org.id, id)
+       * ```
+       */
+      get(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Create a draft connection; a draft signs nobody in.
+       *
+       * @param organizationId - The organization.
+       * @param input - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret })
+       * ```
+       */
+      create(
+        organizationId: string,
+        input: CreateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Change a connection; fields left out are kept.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param input - The fields to change.
+       * @returns The connection as it is now.
+       * @throws TulaError `auth.step_up_required` for a weakening on a stale session.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.update(org.id, id, { status: 'active' })
+       * ```
+       */
+      update(
+        organizationId: string,
+        id: string,
+        input: UpdateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Read a SAML connection's metadata address again (a rotated certificate).
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.refreshMetadata(org.id, id)
+       * ```
+       */
+      refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Delete a connection nobody has signed in through (`sso.connection_in_use` otherwise).
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.remove(org.id, id)
+       * ```
+       */
+      remove(organizationId: string, id: string): Promise<void>
+      /**
+       * The IdP group to role mapping, in precedence order.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @returns The mapping.
+       * @example
+       * ```ts
+       * const { mappings } = await tula.organizations.sso.groupRoles(org.id, id)
+       * ```
+       */
+      groupRoles(organizationId: string, id: string): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Replace the whole mapping.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param mapping - The new mapping.
+       * @returns The mapping as saved.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role: 'admin' }] })
+       * ```
+       */
+      setGroupRoles(
+        organizationId: string,
+        id: string,
+        mapping: OrganizationSsoGroupRoles
+      ): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Start a test sign-in of a connection. A passing test of its current settings is what
+       * turns it on (`sso.test_required`). Send the browser to `authorizationUrl`; it returns to
+       * `redirectUrl` with `#tula_test=<testId>`.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param redirectUrl - The page to return to; the environment must allow it.
+       * @returns The test's id and where to send the browser.
+       * @throws TulaError `request.redirect_not_allowed`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id, location.href)
+       * ```
+       */
+      startTest(
+        organizationId: string,
+        id: string,
+        redirectUrl: string
+      ): Promise<OrganizationSsoTestStart>
+      /**
+       * Read a test's result: what arrived and how it mapped, or why it failed.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param testId - The id the browser came back with.
+       * @returns The result; `pending` until the browser has come back.
+       * @throws TulaError `sso.test_not_found`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const result = await tula.organizations.sso.testResult(org.id, id, testId)
+       * ```
+       */
+      testResult(
+        organizationId: string,
+        id: string,
+        testId: string
+      ): Promise<OrganizationSsoTestResult>
+    }
+    /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
      * call. Answering needs the invited account: signed in, with the invited address, verified.
@@ -3170,6 +3386,16 @@ The body of `organizations.update()`: a new name, a new slug, or both.
 
 ```ts
 export type UpdateOrganizationInput = Schemas['UpdateOrganizationRequest']
+```
+
+### `UpdateOrganizationSsoConnectionInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The fields `organizations.sso.update()` changes; an absent one is kept.
+
+```ts
+export type UpdateOrganizationSsoConnectionInput = Schemas['UpdateSsoConnectionRequest']
 ```
 
 ### `User`

@@ -222,6 +222,16 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
   await shot(page, 'setup-portal-dark', 'dark')
   await signIn(page)
   await send('DELETE', `/v1/admin/setup-links/${setupLink.id}?organizationId=${ssoId}`)
+
+  // SCIM provisioning, on the same organization: one token that has not been used yet.
+  await send('POST', '/v1/admin/scim-tokens', { organizationId: ssoId, name: 'Okta provisioning' })
+  await page.reload()
+  const scim = page.getByRole('table', { name: 'SCIM tokens' })
+  await expect(scim).toBeVisible()
+  await scim.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-scim')
+  await scim.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-scim-dark', 'dark')
   const connections = await page.request.get(
     `${API_URL}/v1/admin/sso-connections?organizationId=${ssoId}`,
     { headers: dashboard }

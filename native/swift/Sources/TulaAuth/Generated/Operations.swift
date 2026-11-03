@@ -51,6 +51,9 @@ public enum TulaOperations {
     /// Create an SSO setup link for my organization (`POST /v1/client/me/organizations/{id}/setup-links`). Body: `CreateMySetupLinkRequest`. Answers `CreatedSetupLink`.
     public static let createMyOrganizationSetupLink = TulaOperation(id: "createMyOrganizationSetupLink", method: "POST", path: "/v1/client/me/organizations/{id}/setup-links", requiresSession: true)
 
+    /// Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). Body: `CreateMySsoConnectionRequest`. Answers `SsoConnection`.
+    public static let createMyOrganizationSsoConnection = TulaOperation(id: "createMyOrganizationSsoConnection", method: "POST", path: "/v1/client/me/organizations/{organizationId}/sso-connections", requiresSession: true)
+
     /// Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). No body. Answers no body.
     public static let declineMyOrganizationInvitation = TulaOperation(id: "declineMyOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/{invitationId}/decline", requiresSession: true)
 
@@ -62,6 +65,9 @@ public enum TulaOperations {
 
     /// Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). No body. Answers no body.
     public static let deleteMyOrganization = TulaOperation(id: "deleteMyOrganization", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}", requiresSession: true)
+
+    /// Delete an SSO connection (`DELETE /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers no body.
+    public static let deleteMyOrganizationSsoConnection = TulaOperation(id: "deleteMyOrganizationSsoConnection", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", requiresSession: true)
 
     /// Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). No body. Answers no body.
     public static let disableSmsFactor = TulaOperation(id: "disableSmsFactor", method: "DELETE", path: "/v1/client/me/factors/sms", requiresSession: true)
@@ -86,6 +92,15 @@ public enum TulaOperations {
 
     /// Get my second factors (`GET /v1/client/me/factors`). No body. Answers `Factors`.
     public static let getMyFactors = TulaOperation(id: "getMyFactors", method: "GET", path: "/v1/client/me/factors", requiresSession: true)
+
+    /// Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers `SsoConnection`.
+    public static let getMyOrganizationSsoConnection = TulaOperation(id: "getMyOrganizationSsoConnection", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", requiresSession: true)
+
+    /// Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). No body. Answers `SsoTestResult`.
+    public static let getMyOrganizationSsoConnectionTest = TulaOperation(id: "getMyOrganizationSsoConnectionTest", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}", requiresSession: true)
+
+    /// Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). No body. Answers `SsoGroupRoles`.
+    public static let getMyOrganizationSsoGroupRoles = TulaOperation(id: "getMyOrganizationSsoGroupRoles", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", requiresSession: true)
 
     /// Password policy (`GET /v1/client/password-policy`). No body. Answers `PasswordPolicy`.
     public static let getPasswordPolicy = TulaOperation(id: "getPasswordPolicy", method: "GET", path: "/v1/client/password-policy", requiresSession: false)
@@ -123,6 +138,9 @@ public enum TulaOperations {
     /// List my organization's SSO setup links (`GET /v1/client/me/organizations/{id}/setup-links`). No body. Answers `SetupLinkList`.
     public static let listMyOrganizationSetupLinks = TulaOperation(id: "listMyOrganizationSetupLinks", method: "GET", path: "/v1/client/me/organizations/{id}/setup-links", requiresSession: true)
 
+    /// List my organization's SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). No body. Answers `SsoConnectionList`.
+    public static let listMyOrganizationSsoConnections = TulaOperation(id: "listMyOrganizationSsoConnections", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections", requiresSession: true)
+
     /// List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). No body. Answers `OrganizationSuggestionList`.
     public static let listMyOrganizationSuggestions = TulaOperation(id: "listMyOrganizationSuggestions", method: "GET", path: "/v1/client/me/organizations/suggestions", requiresSession: true)
 
@@ -150,6 +168,9 @@ public enum TulaOperations {
     /// Preview an invitation (`POST /v1/client/organization-invitations/preview`). Body: `InvitationTokenRequest`. Answers `InvitationPreview`.
     public static let previewOrganizationInvitation = TulaOperation(id: "previewOrganizationInvitation", method: "POST", path: "/v1/client/organization-invitations/preview", requiresSession: false)
 
+    /// Read a SAML connection's metadata address again (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata`). No body. Answers `SsoConnection`.
+    public static let refreshMyOrganizationSsoMetadata = TulaOperation(id: "refreshMyOrganizationSsoMetadata", method: "POST", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata", requiresSession: true)
+
     /// Refresh a session (`POST /v1/client/sessions/refresh`). Body: `RefreshTokenRequest`. Answers `SessionTokens`.
     public static let refreshSession = TulaOperation(id: "refreshSession", method: "POST", path: "/v1/client/sessions/refresh", requiresSession: false)
 
@@ -170,6 +191,9 @@ public enum TulaOperations {
 
     /// Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). Body: `PasskeyRenameRequest`. Answers `Passkey`.
     public static let renamePasskey = TulaOperation(id: "renamePasskey", method: "PATCH", path: "/v1/client/me/passkeys/{passkeyId}", requiresSession: true)
+
+    /// Replace the IdP group to role mapping (`PUT /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). Body: `SsoGroupRoles`. Answers `SsoGroupRoles`.
+    public static let replaceMyOrganizationSsoGroupRoles = TulaOperation(id: "replaceMyOrganizationSsoGroupRoles", method: "PUT", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", requiresSession: true)
 
     /// Email a code to an address to add to my account (`POST /v1/client/me/email`). Body: `EmailAddressRequest`. Answers `EmailCodeSent`.
     public static let requestEmailAddressCode = TulaOperation(id: "requestEmailAddressCode", method: "POST", path: "/v1/client/me/email", requiresSession: true)
@@ -218,6 +242,9 @@ public enum TulaOperations {
 
     /// Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: `StartOrganizationDomainRequest`. Answers `OrganizationDomain`.
     public static let startMyOrganizationDomain = TulaOperation(id: "startMyOrganizationDomain", method: "POST", path: "/v1/client/me/organizations/{id}/domains", requiresSession: true)
+
+    /// Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). Body: `SsoTestStartRequest`. Answers `SsoTestStart`.
+    public static let startMyOrganizationSsoConnectionTest = TulaOperation(id: "startMyOrganizationSsoConnectionTest", method: "POST", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests", requiresSession: true)
 
     /// Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: `OAuthStartRequest`. Answers `OAuthStart`.
     public static let startOAuthSignIn = TulaOperation(id: "startOAuthSignIn", method: "POST", path: "/v1/client/sign-ins/oauth", requiresSession: false)
@@ -288,6 +315,9 @@ public enum TulaOperations {
     /// Change a member's role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). Body: `UpdateOrganizationMemberRequest`. Answers `OrganizationMember`.
     public static let updateMyOrganizationMember = TulaOperation(id: "updateMyOrganizationMember", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}/members/{userId}", requiresSession: true)
 
+    /// Change an SSO connection (`PATCH /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). Body: `UpdateSsoConnectionRequest`. Answers `SsoConnection`.
+    public static let updateMyOrganizationSsoConnection = TulaOperation(id: "updateMyOrganizationSsoConnection", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", requiresSession: true)
+
     /// Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: `EmailAddressVerifyRequest`. Answers `CurrentUser`.
     public static let verifyEmailAddress = TulaOperation(id: "verifyEmailAddress", method: "POST", path: "/v1/client/me/email/verify", requiresSession: true)
 
@@ -319,10 +349,12 @@ public enum TulaOperations {
         confirmTotpEnrolment,
         createMyOrganization,
         createMyOrganizationSetupLink,
+        createMyOrganizationSsoConnection,
         declineMyOrganizationInvitation,
         declineOrganizationInvitation,
         deleteMyIdentity,
         deleteMyOrganization,
+        deleteMyOrganizationSsoConnection,
         disableSmsFactor,
         disableTotp,
         exchangeIdentityLinkTicket,
@@ -331,6 +363,9 @@ public enum TulaOperations {
         getClientConfig,
         getMe,
         getMyFactors,
+        getMyOrganizationSsoConnection,
+        getMyOrganizationSsoConnectionTest,
+        getMyOrganizationSsoGroupRoles,
         getPasswordPolicy,
         getPasswordResetSecondFactorPasskeyOptions,
         getSignInSecondFactorPasskeyOptions,
@@ -343,6 +378,7 @@ public enum TulaOperations {
         listMyOrganizationMembers,
         listMyOrganizationRoles,
         listMyOrganizationSetupLinks,
+        listMyOrganizationSsoConnections,
         listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
@@ -352,6 +388,7 @@ public enum TulaOperations {
         prepareSignInFirstFactor,
         prepareSignInSecondFactor,
         previewOrganizationInvitation,
+        refreshMyOrganizationSsoMetadata,
         refreshSession,
         regenerateBackupCodes,
         removeMyOrganizationDomain,
@@ -359,6 +396,7 @@ public enum TulaOperations {
         removePasskey,
         removePhoneNumber,
         renamePasskey,
+        replaceMyOrganizationSsoGroupRoles,
         requestEmailAddressCode,
         requestPhoneCode,
         resendPasswordResetCode,
@@ -375,6 +413,7 @@ public enum TulaOperations {
         startIdTokenSignIn,
         startIdentityLink,
         startMyOrganizationDomain,
+        startMyOrganizationSsoConnectionTest,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,
@@ -398,6 +437,7 @@ public enum TulaOperations {
         updateMyOrganization,
         updateMyOrganizationDomain,
         updateMyOrganizationMember,
+        updateMyOrganizationSsoConnection,
         verifyEmailAddress,
         verifyMyOrganizationDomain,
         verifyPhoneNumber,

@@ -95,6 +95,14 @@ export const CreateSsoConnectionRequestSchema = z
   })
   .meta({ ref: 'CreateSsoConnectionRequest' })
 
+/**
+ * The body a signed-in organization admin creates a connection with: the admin body without
+ * `organizationId`, which is the organization of the path (a client cannot name another).
+ */
+export const CreateMySsoConnectionRequestSchema = CreateSsoConnectionRequestSchema.omit({
+  organizationId: true,
+}).meta({ ref: 'CreateMySsoConnectionRequest' })
+
 /** The body that changes a connection: every field is optional and an absent one is kept. */
 export const UpdateSsoConnectionRequestSchema = z
   .strictObject({
@@ -167,6 +175,8 @@ export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid().
 export type SamlSettingsInput = z.infer<typeof SamlSettingsInputSchema>
 /** The body that creates a connection. */
 export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionRequestSchema>
+/** The body an organization admin creates a connection with. */
+export type CreateMySsoConnectionRequest = z.infer<typeof CreateMySsoConnectionRequestSchema>
 /** The body that changes a connection. */
 export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionRequestSchema>
 /** A connection as the admin API returns it. */
