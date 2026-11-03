@@ -34,6 +34,7 @@ import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
 import type { SmsUsageStore } from '~/ports/sms-usage-store'
+import type { SsoConnectionStore } from '~/ports/sso-connection-store'
 import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 import type { WebhookDeliveryStore } from '~/ports/webhook-delivery-store'
@@ -162,6 +163,7 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
+  ssoConnections: SsoConnectionStore
   /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
   organizations: OrganizationStore
   /** The domains organizations claim, and the codes that verify them (ADR 0065, "Verified domains"). */

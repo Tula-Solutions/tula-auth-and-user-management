@@ -1257,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 68
+     * @maximum 71
      */
   eventTypes: number;
   enabled: boolean;
@@ -1734,6 +1734,158 @@ export interface NativeAppDeletedEvent {
   actor: EventActor;
   target: NativeAppDeletedEventTarget;
   data: NativeAppDeletedEventData;
+  test?: true;
+}
+
+export type SsoConnectionCreatedEventDataProtocol = typeof SsoConnectionCreatedEventDataProtocol[keyof typeof SsoConnectionCreatedEventDataProtocol];
+
+
+export const SsoConnectionCreatedEventDataProtocol = {
+  oidc: 'oidc',
+} as const;
+
+export type SsoConnectionCreatedEventDataStatus = typeof SsoConnectionCreatedEventDataStatus[keyof typeof SsoConnectionCreatedEventDataStatus];
+
+
+export const SsoConnectionCreatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEventData {
+  protocol: SsoConnectionCreatedEventDataProtocol;
+  status: SsoConnectionCreatedEventDataStatus;
+  /**
+     * @minimum 0
+     * @maximum 20
+     */
+  domains: number;
+}
+
+export type SsoConnectionCreatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionCreatedEventTarget;
+  data: SsoConnectionCreatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionUpdatedEventDataProtocol = typeof SsoConnectionUpdatedEventDataProtocol[keyof typeof SsoConnectionUpdatedEventDataProtocol];
+
+
+export const SsoConnectionUpdatedEventDataProtocol = {
+  oidc: 'oidc',
+} as const;
+
+export type SsoConnectionUpdatedEventDataChangedItem = typeof SsoConnectionUpdatedEventDataChangedItem[keyof typeof SsoConnectionUpdatedEventDataChangedItem];
+
+
+export const SsoConnectionUpdatedEventDataChangedItem = {
+  name: 'name',
+  issuer: 'issuer',
+  clientId: 'clientId',
+  clientSecret: 'clientSecret',
+  defaultRole: 'defaultRole',
+  domains: 'domains',
+  status: 'status',
+} as const;
+
+export type SsoConnectionUpdatedEventDataStatus = typeof SsoConnectionUpdatedEventDataStatus[keyof typeof SsoConnectionUpdatedEventDataStatus];
+
+
+export const SsoConnectionUpdatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEventData {
+  protocol: SsoConnectionUpdatedEventDataProtocol;
+  /**
+     * @minItems 1
+     * @maxItems 7
+     */
+  changed: SsoConnectionUpdatedEventDataChangedItem[];
+  status: SsoConnectionUpdatedEventDataStatus;
+  weakened?: boolean;
+}
+
+export type SsoConnectionUpdatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionUpdatedEventTarget;
+  data: SsoConnectionUpdatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionDeletedEventDataProtocol = typeof SsoConnectionDeletedEventDataProtocol[keyof typeof SsoConnectionDeletedEventDataProtocol];
+
+
+export const SsoConnectionDeletedEventDataProtocol = {
+  oidc: 'oidc',
+} as const;
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEventData {
+  protocol: SsoConnectionDeletedEventDataProtocol;
+}
+
+export type SsoConnectionDeletedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionDeletedEventTarget;
+  data: SsoConnectionDeletedEventData;
   test?: true;
 }
 
@@ -2663,7 +2815,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4029,6 +4181,9 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4893,6 +5048,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4927,7 +5085,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 68
+     * @maxItems 71
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4982,6 +5140,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5016,7 +5177,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 68
+     * @maxItems 71
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5189,6 +5350,9 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',

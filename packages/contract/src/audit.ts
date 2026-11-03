@@ -52,6 +52,7 @@ export const AUDIT_TARGET_TYPES = [
   'webhook_endpoint',
   'hook',
   'native_app',
+  'sso_connection',
   'organization',
   'organization_membership',
   'organization_role',

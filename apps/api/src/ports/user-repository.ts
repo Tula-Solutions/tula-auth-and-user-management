@@ -51,6 +51,11 @@ export interface UserRecord {
    * or replacing it with another, clears it in the same write.
    */
   smsFactorEnabledAt: Date | null
+  /**
+   * The SSO connection that provisioned the account (ADR 0067), or `null`/absent for one that
+   * signed up any other way. Set once, at creation; enforcement (TULA-140) reads it.
+   */
+  managedByConnectionId?: string | null
 }
 
 /**

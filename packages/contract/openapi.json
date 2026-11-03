@@ -2834,7 +2834,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 68
+            "maximum": 71
           },
           "enabled": {
             "type": "boolean"
@@ -3816,6 +3816,279 @@
           "data"
         ],
         "description": "A registered native app was removed: the association files no longer name it."
+      },
+      "SsoConnectionCreatedEventData": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "oidc"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "disabled"
+            ]
+          },
+          "domains": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "protocol",
+          "status",
+          "domains"
+        ],
+        "description": "A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event."
+      },
+      "SsoConnectionCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "sso_connection.created"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "sso_connection"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SsoConnectionCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event."
+      },
+      "SsoConnectionUpdatedEventData": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "oidc"
+            ]
+          },
+          "changed": {
+            "minItems": 1,
+            "maxItems": 7,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "issuer",
+                "clientId",
+                "clientSecret",
+                "defaultRole",
+                "domains",
+                "status"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "disabled"
+            ]
+          },
+          "weakened": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "protocol",
+          "changed",
+          "status"
+        ],
+        "description": "A single sign-on connection was changed."
+      },
+      "SsoConnectionUpdatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "sso_connection.updated"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "sso_connection"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SsoConnectionUpdatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A single sign-on connection was changed."
+      },
+      "SsoConnectionDeletedEventData": {
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "oidc"
+            ]
+          }
+        },
+        "required": [
+          "protocol"
+        ],
+        "description": "A single sign-on connection was removed."
+      },
+      "SsoConnectionDeletedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "sso_connection.deleted"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "sso_connection"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SsoConnectionDeletedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A single sign-on connection was removed."
       },
       "OrganizationCreatedEventData": {
         "type": "object",
@@ -5979,6 +6252,15 @@
           },
           {
             "$ref": "#/components/schemas/NativeAppDeletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SsoConnectionCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SsoConnectionUpdatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SsoConnectionDeletedEvent"
           },
           {
             "$ref": "#/components/schemas/OrganizationCreatedEvent"
@@ -9319,6 +9601,9 @@
           "native_app.created",
           "native_app.updated",
           "native_app.deleted",
+          "sso_connection.created",
+          "sso_connection.updated",
+          "sso_connection.deleted",
           "organization.created",
           "organization.updated",
           "organization.deleted",
@@ -11384,7 +11669,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 68,
+            "maxItems": 71,
             "type": "array",
             "items": {
               "type": "string",
@@ -11434,6 +11719,9 @@
                 "native_app.created",
                 "native_app.updated",
                 "native_app.deleted",
+                "sso_connection.created",
+                "sso_connection.updated",
+                "sso_connection.deleted",
                 "organization.created",
                 "organization.updated",
                 "organization.deleted",
@@ -11482,7 +11770,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 68,
+            "maxItems": 71,
             "type": "array",
             "items": {
               "type": "string",
@@ -11532,6 +11820,9 @@
                 "native_app.created",
                 "native_app.updated",
                 "native_app.deleted",
+                "sso_connection.created",
+                "sso_connection.updated",
+                "sso_connection.deleted",
                 "organization.created",
                 "organization.updated",
                 "organization.deleted",
@@ -11990,6 +12281,9 @@
               "native_app.created",
               "native_app.updated",
               "native_app.deleted",
+              "sso_connection.created",
+              "sso_connection.updated",
+              "sso_connection.deleted",
               "organization.created",
               "organization.updated",
               "organization.deleted",

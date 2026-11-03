@@ -34,6 +34,12 @@ import {
   ProposalApproverSchema,
 } from './proposal'
 import { SessionClientSchema } from './session'
+import {
+  MAX_SSO_CONNECTION_DOMAINS,
+  SSO_CONNECTION_FIELDS,
+  SSO_CONNECTION_STATUSES,
+  SSO_PROTOCOLS,
+} from './sso'
 import { SIGN_IN_TEST_CLEANUPS, SIGN_IN_TEST_OUTCOMES } from './test-address'
 import { AUTHENTICATION_METHODS } from './tokens'
 
@@ -696,6 +702,35 @@ export const EVENT_DATA_SCHEMAS = {
     'NativeAppDeleted',
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
+  ),
+  // Enterprise single sign-on (ADR 0067): protocol, status, counts and field names.
+  'sso_connection.created': data(
+    'SsoConnectionCreated',
+    'A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** How many domains it was bound to. A count, never a domain. */
+      domains: z.number().int().min(0).max(MAX_SSO_CONNECTION_DOMAINS),
+    }
+  ),
+  'sso_connection.updated': data(
+    'SsoConnectionUpdated',
+    'A single sign-on connection was changed.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      /** Which fields changed. Names only, never a value. */
+      changed: z.array(z.enum(SSO_CONNECTION_FIELDS)).min(1).max(SSO_CONNECTION_FIELDS.length),
+      /** The connection's status after the change. */
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** `true` when the change stopped the connection signing users in: it was disabled. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'sso_connection.deleted': data(
+    'SsoConnectionDeleted',
+    'A single sign-on connection was removed.',
+    { protocol: z.enum(SSO_PROTOCOLS) }
   ),
   // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
   // member's address and name are operator or user text, and never in an event.

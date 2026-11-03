@@ -38,6 +38,7 @@ import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresSmsUsageStore } from '~/adapters/postgres/sms-usage'
+import { PostgresSsoConnectionStore } from '~/adapters/postgres/sso-connections'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
@@ -270,6 +271,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     webhookDeliveries: new PostgresWebhookDeliveryStore(database.db),
     hooks: new PostgresHookStore(database.db),
     nativeApps: new PostgresNativeAppStore(database.db),
+    ssoConnections: new PostgresSsoConnectionStore(database.db),
     organizations: new PostgresOrganizationStore(database.db),
     organizationDomains: new PostgresOrganizationDomainStore(database.db),
     proposals: new PostgresProposalStore(database.db),
