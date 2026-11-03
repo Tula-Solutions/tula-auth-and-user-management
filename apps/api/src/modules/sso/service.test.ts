@@ -11,6 +11,7 @@ import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
+import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Organizations from '~/modules/organization/service'
@@ -697,6 +698,19 @@ describe('the OIDC test round (TULA-145)', () => {
     expect(result).toMatchObject({ status: 'failed', reason })
     expect(result.message).toBe(SSO_TEST_REASONS[reason])
     expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
+  test('the test state is never a sign-in: the flow engine refuses it and a replay signs nobody in', async () => {
+    const begun = await SsoTests.start(deps, TENANT, connectionId, REDIRECT, TEST_ACTOR)
+    const asked = consent(begun.authorizationUrl)
+    const direct = await Flows.ssoCallback(deps, connectionId, asked)
+    expect(direct).toEqual({ invalid: true })
+    const first = await callback(asked)
+    expect(first.location).toStartWith(`${REDIRECT}#tula_test=`)
+    const replay = await callback(asked)
+    expect(replay.status).toBe(400)
+    expect(replay.fragment.get('tula_ticket')).toBeNull()
+    expect(recorded().filter((t) => t.startsWith('session.') || t.startsWith('user.'))).toEqual([])
   })
 
   test('a real sign-in with the same fault still says only sso.provider_error', async () => {

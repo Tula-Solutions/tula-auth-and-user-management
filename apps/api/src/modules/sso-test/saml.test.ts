@@ -12,6 +12,7 @@ import {
 } from '~/adapters/oauth/mock-saml'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
+import * as Flows from '~/modules/flow/service'
 import * as Organizations from '~/modules/organization/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
@@ -305,5 +306,87 @@ describe('SAML test round', () => {
         s.testId
       )
     ).rejects.toMatchObject({ code: 'sso.test_not_found' })
+  })
+})
+
+describe('a test attempt never becomes a session (TULA-145)', () => {
+  const grantedNothing = (types: string[]) =>
+    types.filter((t) => t.startsWith('session.') || t.startsWith('user.'))
+
+  const signed = (s: Awaited<ReturnType<typeof started>>) =>
+    buildMockSamlResponse({
+      mockProviderEnabled: true,
+      spEntityId,
+      acsUrl,
+      idpEntityId: IDP,
+      requestId: s.requestId,
+      now: deps.clock.now(),
+      subject: `ada@${DOMAIN}`,
+    })
+
+  test('no client route under an attempt id accepts the test attempt', async () => {
+    const s = await started()
+    const routes = app.routes.filter(
+      (r) => r.path.startsWith('/v1/client/') && r.path.includes(':attemptId') && r.method !== 'ALL'
+    )
+    expect(routes.length).toBeGreaterThan(5)
+    for (const route of routes) {
+      const res = await app.request(route.path.replace(':attemptId', s.testId), {
+        method: route.method,
+        headers: {
+          'content-type': 'application/json',
+          'x-tula-publishable-key': PK,
+          'x-tula-client': 'ios',
+          'x-tula-attempt': 'not-the-secret-nobody-holds',
+        },
+        ...(route.method === 'GET' ? {} : { body: '{}' }),
+      })
+      const text = await res.text()
+      expect(res.status, `${route.method} ${route.path}`).toBeGreaterThanOrEqual(400)
+      expect(text).not.toContain('refreshToken')
+      expect(text).not.toContain('accessToken')
+    }
+    expect(grantedNothing(deps.activityLog.entries.map((e) => e.type))).toEqual([])
+  })
+
+  test("the flow engine refuses the test attempt's state, and the round still completes", async () => {
+    const s = await started()
+    const result = await Flows.ssoCallback(deps, connectionId, {
+      state: s.relayState,
+      samlResponse: signed(s),
+    })
+    expect(result).toEqual({ invalid: true })
+    expect((await answer(s)).location).toStartWith(`${REDIRECT}#tula_test=`)
+    expect(grantedNothing(deps.activityLog.entries.map((e) => e.type))).toEqual([])
+  })
+
+  test('replaying the state of a finished round signs nobody in', async () => {
+    const s = await started()
+    await answer(s)
+    const again = await answer(s)
+    expect(again.res.status).toBe(400)
+    expect(again.location).toBe('')
+    const direct = await Flows.ssoCallback(deps, connectionId, {
+      state: s.relayState,
+      samlResponse: signed(s),
+    })
+    expect(direct).toEqual({ invalid: true })
+    expect(grantedNothing(deps.activityLog.entries.map((e) => e.type))).toEqual([])
+  })
+
+  test('a ticket exchange naming the test attempt returns no tokens', async () => {
+    const s = await started()
+    const back = await answer(s)
+    const res = await app.request('/v1/client/sign-ins/oauth/exchange', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tula-publishable-key': PK,
+        'x-tula-client': 'ios',
+      },
+      body: JSON.stringify({ ticket: 'x'.repeat(32), attemptId: s.testId, binding: back.location }),
+    })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(await res.text()).not.toContain('refreshToken')
   })
 })
