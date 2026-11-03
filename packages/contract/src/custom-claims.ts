@@ -27,6 +27,9 @@ export const CUSTOM_CLAIMS_CLAIM = 'ext'
 /** The access token's claim naming the active organization (ADR 0065, "Token claims"). */
 export const ORGANIZATION_ID_CLAIM = 'org_id'
 
+/** The access token's claim naming the SSO connection a session was signed in through (ADR 0067). */
+export const SSO_CONNECTION_CLAIM = 'sso_conn'
+
 /** The access token's claim holding the key of the member's role in the active organization. */
 export const ORGANIZATION_ROLE_CLAIM = 'org_role'
 
@@ -70,6 +73,7 @@ export const RESERVED_CLAIM_NAMES = [
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  SSO_CONNECTION_CLAIM,
   CUSTOM_CLAIMS_CLAIM,
 ] as const
 

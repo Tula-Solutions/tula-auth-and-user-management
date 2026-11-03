@@ -517,6 +517,47 @@ export const ERROR_DEFINITIONS = {
     message: 'You cannot join that organization.',
   },
 
+  // Enterprise single sign-on (ADR 0067).
+  'sso.disabled': {
+    status: 403,
+    message: 'Single sign-on is not enabled for this environment.',
+  },
+  'sso.connection_not_found': { status: 404, message: 'No such single sign-on connection.' },
+  'sso.name_taken': {
+    status: 409,
+    message: 'The organization already has a connection with that name.',
+  },
+  'sso.domain_taken': {
+    status: 409,
+    message: 'Another active connection already serves one of those domains.',
+  },
+  'sso.domain_not_verified': {
+    status: 422,
+    message: "Every domain must be one of the organization's verified domains.",
+  },
+  'sso.issuer_not_allowed': {
+    status: 422,
+    message: 'The issuer is not an address the server may call.',
+  },
+  'sso.connection_in_use': {
+    status: 409,
+    message: 'The connection has signed users in; disable it instead.',
+  },
+  'sso.invalid_transition': {
+    status: 409,
+    message: 'A connection cannot move to that status from its current one.',
+  },
+  'sso.unavailable': { status: 400, message: 'Single sign-on is not available for that address.' },
+  'sso.provider_error': { status: 401, message: 'The identity provider did not sign you in.' },
+  'sso.user_not_provisioned': {
+    status: 403,
+    message: 'Your account has not been set up for this organization. Ask its administrator.',
+  },
+  'sso.email_domain_mismatch': {
+    status: 403,
+    message: "Your email address is not on this connection's domains.",
+  },
+
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },

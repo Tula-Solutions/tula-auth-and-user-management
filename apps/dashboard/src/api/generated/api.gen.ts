@@ -3055,6 +3055,18 @@ export const ErrorCode = {
   organizationdomain_address_mismatch: 'organization.domain_address_mismatch',
   organizationdomain_limit: 'organization.domain_limit',
   organizationsuggestion_unavailable: 'organization.suggestion_unavailable',
+  ssodisabled: 'sso.disabled',
+  ssoconnection_not_found: 'sso.connection_not_found',
+  ssoname_taken: 'sso.name_taken',
+  ssodomain_taken: 'sso.domain_taken',
+  ssodomain_not_verified: 'sso.domain_not_verified',
+  ssoissuer_not_allowed: 'sso.issuer_not_allowed',
+  ssoconnection_in_use: 'sso.connection_in_use',
+  ssoinvalid_transition: 'sso.invalid_transition',
+  ssounavailable: 'sso.unavailable',
+  ssoprovider_error: 'sso.provider_error',
+  ssouser_not_provisioned: 'sso.user_not_provisioned',
+  ssoemail_domain_mismatch: 'sso.email_domain_mismatch',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3510,6 +3522,7 @@ export const FirstFactorStrategy = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
 } as const;
 
 export type PreparedFirstFactorStrategy = typeof PreparedFirstFactorStrategy[keyof typeof PreparedFirstFactorStrategy];
@@ -4499,6 +4512,10 @@ export type EnvironmentSettingsStateSettingsOrganizations = {
   personalAccount?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -4542,6 +4559,7 @@ export type EnvironmentSettingsStateSettings = {
   audit?: EnvironmentSettingsStateSettingsAudit;
   agents?: EnvironmentSettingsStateSettingsAgents;
   organizations?: EnvironmentSettingsStateSettingsOrganizations;
+  sso?: EnvironmentSettingsStateSettingsSso;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -4641,6 +4659,10 @@ export type EnvironmentSettingsInputOrganizations = {
   personalAccount?: boolean;
 };
 
+export type EnvironmentSettingsInputSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -4684,6 +4706,7 @@ export interface EnvironmentSettingsInput {
   audit?: EnvironmentSettingsInputAudit;
   agents?: EnvironmentSettingsInputAgents;
   organizations?: EnvironmentSettingsInputOrganizations;
+  sso?: EnvironmentSettingsInputSso;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -6051,6 +6074,111 @@ export interface UpdateNativeAppRequest {
   appLinkPaths?: string[];
 }
 
+export type SsoConnectionProtocol = typeof SsoConnectionProtocol[keyof typeof SsoConnectionProtocol];
+
+
+export const SsoConnectionProtocol = {
+  oidc: 'oidc',
+} as const;
+
+export type SsoConnectionStatus = typeof SsoConnectionStatus[keyof typeof SsoConnectionStatus];
+
+
+export const SsoConnectionStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface SsoConnection {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol: SsoConnectionProtocol;
+  name: string;
+  status: SsoConnectionStatus;
+  issuer: string;
+  clientId: string;
+  clientSecretSet: true;
+  defaultRole: string;
+  domains: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface SsoConnectionList {
+  connections: SsoConnection[];
+}
+
+export type CreateSsoConnectionRequestProtocol = typeof CreateSsoConnectionRequestProtocol[keyof typeof CreateSsoConnectionRequestProtocol];
+
+
+export const CreateSsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+} as const;
+
+export interface CreateSsoConnectionRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol?: CreateSsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret: string;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export type UpdateSsoConnectionRequestStatus = typeof UpdateSsoConnectionRequestStatus[keyof typeof UpdateSsoConnectionRequestStatus];
+
+
+export const UpdateSsoConnectionRequestStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface UpdateSsoConnectionRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: UpdateSsoConnectionRequestStatus;
+}
+
 export interface SmsPrefixUsage {
   /** @pattern ^\+[0-9]{1,4}$ */
   prefix: string;
@@ -6704,6 +6832,13 @@ page?: number;
  * @maximum 100
  */
 size?: number;
+};
+
+export type ListSsoConnectionsParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
 };
 
 export type GetSmsUsageParams = {
@@ -13517,6 +13652,471 @@ export const useDeleteNativeApp = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getListSsoConnectionsUrl = (params: ListSsoConnectionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/sso-connections?${stringifiedParams}` : `/v1/admin/sso-connections`
+}
+
+/**
+ * The single sign-on connections of one organization, oldest first.
+ * @summary List an organization’s SSO connections
+ */
+export const listSsoConnections = async (params: ListSsoConnectionsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnectionList> => {
+
+  return dashboardFetch<SsoConnectionList>(getListSsoConnectionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSsoConnectionsQueryKey = (params?: ListSsoConnectionsParams,) => {
+    return [
+    `/v1/admin/sso-connections`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSsoConnectionsQueryOptions = <TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSsoConnectionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSsoConnections>>> = ({ signal }) => listSsoConnections(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSsoConnectionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSsoConnections>>>
+export type ListSsoConnectionsQueryError = ErrorEnvelope
+
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: ListSsoConnectionsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO connections
+ */
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSsoConnectionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSsoConnectionUrl = () => {
+
+
+
+
+  return `/v1/admin/sso-connections`
+}
+
+/**
+ * Creates an OIDC connection for an organization as a draft, bound to some of its verified domains. The issuer is checked against the outbound rules. A draft signs nobody in; activate it with an update. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Create an SSO connection
+ */
+export const createSsoConnection = async (createSsoConnectionRequest: CreateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getCreateSsoConnectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSsoConnectionMutationKey = () => ['createSsoConnection'] as const;
+
+export const getCreateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getCreateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSsoConnection>>, CreateSsoConnectionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSsoConnection(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof createSsoConnection>>>
+    export type CreateSsoConnectionMutationBody = CreateSsoConnectionRequest
+    export type CreateSsoConnectionMutationError = ErrorEnvelope
+    export type CreateSsoConnectionMutationVariables = {data: CreateSsoConnectionRequest}
+
+    /**
+ * @summary Create an SSO connection
+ */
+export const useCreateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSsoConnection>>,
+        TError,
+        CreateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * One connection of the environment, without its secret.
+ * @summary Get an SSO connection
+ */
+export const getSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getGetSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnection>>> = ({ signal }) => getSsoConnection(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnection>>>
+export type GetSsoConnectionQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an SSO connection
+ */
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Changes the fields sent and keeps the rest. A status moves draft to active to disabled, never back to a draft; a domain belongs to at most one active connection (`sso.domain_taken`, 409). Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Change an SSO connection
+ */
+export const updateSsoConnection = async (id: string,
+    updateSsoConnectionRequest: UpdateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getUpdateSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateSsoConnectionMutationKey = () => ['updateSsoConnection'] as const;
+
+export const getUpdateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getUpdateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSsoConnection>>, UpdateSsoConnectionMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSsoConnection(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof updateSsoConnection>>>
+    export type UpdateSsoConnectionMutationBody = UpdateSsoConnectionRequest
+    export type UpdateSsoConnectionMutationError = ErrorEnvelope
+    export type UpdateSsoConnectionMutationVariables = {id: string;data: UpdateSsoConnectionRequest}
+
+    /**
+ * @summary Change an SSO connection
+ */
+export const useUpdateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateSsoConnection>>,
+        TError,
+        UpdateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getDeleteSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Deletes a connection nobody has signed in through. One with an identity is kept (`sso.connection_in_use`, 409): disable it instead.
+ * @summary Delete an SSO connection
+ */
+export const deleteSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSsoConnectionMutationKey = () => ['deleteSsoConnection'] as const;
+
+export const getDeleteSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getDeleteSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSsoConnection>>, DeleteSsoConnectionMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSsoConnection(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSsoConnection>>>
+
+    export type DeleteSsoConnectionMutationError = ErrorEnvelope
+    export type DeleteSsoConnectionMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an SSO connection
+ */
+export const useDeleteSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSsoConnection>>,
+        TError,
+        DeleteSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteSsoConnectionMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {

@@ -454,6 +454,10 @@ sealed class FirstFactorStrategy {
         override val rawValue: String = "oauth_facebook"
     }
 
+    object Sso : FirstFactorStrategy() {
+        override val rawValue: String = "sso"
+    }
+
     /** A value this version does not know, as the API wrote it. Made by [of] only. */
     class Unknown internal constructor(override val rawValue: String) : FirstFactorStrategy() {
         override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
@@ -478,6 +482,7 @@ sealed class FirstFactorStrategy {
                 OauthLinkedin,
                 OauthX,
                 OauthFacebook,
+                Sso,
             )
         }
 
@@ -496,6 +501,7 @@ sealed class FirstFactorStrategy {
             "oauth_linkedin" -> OauthLinkedin
             "oauth_x" -> OauthX
             "oauth_facebook" -> OauthFacebook
+            "sso" -> Sso
             else -> Unknown(rawValue)
         }
     }

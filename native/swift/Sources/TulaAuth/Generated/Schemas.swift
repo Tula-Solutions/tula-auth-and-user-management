@@ -1222,6 +1222,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
     case oauthLinkedin
     case oauthX
     case oauthFacebook
+    case sso
     /// A value this version does not know, as the API wrote it.
     case unknown(String)
 
@@ -1240,6 +1241,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         .oauthLinkedin,
         .oauthX,
         .oauthFacebook,
+        .sso,
     ]
 
     /// The value for a string of the API: `unknown` for one this version does not know.
@@ -1258,6 +1260,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         case "oauth_linkedin": self = .oauthLinkedin
         case "oauth_x": self = .oauthX
         case "oauth_facebook": self = .oauthFacebook
+        case "sso": self = .sso
         default: self = .unknown(rawValue)
         }
     }
@@ -1278,6 +1281,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         case .oauthLinkedin: return "oauth_linkedin"
         case .oauthX: return "oauth_x"
         case .oauthFacebook: return "oauth_facebook"
+        case .sso: return "sso"
         case .unknown(let value): return value
         }
     }

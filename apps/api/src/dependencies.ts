@@ -163,6 +163,7 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
+  /** An organization's single sign-on connections, their domain bindings and identities (ADR 0067). */
   ssoConnections: SsoConnectionStore
   /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
   organizations: OrganizationStore

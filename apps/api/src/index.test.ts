@@ -314,6 +314,8 @@ describe('documentation routes', () => {
       '/v1/environments/{environmentId}/.well-known/assetlinks.json',
       '/v1/admin/native-apps',
       '/v1/admin/native-apps/{id}',
+      '/v1/admin/sso-connections',
+      '/v1/admin/sso-connections/{id}',
       '/v1/admin/sms/usage',
       '/v1/admin/message-preview',
       '/v1/agent/proposals',

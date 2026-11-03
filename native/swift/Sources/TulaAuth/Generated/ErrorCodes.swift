@@ -112,6 +112,18 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationDomainAddressMismatch
     case organizationDomainLimit
     case organizationSuggestionUnavailable
+    case ssoDisabled
+    case ssoConnectionNotFound
+    case ssoNameTaken
+    case ssoDomainTaken
+    case ssoDomainNotVerified
+    case ssoIssuerNotAllowed
+    case ssoConnectionInUse
+    case ssoInvalidTransition
+    case ssoUnavailable
+    case ssoProviderError
+    case ssoUserNotProvisioned
+    case ssoEmailDomainMismatch
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -236,6 +248,18 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationDomainAddressMismatch,
         .organizationDomainLimit,
         .organizationSuggestionUnavailable,
+        .ssoDisabled,
+        .ssoConnectionNotFound,
+        .ssoNameTaken,
+        .ssoDomainTaken,
+        .ssoDomainNotVerified,
+        .ssoIssuerNotAllowed,
+        .ssoConnectionInUse,
+        .ssoInvalidTransition,
+        .ssoUnavailable,
+        .ssoProviderError,
+        .ssoUserNotProvisioned,
+        .ssoEmailDomainMismatch,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -360,6 +384,18 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.domain_address_mismatch": self = .organizationDomainAddressMismatch
         case "organization.domain_limit": self = .organizationDomainLimit
         case "organization.suggestion_unavailable": self = .organizationSuggestionUnavailable
+        case "sso.disabled": self = .ssoDisabled
+        case "sso.connection_not_found": self = .ssoConnectionNotFound
+        case "sso.name_taken": self = .ssoNameTaken
+        case "sso.domain_taken": self = .ssoDomainTaken
+        case "sso.domain_not_verified": self = .ssoDomainNotVerified
+        case "sso.issuer_not_allowed": self = .ssoIssuerNotAllowed
+        case "sso.connection_in_use": self = .ssoConnectionInUse
+        case "sso.invalid_transition": self = .ssoInvalidTransition
+        case "sso.unavailable": self = .ssoUnavailable
+        case "sso.provider_error": self = .ssoProviderError
+        case "sso.user_not_provisioned": self = .ssoUserNotProvisioned
+        case "sso.email_domain_mismatch": self = .ssoEmailDomainMismatch
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -486,6 +522,18 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationDomainAddressMismatch: return "organization.domain_address_mismatch"
         case .organizationDomainLimit: return "organization.domain_limit"
         case .organizationSuggestionUnavailable: return "organization.suggestion_unavailable"
+        case .ssoDisabled: return "sso.disabled"
+        case .ssoConnectionNotFound: return "sso.connection_not_found"
+        case .ssoNameTaken: return "sso.name_taken"
+        case .ssoDomainTaken: return "sso.domain_taken"
+        case .ssoDomainNotVerified: return "sso.domain_not_verified"
+        case .ssoIssuerNotAllowed: return "sso.issuer_not_allowed"
+        case .ssoConnectionInUse: return "sso.connection_in_use"
+        case .ssoInvalidTransition: return "sso.invalid_transition"
+        case .ssoUnavailable: return "sso.unavailable"
+        case .ssoProviderError: return "sso.provider_error"
+        case .ssoUserNotProvisioned: return "sso.user_not_provisioned"
+        case .ssoEmailDomainMismatch: return "sso.email_domain_mismatch"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -851,6 +899,42 @@ public enum TulaErrorDefinitions {
     /// `organization.suggestion_unavailable`
     public static let organizationSuggestionUnavailable = TulaErrorDefinition(code: .organizationSuggestionUnavailable, status: 403, message: "You cannot join that organization.")
 
+    /// `sso.disabled`
+    public static let ssoDisabled = TulaErrorDefinition(code: .ssoDisabled, status: 403, message: "Single sign-on is not enabled for this environment.")
+
+    /// `sso.connection_not_found`
+    public static let ssoConnectionNotFound = TulaErrorDefinition(code: .ssoConnectionNotFound, status: 404, message: "No such single sign-on connection.")
+
+    /// `sso.name_taken`
+    public static let ssoNameTaken = TulaErrorDefinition(code: .ssoNameTaken, status: 409, message: "The organization already has a connection with that name.")
+
+    /// `sso.domain_taken`
+    public static let ssoDomainTaken = TulaErrorDefinition(code: .ssoDomainTaken, status: 409, message: "Another active connection already serves one of those domains.")
+
+    /// `sso.domain_not_verified`
+    public static let ssoDomainNotVerified = TulaErrorDefinition(code: .ssoDomainNotVerified, status: 422, message: "Every domain must be one of the organization's verified domains.")
+
+    /// `sso.issuer_not_allowed`
+    public static let ssoIssuerNotAllowed = TulaErrorDefinition(code: .ssoIssuerNotAllowed, status: 422, message: "The issuer is not an address the server may call.")
+
+    /// `sso.connection_in_use`
+    public static let ssoConnectionInUse = TulaErrorDefinition(code: .ssoConnectionInUse, status: 409, message: "The connection has signed users in; disable it instead.")
+
+    /// `sso.invalid_transition`
+    public static let ssoInvalidTransition = TulaErrorDefinition(code: .ssoInvalidTransition, status: 409, message: "A connection cannot move to that status from its current one.")
+
+    /// `sso.unavailable`
+    public static let ssoUnavailable = TulaErrorDefinition(code: .ssoUnavailable, status: 400, message: "Single sign-on is not available for that address.")
+
+    /// `sso.provider_error`
+    public static let ssoProviderError = TulaErrorDefinition(code: .ssoProviderError, status: 401, message: "The identity provider did not sign you in.")
+
+    /// `sso.user_not_provisioned`
+    public static let ssoUserNotProvisioned = TulaErrorDefinition(code: .ssoUserNotProvisioned, status: 403, message: "Your account has not been set up for this organization. Ask its administrator.")
+
+    /// `sso.email_domain_mismatch`
+    public static let ssoEmailDomainMismatch = TulaErrorDefinition(code: .ssoEmailDomainMismatch, status: 403, message: "Your email address is not on this connection's domains.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -998,6 +1082,18 @@ public enum TulaErrorDefinitions {
         organizationDomainAddressMismatch,
         organizationDomainLimit,
         organizationSuggestionUnavailable,
+        ssoDisabled,
+        ssoConnectionNotFound,
+        ssoNameTaken,
+        ssoDomainTaken,
+        ssoDomainNotVerified,
+        ssoIssuerNotAllowed,
+        ssoConnectionInUse,
+        ssoInvalidTransition,
+        ssoUnavailable,
+        ssoProviderError,
+        ssoUserNotProvisioned,
+        ssoEmailDomainMismatch,
         rateLimited,
         requestMalformed,
         requestTooLarge,

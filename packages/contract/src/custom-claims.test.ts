@@ -16,6 +16,7 @@ import {
   RESERVED_CLAIM_NAMES,
   readCustomClaims,
   readOrganizationClaims,
+  SSO_CONNECTION_CLAIM,
 } from './custom-claims'
 import {
   BUILT_IN_ROLES,
@@ -225,14 +226,16 @@ describe('checking claims a source outside the settings hands over', () => {
 describe('the organization claims (ADR 0065)', () => {
   const ID = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
 
-  test.each([ORGANIZATION_ID_CLAIM, ORGANIZATION_ROLE_CLAIM, ORGANIZATION_PERMISSIONS_CLAIM])(
-    '%s is a top-level name no custom claim, template or hook may set',
-    (name) => {
-      expect(RESERVED_CLAIM_NAMES as readonly string[]).toContain(name)
-      expect(isCustomClaimKey(name)).toBe(false)
-      expect(checkCustomClaims({ [name]: 'x' })).toEqual({ problem: 'invalid' })
-    }
-  )
+  test.each([
+    ORGANIZATION_ID_CLAIM,
+    ORGANIZATION_ROLE_CLAIM,
+    ORGANIZATION_PERMISSIONS_CLAIM,
+    SSO_CONNECTION_CLAIM,
+  ])('%s is a top-level name no custom claim, template or hook may set', (name) => {
+    expect(RESERVED_CLAIM_NAMES as readonly string[]).toContain(name)
+    expect(isCustomClaimKey(name)).toBe(false)
+    expect(checkCustomClaims({ [name]: 'x' })).toEqual({ problem: 'invalid' })
+  })
 
   test('are named org_id, org_role and org_perms', () => {
     expect([
