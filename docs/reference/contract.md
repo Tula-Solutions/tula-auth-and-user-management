@@ -5038,6 +5038,16 @@ How many domains one connection can be bound to.
 const MAX_SSO_CONNECTION_DOMAINS: 20
 ```
 
+### `MAX_SSO_GROUP_ROLES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many IdP groups one organization can map to roles.
+
+```ts
+const MAX_SSO_GROUP_ROLES: 100
+```
+
 ### `MAX_STEP_UP_AFTER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -7972,6 +7982,21 @@ How many prefixes one answer of it lists at most.
 const SMS_USAGE_MAX_PREFIXES: 100
 ```
 
+### `SSO_ATTRIBUTE_DEFAULTS`
+
+_constant_, defined in `packages/contract/src/sso-attributes.ts`
+
+The default names per protocol and identity provider. An IdP lets its administrator name
+SAML attributes freely, so these are the names its own documentation suggests; a connection
+overrides any of them.
+
+```ts
+const SSO_ATTRIBUTE_DEFAULTS: Record<
+  SsoProtocol,
+  Record<SsoIdpPreset, SsoAttributeNames>
+>
+```
+
 ### `SSO_CONNECTION_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -7989,7 +8014,7 @@ _constant_, defined in `packages/contract/src/sso.ts`
 The fields of a connection an update can change; the event names them, never a value.
 
 ```ts
-const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "saml", "defaultRole", "domains", "status"]
+const SSO_CONNECTION_FIELDS
 ```
 
 ### `SSO_CONNECTION_STATUSES`
@@ -8007,6 +8032,16 @@ const SSO_CONNECTION_STATUSES: readonly ["draft", "active", "disabled"]
 
 ```ts
 const status: SsoConnectionStatus = SSO_CONNECTION_STATUSES[0] // 'draft'
+```
+
+### `SSO_IDP_PRESETS`
+
+_constant_, defined in `packages/contract/src/sso-attributes.ts`
+
+The identity providers whose default attribute names are built in.
+
+```ts
+const SSO_IDP_PRESETS: readonly ["okta", "entra", "google_workspace", "jumpcloud", "onelogin", "ping", "generic"]
 ```
 
 ### `SSO_MANAGE_PERMISSION`
@@ -8974,6 +9009,47 @@ Counts only. No phone number, and nothing about who asked.
 const SmsUsageSchema
 ```
 
+### `SsoAttributeMapping`
+
+_interface_, defined in `packages/contract/src/sso-attributes.ts`
+
+The names an operator can override; each is one attribute or claim name.
+
+```ts
+export interface SsoAttributeMapping {
+  idp?: SsoIdpPreset
+  email?: string
+  firstName?: string
+  lastName?: string
+  groups?: string
+}
+```
+
+### `SsoAttributeMappingSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+Which attribute or claim carries each field; one left out uses the IdP preset's default.
+
+```ts
+const SsoAttributeMappingSchema
+```
+
+### `SsoAttributeNames`
+
+_interface_, defined in `packages/contract/src/sso-attributes.ts`
+
+The attribute or claim names read for each field, first one present wins.
+
+```ts
+export interface SsoAttributeNames {
+  email: string[]
+  firstName: string[]
+  lastName: string[]
+  groups: string[]
+}
+```
+
 ### `SsoConnection`
 
 _type_, defined in `packages/contract/src/sso-connection.ts`
@@ -9032,6 +9108,37 @@ One of {@link SSO_CONNECTION_STATUSES}.
 
 ```ts
 export type SsoConnectionStatus = (typeof SSO_CONNECTION_STATUSES)[number]
+```
+
+### `SsoGroupRoles`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The group to role mapping of an organization.
+
+```ts
+export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
+```
+
+### `SsoGroupRolesSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+An organization's IdP group to role mapping. The order is the precedence: a user in several
+mapped groups gets the role of the first of their groups in this list (ADR 0067).
+
+```ts
+const SsoGroupRolesSchema
+```
+
+### `SsoIdpPreset`
+
+_type_, defined in `packages/contract/src/sso-attributes.ts`
+
+One of {@link SSO_IDP_PRESETS}; `generic` is "generic SAML" or "generic OIDC" by protocol.
+
+```ts
+export type SsoIdpPreset = (typeof SSO_IDP_PRESETS)[number]
 ```
 
 ### `SsoProtocol`
@@ -10782,6 +10889,27 @@ export function durationToMs(duration: string): number
 ```ts
 durationToMs('7d') // 604800000
 ```
+
+### `effectiveAttributeNames`
+
+_function_, defined in `packages/contract/src/sso-attributes.ts`
+
+The names a connection reads: its preset's defaults (the protocol's generic ones when it has
+none), each replaced by the connection's own override.
+
+```ts
+export function effectiveAttributeNames(
+  protocol: SsoProtocol,
+  mapping: SsoAttributeMapping | null
+): SsoAttributeNames
+```
+
+**Parameters**
+
+- `protocol`: The connection's protocol.
+- `mapping`: The connection's mapping, or `null`.
+
+**Returns** The names to read for each field.
 
 ### `emailTemplateParagraphs`
 

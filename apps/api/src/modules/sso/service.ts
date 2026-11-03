@@ -1,5 +1,5 @@
 import { deflateRawSync } from 'node:zlib'
-import type { SessionClient } from '@tula-tech/contract'
+import { effectiveAttributeNames, type SessionClient } from '@tula-tech/contract'
 import {
   createLocalJWKSet,
   errors,
@@ -9,7 +9,7 @@ import {
   jwtVerify,
 } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError } from '~/exceptions'
+import { AuthError, ConflictError } from '~/exceptions'
 import { cleanOrigin, type Origin } from '~/lib/actor'
 import { timingSafeEqual } from '~/lib/crypto'
 import { parseEmail } from '~/lib/email'
@@ -48,7 +48,16 @@ export interface SsoProfile {
   emailVerified: boolean
   givenName?: string
   familyName?: string
+  /**
+   * The values of the connection's groups attribute or claim, capped. Directory data: read only
+   * to choose a role, and never logged, audited or put in an event.
+   */
+  groups?: string[]
 }
+
+/** How many group values and how long each one a profile keeps. */
+const MAX_PROFILE_GROUPS = 200
+const MAX_GROUP_LENGTH = 256
 
 /**
  * The connection the domain of an identifier is bound to, if single sign-on is on.
@@ -303,7 +312,7 @@ export async function exchange(
   if (payload.azp !== undefined && payload.azp !== connection.clientId) {
     throw refused('id_token', 'azp')
   }
-  return profileOf(payload)
+  return profileOf(payload, connection)
 }
 
 /**
@@ -334,24 +343,6 @@ export function samlRedirectUrl(
   url.searchParams.set('RelayState', params.relayState)
   return url.toString()
 }
-
-const EMAIL_ATTRIBUTES = [
-  'email',
-  'mail',
-  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-  'urn:oid:0.9.2342.19200300.100.1.3',
-]
-const GIVEN_ATTRIBUTES = [
-  'givenName',
-  'firstName',
-  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
-]
-const FAMILY_ATTRIBUTES = [
-  'sn',
-  'surname',
-  'lastName',
-  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname',
-]
 
 /**
  * Check a SAML response with the one verifier (`lib/saml-verifier.ts`): every refusal becomes
@@ -393,8 +384,9 @@ export async function verifySaml(
     throw refused('saml', verdict.reason)
   }
   const { subject, attributes } = verdict.assertion
-  const first = (names: string[]) => {
-    for (const name of names) {
+  const names = effectiveAttributeNames(connection.protocol, connection.attributeMapping)
+  const first = (candidates: string[]) => {
+    for (const name of candidates) {
       const value = attributes[name]?.[0]?.trim()
       if (value) {
         return value
@@ -402,31 +394,55 @@ export async function verifySaml(
     }
     return undefined
   }
-  const email = first(EMAIL_ATTRIBUTES) ?? (subject.includes('@') ? subject : undefined)
-  const given = first(GIVEN_ATTRIBUTES)?.slice(0, 100)
-  const family = first(FAMILY_ATTRIBUTES)?.slice(0, 100)
+  const email = first(names.email) ?? (subject.includes('@') ? subject : undefined)
+  const given = first(names.firstName)?.slice(0, 100)
+  const family = first(names.lastName)?.slice(0, 100)
+  const groups = groupValues(names.groups.flatMap((name) => attributes[name] ?? []))
   return {
     subject,
     email: email ?? null,
     emailVerified: true,
     ...(given !== undefined && { givenName: given }),
     ...(family !== undefined && { familyName: family }),
+    ...(groups.length > 0 && { groups }),
   }
 }
 
-function profileOf(payload: JWTPayload): SsoProfile {
+function profileOf(payload: JWTPayload, connection: SsoConnectionRecord): SsoProfile {
+  const names = effectiveAttributeNames(connection.protocol, connection.attributeMapping)
+  const claim = (candidates: string[]) => {
+    for (const key of candidates) {
+      if (payload[key] !== undefined) {
+        return payload[key]
+      }
+    }
+    return undefined
+  }
   const name = (value: unknown) =>
     typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, 100) : undefined
-  const givenName = name(payload.given_name)
-  const familyName = name(payload.family_name)
+  const givenName = name(claim(names.firstName))
+  const familyName = name(claim(names.lastName))
+  const email = claim(names.email)
+  const raw = claim(names.groups)
+  const groups = groupValues(typeof raw === 'string' ? [raw] : Array.isArray(raw) ? raw : [])
   return {
     subject: payload.sub as string,
-    email: typeof payload.email === 'string' ? payload.email : null,
+    email: typeof email === 'string' ? email : null,
     // The boolean only: a string "true" is not the provider's word.
     emailVerified: payload.email_verified === true,
     ...(givenName !== undefined && { givenName }),
     ...(familyName !== undefined && { familyName }),
+    ...(groups.length > 0 && { groups }),
   }
+}
+
+/** The usable group values: non-empty strings, trimmed, bounded in number and length. */
+function groupValues(values: unknown[]): string[] {
+  return values
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim().slice(0, MAX_GROUP_LENGTH))
+    .filter((v) => v !== '')
+    .slice(0, MAX_PROFILE_GROUPS)
 }
 
 function refused(step: string, failure: string): AuthError {
@@ -517,7 +533,7 @@ export async function resolveAccount(
     )
     const knownUser = known && (await deps.users.findById(environmentId, known.userId))
     if (knownUser) {
-      await ensureMember(deps, tenant, connection, knownUser.id, origin)
+      await ensureMember(deps, tenant, connection, knownUser.id, profile, origin)
       return { user: knownUser, created: false }
     }
     const parsed = profile.email === null ? null : parseEmail(profile.email)
@@ -560,7 +576,7 @@ export async function resolveAccount(
         })
       ))
     ) {
-      await ensureMember(deps, tenant, connection, user.id, origin)
+      await ensureMember(deps, tenant, connection, user.id, profile, origin)
       return { user, created }
     }
     // Another callback for the same identity, or the same address, got there first: row 1
@@ -612,26 +628,81 @@ async function provision(
   return created ? deps.users.findById(tenant.environmentId, userId) : null
 }
 
-/** Make the user a member of the connection's organization, unless they are one already. */
+/**
+ * The role the organization's group mapping gives a user: the first mapping, in the order the
+ * operator saved them, whose group is among the user's groups (the precedence rule of
+ * ADR 0067). `null` when the organization maps no group at all; the connection's default role
+ * for a user in none of the mapped groups.
+ */
+export function roleForGroups(
+  mappings: { group: string; role: string }[],
+  groups: string[] | undefined,
+  defaultRole: string
+): string | null {
+  if (mappings.length === 0) {
+    return null
+  }
+  const held = new Set(groups ?? [])
+  return mappings.find((one) => held.has(one.group))?.role ?? defaultRole
+}
+
+/**
+ * Make the user a member of the connection's organization, and, where the organization maps
+ * groups to roles, set the role from the groups they signed in with (ADR 0067). Without a
+ * mapping a member keeps the role they have.
+ *
+ * A role change goes through the organization service, so the last manager of an organization
+ * is never demoted: that change is refused, the sign-in goes on with the old role, and the
+ * reason (a fixed code, no group) is logged.
+ */
 async function ensureMember(
   deps: AccountDeps,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   connection: SsoConnectionRecord,
   userId: string,
+  profile: SsoProfile,
   origin: Partial<Origin>
 ): Promise<void> {
+  const mapped = roleForGroups(
+    await deps.ssoConnections.listGroupRoles(tenant.environmentId, connection.organizationId),
+    profile.groups,
+    connection.defaultRole
+  )
+  const actor = { type: 'user' as const, id: userId, ...cleanOrigin(origin) }
   try {
     await Organizations.addMember(
       deps,
       tenant,
       connection.organizationId,
-      { userId, role: connection.defaultRole },
-      { type: 'user', id: userId, ...cleanOrigin(origin) }
+      { userId, role: mapped ?? connection.defaultRole },
+      actor
     )
+    return
   } catch (error) {
-    // A member keeps the role they have: the connection's default is for a new membership.
     if (!(error instanceof AuthError && error.code === 'organization.member_exists')) {
       throw error
     }
+  }
+  if (mapped === null) {
+    return
+  }
+  try {
+    await Organizations.changeMemberRole(
+      deps,
+      tenant,
+      connection.organizationId,
+      userId,
+      { role: mapped },
+      actor
+    )
+  } catch (error) {
+    if (!(error instanceof AuthError || error instanceof ConflictError)) {
+      throw error
+    }
+    logger.warn('an SSO sign-in kept the member role', {
+      environmentId: tenant.environmentId,
+      connectionId: connection.id,
+      reason: error instanceof AuthError ? error.code : 'conflict',
+    })
   }
 }

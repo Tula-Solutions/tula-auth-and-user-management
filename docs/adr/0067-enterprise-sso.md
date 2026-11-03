@@ -69,6 +69,28 @@ and passes the same table of refusals.
 - Every failure is one `sso.provider_error` to the browser and the fixed reason in the log.
 - SP metadata is public per connection and built by `buildSpMetadata`; the SP entity id is its URL.
 
+## Attribute mapping and groups mapped to roles (TULA-144)
+
+- **Attributes.** A connection's `attributeMapping` names the attribute (SAML) or claim (OIDC) that
+  carries the email, first name, last name and groups. Left out, the preset of its `idp` (`okta`,
+  `entra`, `google_workspace`, `jumpcloud`, `onelogin`, `ping`, `generic`) applies, per protocol
+  (`SSO_ATTRIBUTE_DEFAULTS` in the contract); one named field replaces that field's names only.
+- **Groups to roles are held per organization**, not per connection (`organization_group_roles`), so
+  that SCIM Groups (TULA-150) read the same mapping. The admin routes are
+  `GET|PUT /v1/admin/sso-connections/:id/group-roles`; a save replaces the whole list, refuses a role
+  that does not exist (`organization.role_unknown`) and a group named twice.
+- **Precedence: the saved order.** A user in several mapped groups gets the role of the first mapped
+  group, in the order the list was saved, that is among their groups. A user in none of the mapped
+  groups gets the connection's `defaultRole`. An organization with no mapping at all leaves a member's
+  role alone (the default role is given only when the membership is created).
+- **The role is set at every sign-in**, through the organization service (`changeMemberRole`), so the
+  last-manager rule holds: a demotion of the only manager is refused, the sign-in still succeeds with
+  the old role, and a warning with the fixed reason (`organization.last_manager`) is logged.
+- **A group name is directory data.** It lives in the attempt state until the ticket is exchanged and
+  in the mapping table; it is never in an audit entry, an event payload or a log line. Saving the
+  mapping is the existing `sso_connection.updated` event with `changed: ['groupRoles']`, which says
+  that it changed and not what it holds. At most 200 values of 256 characters are read from a profile.
+
 ## Amendments
 
 - [ADR 0065](0065-organizations.md): an organization may own SSO connections (the tickets

@@ -576,6 +576,7 @@ const StateSchema = z.object({
           emailVerified: z.boolean(),
           givenName: z.string().optional(),
           familyName: z.string().optional(),
+          groups: z.array(z.string().max(256)).max(200).optional(),
         })
         .optional(),
     })
@@ -2536,7 +2537,7 @@ export async function completeExternalSignIn(
   attempt: FlowAttemptRecord,
   state: State,
   provider: OAuthProvider | { connection: SsoConnectionRecord },
-  profile: OAuthProfile,
+  profile: OAuthProfile & { groups?: string[] },
   context: ClientContext,
   method: string
 ): Promise<FlowResult> {

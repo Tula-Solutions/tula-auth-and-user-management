@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   type AccessTokenClaims,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -6,6 +6,7 @@ import {
 } from '@tula-tech/contract'
 import { decodeJwt, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as Organizations from '~/modules/organization/service'
@@ -557,5 +558,80 @@ describe('the outbound guard', () => {
     )
     expect(idp.jwksFetches).toBe(before)
     expect(deps.outbound.asked).toContain('idp.internal.test')
+  })
+})
+
+describe('IdP groups mapped to organization roles', () => {
+  const roleOf = async (userId: string) =>
+    (await deps.organizations.findMembership(TENANT.environmentId, organizationId, userId))?.roleKey
+
+  const mapGroups = (mappings: { group: string; role: string }[]) =>
+    SsoConnections.putGroupRoles(deps, TENANT, connectionId, { mappings }, TEST_ACTOR)
+
+  test('a user in two mapped groups gets the role of the first in the saved order', async () => {
+    await mapGroups([
+      { group: 'eng', role: 'member' },
+      { group: 'ops', role: 'admin' },
+    ])
+    idp.claims = { groups: ['ops', 'eng'] }
+    expect(await roleOf((await signedIn()).step.userId)).toBe('member')
+    await mapGroups([
+      { group: 'ops', role: 'admin' },
+      { group: 'eng', role: 'member' },
+    ])
+    expect(await roleOf((await signedIn()).step.userId)).toBe('admin')
+  })
+
+  test('a user in no mapped group gets the connection default role', async () => {
+    await mapGroups([{ group: 'ops', role: 'admin' }])
+    idp.claims = { groups: ['sales'] }
+    expect(await roleOf((await signedIn()).step.userId)).toBe('member')
+  })
+
+  test('a mapping to a role that does not exist, or a group named twice, is refused on save', async () => {
+    await expect(mapGroups([{ group: 'ops', role: 'ghost' }])).rejects.toMatchObject({
+      code: 'organization.role_unknown',
+    })
+    await expect(
+      mapGroups([
+        { group: 'ops', role: 'admin' },
+        { group: 'ops', role: 'member' },
+      ])
+    ).rejects.toMatchObject({ code: 'request.malformed' })
+  })
+
+  test('the role follows the group across two sign-ins', async () => {
+    await mapGroups([{ group: 'ops', role: 'admin' }])
+    idp.claims = { sub: 'subject-bob', email: `bob@${DOMAIN}`, groups: ['ops'] }
+    await signedIn(`bob@${DOMAIN}`)
+    idp.claims = { groups: ['ops'] }
+    const first = await signedIn()
+    expect(await roleOf(first.step.userId)).toBe('admin')
+    idp.claims = { groups: [] }
+    expect(await roleOf((await signedIn()).step.userId)).toBe('member')
+  })
+
+  test('demoting the last manager is refused, the sign-in succeeds with the old role and the reason is logged', async () => {
+    await mapGroups([{ group: 'ops', role: 'admin' }])
+    idp.claims = { groups: ['ops'] }
+    const first = await signedIn()
+    expect(await roleOf(first.step.userId)).toBe('admin')
+    const warn = spyOn(logger, 'warn')
+    idp.claims = { groups: [] }
+    const second = await signedIn()
+    expect(second.step.status).toBe('complete')
+    expect(await roleOf(first.step.userId)).toBe('admin')
+    expect(warn).toHaveBeenCalledWith(
+      'an SSO sign-in kept the member role',
+      expect.objectContaining({ reason: 'organization.last_manager' })
+    )
+    warn.mockRestore()
+  })
+
+  test('no group name reaches an audit entry', async () => {
+    await mapGroups([{ group: 'secret-group-name', role: 'admin' }])
+    idp.claims = { groups: ['secret-group-name'] }
+    await signedIn()
+    expect(JSON.stringify(deps.activityLog.entries)).not.toContain('secret-group-name')
   })
 })

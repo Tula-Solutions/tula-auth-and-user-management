@@ -1,5 +1,6 @@
 import {
   type Database,
+  organizationGroupRoles,
   ssoConnectionDomains,
   ssoConnections,
   ssoIdentities,
@@ -10,6 +11,7 @@ import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  GroupRole,
   SsoConnectionChanges,
   SsoConnectionRecord,
   SsoConnectionStore,
@@ -65,6 +67,7 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
       )
     return rows.map((row) => ({
       ...row,
+      attributeMapping: row.attributeMapping as SsoConnectionRecord['attributeMapping'],
       domains: domains
         .filter((one) => one.connectionId === row.id)
         .map((one) => one.domain)
@@ -218,6 +221,58 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
       }
       throw error
     }
+  }
+
+  /** @inheritdoc */
+  async listGroupRoles(environmentId: string, organizationId: string): Promise<GroupRole[]> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ group: organizationGroupRoles.groupName, role: organizationGroupRoles.roleKey })
+        .from(organizationGroupRoles)
+        .where(
+          and(
+            eq(organizationGroupRoles.environmentId, environmentId),
+            eq(organizationGroupRoles.organizationId, organizationId)
+          )
+        )
+        .orderBy(asc(organizationGroupRoles.position))
+    )
+    return rows
+  }
+
+  /** @inheritdoc */
+  async replaceGroupRoles(
+    record: {
+      projectId: string
+      environmentId: string
+      organizationId: string
+      mappings: GroupRole[]
+    },
+    at: Date,
+    recorded: Recorded
+  ): Promise<void> {
+    const activity = activityOf(recorded)
+    await withTenant(this.db, record.environmentId, async (tx) => {
+      await tx
+        .delete(organizationGroupRoles)
+        .where(eq(organizationGroupRoles.organizationId, record.organizationId))
+      if (record.mappings.length > 0) {
+        await tx.insert(organizationGroupRoles).values(
+          record.mappings.map((one, position) => ({
+            id: Bun.randomUUIDv7(),
+            projectId: record.projectId,
+            environmentId: record.environmentId,
+            organizationId: record.organizationId,
+            groupName: one.group,
+            roleKey: one.role,
+            position,
+            createdAt: at,
+            updatedAt: at,
+          }))
+        )
+      }
+      await recordActivity(tx, activity ? [activity] : [])
+    })
   }
 
   /** @inheritdoc */

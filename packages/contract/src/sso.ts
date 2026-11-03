@@ -32,6 +32,8 @@ export const SSO_CONNECTION_FIELDS = [
   'defaultRole',
   'domains',
   'status',
+  'attributeMapping',
+  'groupRoles',
 ] as const
 
 /** One of {@link SSO_CONNECTION_FIELDS}. */
@@ -42,3 +44,6 @@ export const MAX_SSO_CONNECTION_DOMAINS = 20
 
 /** How many signing certificates a SAML connection holds: the current one and the next. */
 export const MAX_SAML_CERTIFICATES = 2
+
+/** How many IdP groups one organization can map to roles. */
+export const MAX_SSO_GROUP_ROLES = 100

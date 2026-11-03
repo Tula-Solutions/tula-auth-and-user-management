@@ -4005,7 +4005,7 @@
           },
           "changed": {
             "minItems": 1,
-            "maxItems": 8,
+            "maxItems": 10,
             "type": "array",
             "items": {
               "type": "string",
@@ -4017,7 +4017,9 @@
                 "saml",
                 "defaultRole",
                 "domains",
-                "status"
+                "status",
+                "attributeMapping",
+                "groupRoles"
               ]
             }
           },
@@ -14476,6 +14478,44 @@
           "spMetadataUrl"
         ]
       },
+      "SsoAttributeMapping": {
+        "type": "object",
+        "properties": {
+          "idp": {
+            "type": "string",
+            "enum": [
+              "okta",
+              "entra",
+              "google_workspace",
+              "jumpcloud",
+              "onelogin",
+              "ping",
+              "generic"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "firstName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "groups": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false
+      },
       "SsoConnection": {
         "type": "object",
         "properties": {
@@ -14526,6 +14566,16 @@
               }
             ]
           },
+          "attributeMapping": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SsoAttributeMapping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "defaultRole": {
             "type": "string"
           },
@@ -14556,6 +14606,7 @@
           "clientId",
           "clientSecretSet",
           "saml",
+          "attributeMapping",
           "defaultRole",
           "domains",
           "createdAt",
@@ -14651,6 +14702,9 @@
           "saml": {
             "$ref": "#/components/schemas/SamlSettingsInput"
           },
+          "attributeMapping": {
+            "$ref": "#/components/schemas/SsoAttributeMapping"
+          },
           "defaultRole": {
             "$ref": "#/components/schemas/OrganizationRoleKey"
           },
@@ -14666,6 +14720,37 @@
         "required": [
           "organizationId",
           "name"
+        ],
+        "additionalProperties": false
+      },
+      "SsoGroupRoles": {
+        "type": "object",
+        "properties": {
+          "mappings": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "group": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "role": {
+                  "$ref": "#/components/schemas/OrganizationRoleKey"
+                }
+              },
+              "required": [
+                "group",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "mappings"
         ],
         "additionalProperties": false
       },
@@ -14694,6 +14779,9 @@
           },
           "saml": {
             "$ref": "#/components/schemas/SamlSettingsInput"
+          },
+          "attributeMapping": {
+            "$ref": "#/components/schemas/SsoAttributeMapping"
           },
           "defaultRole": {
             "$ref": "#/components/schemas/OrganizationRoleKey"
@@ -39643,6 +39731,271 @@
             "required": true
           }
         ]
+      }
+    },
+    "/v1/admin/sso-connections/{id}/group-roles": {
+      "get": {
+        "operationId": "getSsoGroupRoles",
+        "tags": [
+          "SSO connections"
+        ],
+        "summary": "Get an organization's IdP group to role mapping",
+        "description": "The mapping of the connection's organization, in precedence order: the first of a user's groups in this list decides their role. SCIM Groups use the same mapping.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          },
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoGroupRoles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      },
+      "put": {
+        "operationId": "replaceSsoGroupRoles",
+        "tags": [
+          "SSO connections"
+        ],
+        "summary": "Replace an organization's IdP group to role mapping",
+        "description": "Replaces the whole mapping. A role that does not exist is refused (`organization.role_unknown`); a group named twice is `request.malformed`. At each single sign-on the member's role is set from it, and a user in no mapped group gets the connection's `defaultRole`. The audit entry says only that the mapping changed.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mapping as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoGroupRoles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoGroupRoles"
+              }
+            }
+          }
+        }
       }
     },
     "/v1/admin/sso-connections/{id}/refresh-metadata": {

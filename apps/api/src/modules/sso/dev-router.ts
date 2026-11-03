@@ -81,6 +81,8 @@ const AuthorizeSchema = z.object({
   subject: z.string().min(1).max(200).optional(),
   /** Present: the token says `email_verified: false`. */
   unverified: z.string().optional(),
+  /** The groups claim, comma separated. */
+  groups: z.string().max(2048).optional(),
 })
 
 const GrantSchema = z.object({
@@ -91,6 +93,7 @@ const GrantSchema = z.object({
   email: z.string(),
   subject: z.string(),
   verified: z.boolean(),
+  groups: z.array(z.string()).optional(),
   expiresAt: z.number(),
 })
 
@@ -113,6 +116,7 @@ router.get('/authorize', async (c) => {
     email: asked.login_hint,
     subject: asked.subject ?? asked.login_hint.toLowerCase(),
     verified: asked.unverified === undefined,
+    ...(asked.groups !== undefined && { groups: asked.groups.split(',') }),
     expiresAt: deps.clock.now().getTime() + LIFETIME_MS,
   }
   const code = await deps.secretBox.seal(
@@ -155,6 +159,7 @@ router.post('/token', async (c) => {
     email: grant.email,
     email_verified: grant.verified,
     nonce: grant.nonce,
+    ...(grant.groups && { groups: grant.groups }),
   })
     .setProtectedHeader({ alg: 'RS256', kid: KEY_ID })
     .setIssuer(issuerOf(c.req.header('host')))

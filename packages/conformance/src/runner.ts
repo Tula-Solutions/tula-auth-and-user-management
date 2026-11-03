@@ -1022,6 +1022,9 @@ async function runSso(
   if (sso.subject !== undefined) {
     authorization.searchParams.set('subject', sso.subject)
   }
+  if (sso.groups !== undefined) {
+    authorization.searchParams.set('groups', sso.groups)
+  }
   if (sso.unverified) {
     authorization.searchParams.set('unverified', '1')
   }

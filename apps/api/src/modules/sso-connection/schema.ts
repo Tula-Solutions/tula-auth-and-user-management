@@ -5,6 +5,7 @@ export {
   SsoConnectionListQuerySchema,
   SsoConnectionListSchema,
   SsoConnectionSchema,
+  SsoGroupRolesSchema,
   UpdateSsoConnectionRequestSchema,
 } from '@tula-tech/contract'
 

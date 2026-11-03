@@ -753,6 +753,8 @@ export const SsoStepSchema = z
         email: z.string().optional(),
         /** The provider's id for the account. Derived from the address when left out. */
         subject: z.string().optional(),
+        /** OIDC only: the groups the ID token carries, separated by commas. */
+        groups: z.string().optional(),
         /** The provider reports the address with `email_verified: false`. */
         unverified: z.boolean().optional(),
         /** Variable that receives the ticket. The step fails when the callback sent an error. */

@@ -212,6 +212,7 @@ export interface Schemas {
     clientId?: string
     clientSecret?: string
     saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
     defaultRole?: Schemas['OrganizationRoleKey']
     domains?: Schemas['OrganizationDomainName'][]
   }
@@ -1725,6 +1726,13 @@ export interface Schemas {
     prefixes: Schemas['SmsPrefixUsage'][]
     truncated: boolean
   }
+  SsoAttributeMapping: {
+    idp?: 'okta' | 'entra' | 'google_workspace' | 'jumpcloud' | 'onelogin' | 'ping' | 'generic'
+    email?: string
+    firstName?: string
+    lastName?: string
+    groups?: string
+  }
   SsoConnection: {
     id: string
     organizationId: string
@@ -1735,6 +1743,7 @@ export interface Schemas {
     clientId: string
     clientSecretSet: boolean
     saml: Schemas['SamlConnection'] | null
+    attributeMapping: Schemas['SsoAttributeMapping'] | null
     defaultRole: string
     domains: string[]
     createdAt: string
@@ -1792,9 +1801,15 @@ export interface Schemas {
   }
   SsoConnectionUpdatedEventData: {
     protocol: 'oidc' | 'saml'
-    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'domains' | 'status')[]
+    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'domains' | 'status' | 'attributeMapping' | 'groupRoles')[]
     status: 'draft' | 'active' | 'disabled'
     weakened?: boolean
+  }
+  SsoGroupRoles: {
+    mappings: {
+      group: string
+      role: Schemas['OrganizationRoleKey']
+    }[]
   }
   StartOrganizationDomainRequest: {
     domain: Schemas['OrganizationDomainName']
@@ -1836,6 +1851,7 @@ export interface Schemas {
     clientId?: string
     clientSecret?: string
     saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
     defaultRole?: Schemas['OrganizationRoleKey']
     domains?: Schemas['OrganizationDomainName'][]
     status?: 'draft' | 'active' | 'disabled'
@@ -2513,6 +2529,8 @@ export interface Operations {
   getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
   /** Get an SSO connection (`GET /v1/admin/sso-connections/{id}`). */
   getSsoConnection: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnection'] }
+  /** Get an organization's IdP group to role mapping (`GET /v1/admin/sso-connections/{id}/group-roles`). */
+  getSsoGroupRoles: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoGroupRoles'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
@@ -2575,6 +2593,8 @@ export interface Operations {
   removeOrganizationMember: { params: { id: string; userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Replace the environment’s settings (`PUT /v1/admin/settings`). */
   replaceEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: { 'If-Match': string; 'x-tula-managed-by'?: string; 'x-tula-config-hash'?: string }; body: Schemas['EnvironmentSettingsInput']; response: Schemas['EnvironmentSettingsState'] }
+  /** Replace an organization's IdP group to role mapping (`PUT /v1/admin/sso-connections/{id}/group-roles`). */
+  replaceSsoGroupRoles: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SsoGroupRoles']; response: Schemas['SsoGroupRoles'] }
   /** Reset a user’s two-step verification (`DELETE /v1/admin/users/{userId}/factors`). */
   resetUserFactors: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Revoke an API key (`DELETE /v1/admin/api-keys/{id}`). */
@@ -2670,6 +2690,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getSession: { method: 'GET', path: '/v1/admin/sessions/{sessionId}' },
   getSmsUsage: { method: 'GET', path: '/v1/admin/sms/usage' },
   getSsoConnection: { method: 'GET', path: '/v1/admin/sso-connections/{id}' },
+  getSsoGroupRoles: { method: 'GET', path: '/v1/admin/sso-connections/{id}/group-roles' },
   getUser: { method: 'GET', path: '/v1/admin/users/{userId}' },
   getUserAuthentication: { method: 'GET', path: '/v1/admin/users/{userId}/authentication' },
   getWebhookDelivery: { method: 'GET', path: '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}' },
@@ -2701,6 +2722,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   removeOrganizationDomain: { method: 'DELETE', path: '/v1/admin/organizations/{id}/domains/{domainId}' },
   removeOrganizationMember: { method: 'DELETE', path: '/v1/admin/organizations/{id}/memberships/{userId}' },
   replaceEnvironmentSettings: { method: 'PUT', path: '/v1/admin/settings' },
+  replaceSsoGroupRoles: { method: 'PUT', path: '/v1/admin/sso-connections/{id}/group-roles' },
   resetUserFactors: { method: 'DELETE', path: '/v1/admin/users/{userId}/factors' },
   revokeApiKey: { method: 'DELETE', path: '/v1/admin/api-keys/{id}' },
   revokeOrganizationInvitation: { method: 'DELETE', path: '/v1/admin/organizations/{id}/invitations/{invitationId}' },

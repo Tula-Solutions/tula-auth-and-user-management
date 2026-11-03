@@ -318,6 +318,7 @@ describe('documentation routes', () => {
       '/v1/admin/native-apps/{id}',
       '/v1/admin/sso-connections',
       '/v1/admin/sso-connections/{id}',
+      '/v1/admin/sso-connections/{id}/group-roles',
       '/v1/admin/sso-connections/{id}/refresh-metadata',
       '/v1/sso/callback/{connectionId}',
       '/v1/environments/{environmentId}/sso/saml/{connectionId}/metadata',

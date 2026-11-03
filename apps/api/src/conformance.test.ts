@@ -57,6 +57,8 @@ describe('conformance scenarios, in process', () => {
       'sso saml sign-in',
       'sso saml replay refused',
       'email code sign-in',
+      'sso group roles follow the identity provider',
+      'sso group roles keep the last manager',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',

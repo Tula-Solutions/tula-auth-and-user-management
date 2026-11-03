@@ -13,6 +13,7 @@ import {
   SsoConnectionListQuerySchema,
   SsoConnectionListSchema,
   SsoConnectionSchema,
+  SsoGroupRolesSchema,
   UpdateSsoConnectionRequestSchema,
 } from './schema'
 
@@ -123,6 +124,70 @@ router.get(
     )
     return c.json(SsoConnectionSchema.parse(connection))
   }
+)
+
+router.get(
+  '/:id/group-roles',
+  describeRoute({
+    operationId: 'getSsoGroupRoles',
+    tags: ['SSO connections'],
+    summary: "Get an organization's IdP group to role mapping",
+    description:
+      "The mapping of the connection's organization, in precedence order: the first of a " +
+      "user's groups in this list decides their role. SCIM Groups use the same mapping.",
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The mapping.', content: json(SsoGroupRolesSchema) },
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', SsoConnectionIdParamSchema, validationHook),
+  async (c) =>
+    c.json(
+      SsoGroupRolesSchema.parse(
+        await SsoConnections.getGroupRoles(c.get('deps'), c.get('tenant'), c.req.valid('param').id)
+      )
+    )
+)
+
+router.put(
+  '/:id/group-roles',
+  describeRoute({
+    operationId: 'replaceSsoGroupRoles',
+    tags: ['SSO connections'],
+    summary: "Replace an organization's IdP group to role mapping",
+    description:
+      'Replaces the whole mapping. A role that does not exist is refused ' +
+      '(`organization.role_unknown`); a group named twice is `request.malformed`. At each ' +
+      "single sign-on the member's role is set from it, and a user in no mapped group gets " +
+      "the connection's `defaultRole`. The audit entry says only that the mapping changed.",
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The mapping as saved.', content: json(SsoGroupRolesSchema) },
+      413: openapi.responses[413],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', SsoConnectionIdParamSchema, validationHook),
+  validator('json', SsoGroupRolesSchema, validationHook),
+  async (c) =>
+    c.json(
+      SsoGroupRolesSchema.parse(
+        await SsoConnections.putGroupRoles(
+          c.get('deps'),
+          c.get('tenant'),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+          adminActor(c)
+        )
+      )
+    )
 )
 
 router.patch(

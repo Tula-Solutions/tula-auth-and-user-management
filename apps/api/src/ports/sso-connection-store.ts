@@ -1,3 +1,4 @@
+import type { SsoAttributeMapping } from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** Where a connection is in its life: only an `active` one signs anybody in (ADR 0067). */
@@ -37,6 +38,8 @@ export interface SsoConnectionRecord {
   clientId: string
   /** Sealed with the secret box; no route returns it. */
   clientSecretSealed: string
+  /** Which attributes or claims carry the profile, or `null` for the protocol's generic names. */
+  attributeMapping: SsoAttributeMapping | null
   /** The role key given to a user this connection provisions. */
   defaultRole: string
   /** The verified domains of the organization this connection is bound to, sorted. */
@@ -52,10 +55,17 @@ export interface SsoConnectionChanges {
   issuer?: string
   clientId?: string
   clientSecretSealed?: string
+  attributeMapping?: SsoAttributeMapping
   defaultRole?: string
   /** The whole new set of bound domains. */
   domains?: string[]
   status?: SsoConnectionStatus
+}
+
+/** One IdP group mapped to an organization role key. */
+export interface GroupRole {
+  group: string
+  role: string
 }
 
 /** Why an update wrote nothing. */
@@ -140,6 +150,31 @@ export interface SsoConnectionStore {
     id: string,
     activity: Recorded
   ): Promise<'deleted' | 'missing' | 'in_use'>
+
+  /**
+   * @param environmentId - The environment.
+   * @param organizationId - The organization.
+   * @returns Its group to role mapping in precedence order (first wins).
+   */
+  listGroupRoles(environmentId: string, organizationId: string): Promise<GroupRole[]>
+
+  /**
+   * Replace an organization's whole group to role mapping.
+   *
+   * @param record - Tenant, organization and the mappings in precedence order.
+   * @param at - When it is written.
+   * @param activity - Recorded in the same transaction.
+   */
+  replaceGroupRoles(
+    record: {
+      projectId: string
+      environmentId: string
+      organizationId: string
+      mappings: GroupRole[]
+    },
+    at: Date,
+    activity: Recorded
+  ): Promise<void>
 
   /**
    * @param environmentId - The environment.

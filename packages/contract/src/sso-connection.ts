@@ -4,9 +4,11 @@ import { OrganizationDomainNameSchema } from './organization-domain'
 import {
   MAX_SAML_CERTIFICATES,
   MAX_SSO_CONNECTION_DOMAINS,
+  MAX_SSO_GROUP_ROLES,
   SSO_CONNECTION_STATUSES,
   SSO_PROTOCOLS,
 } from './sso'
+import { SSO_IDP_PRESETS } from './sso-attributes'
 
 // The admin API's shapes for an enterprise connection (ADR 0067). The client secret is
 // accepted on create and update and never returned: the view says only that one is set.
@@ -51,6 +53,32 @@ export const SamlSettingsInputSchema = z
   })
   .meta({ ref: 'SamlSettingsInput' })
 
+/** Which attribute or claim carries each field; one left out uses the IdP preset's default. */
+export const SsoAttributeMappingSchema = z
+  .strictObject({
+    idp: z.enum(SSO_IDP_PRESETS).optional(),
+    email: z.string().trim().min(1).max(512).optional(),
+    firstName: z.string().trim().min(1).max(512).optional(),
+    lastName: z.string().trim().min(1).max(512).optional(),
+    groups: z.string().trim().min(1).max(512).optional(),
+  })
+  .meta({ ref: 'SsoAttributeMapping' })
+
+/**
+ * An organization's IdP group to role mapping. The order is the precedence: a user in several
+ * mapped groups gets the role of the first of their groups in this list (ADR 0067).
+ */
+export const SsoGroupRolesSchema = z
+  .strictObject({
+    mappings: z
+      .array(z.strictObject({ group: z.string().min(1).max(256), role: RoleKeySchema }))
+      .max(MAX_SSO_GROUP_ROLES),
+  })
+  .meta({ ref: 'SsoGroupRoles' })
+
+/** The group to role mapping of an organization. */
+export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
+
 /** The body that creates a connection, as a draft. An OIDC one takes `issuer`, `clientId` and `clientSecret`; a SAML one `saml`. */
 export const CreateSsoConnectionRequestSchema = z
   .strictObject({
@@ -61,6 +89,7 @@ export const CreateSsoConnectionRequestSchema = z
     clientId: z.string().min(1).max(512).optional(),
     clientSecret: z.string().min(1).max(4096).optional(),
     saml: SamlSettingsInputSchema.optional(),
+    attributeMapping: SsoAttributeMappingSchema.optional(),
     defaultRole: RoleKeySchema.default('member'),
     domains: Domains.default([]),
   })
@@ -74,6 +103,7 @@ export const UpdateSsoConnectionRequestSchema = z
     clientId: z.string().min(1).max(512),
     clientSecret: z.string().min(1).max(4096),
     saml: SamlSettingsInputSchema,
+    attributeMapping: SsoAttributeMappingSchema,
     defaultRole: RoleKeySchema,
     domains: Domains,
     status: z.enum(SSO_CONNECTION_STATUSES),
@@ -109,6 +139,7 @@ export const SsoConnectionSchema = z
     clientId: z.string(),
     clientSecretSet: z.boolean(),
     saml: SamlConnectionViewSchema.nullable(),
+    attributeMapping: SsoAttributeMappingSchema.nullable(),
     defaultRole: z.string(),
     domains: z.array(z.string()),
     createdAt: z.iso.datetime(),
