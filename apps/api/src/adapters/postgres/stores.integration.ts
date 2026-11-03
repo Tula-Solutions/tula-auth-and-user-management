@@ -4,13 +4,21 @@ import {
   environmentSettings,
   events,
   flowAttempts,
+  organizationGroupRoles,
   organizationMemberships,
   organizations,
   proposals,
   scimGroups,
+  scimTokens,
+  scimUsers,
+  setupLinks,
+  ssoConnectionDomains,
+  ssoConnections,
+  ssoIdentities,
   users,
   withTenant,
 } from '@tula-tech/db'
+
 import { and, eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
@@ -40,7 +48,9 @@ import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
+import { PostgresSetupLinkStore } from '~/adapters/postgres/setup-links'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import { PostgresSsoConnectionStore } from '~/adapters/postgres/sso-connections'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
@@ -48,6 +58,8 @@ import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoi
 import { describeProposalStore } from '~/adapters/proposal-store.suite'
 import { describeScimStore } from '~/adapters/scim-store.suite'
 import { describeSessionStore } from '~/adapters/session-store.suite'
+import { describeSetupLinkStore } from '~/adapters/setup-link-store.suite'
+import { describeSsoConnectionStore } from '~/adapters/sso-connection-store.suite'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 import { describeVerificationTokenStore } from '~/adapters/verification-token-store.suite'
 import { describeWebhookStores } from '~/adapters/webhook-store.suite'
@@ -457,6 +469,160 @@ describeProposalStore('Postgres on a real server', async () => {
         .reverse(),
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+/** An organization of a tenant, as a fixture. */
+async function seedOrganization(tenant: {
+  projectId: string
+  environmentId: string
+}): Promise<string> {
+  const id = Bun.randomUUIDv7()
+  await withTenant(db, tenant.environmentId, (tx) =>
+    tx.insert(organizations).values({
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      name: 'Acme',
+      slug: `acme-${id.slice(-8)}`,
+    })
+  )
+  return id
+}
+
+// Fresh tenants per test, as for the stores above. The SSO suite includes the group-to-role
+// mapping (`organization_group_roles`, TULA-144).
+describeSsoConnectionStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresSsoConnectionStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    organization: seedOrganization,
+    user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+describeSetupLinkStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresSetupLinkStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    organization: seedOrganization,
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+test('SSO, SCIM and setup-link tables on a real server: another environment’s rows are invisible and cannot be changed or deleted', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  const scope = { projectId: a.projectId, environmentId: a.environmentId }
+  const organizationId = await seedOrganization(a)
+  const userId = await a.user()
+  const connectionId = Bun.randomUUIDv7()
+  await withTenant(db, a.environmentId, async (tx) => {
+    await tx.insert(ssoConnections).values({
+      id: connectionId,
+      ...scope,
+      organizationId,
+      protocol: 'oidc',
+      saml: null,
+      name: 'Okta',
+      issuer: 'https://idp.example.com',
+      clientId: 'c',
+      clientSecretSealed: 's',
+      defaultRole: 'member',
+    })
+    await tx
+      .insert(ssoConnectionDomains)
+      .values({ id: Bun.randomUUIDv7(), ...scope, connectionId, domain: 'acme.test' })
+    await tx
+      .insert(ssoIdentities)
+      .values({ id: Bun.randomUUIDv7(), ...scope, connectionId, userId, subject: 'sub-1' })
+    await tx.insert(organizationGroupRoles).values({
+      id: Bun.randomUUIDv7(),
+      ...scope,
+      organizationId,
+      groupName: 'Engineers',
+      roleKey: 'member',
+      position: 1,
+    })
+    await tx.insert(scimTokens).values({
+      id: Bun.randomUUIDv7(),
+      ...scope,
+      organizationId,
+      name: 'Okta',
+      prefix: 'tula_scim_dev',
+      tokenHash: Bun.randomUUIDv7(),
+    })
+    await tx
+      .insert(scimUsers)
+      .values({ id: Bun.randomUUIDv7(), ...scope, organizationId, userId, externalId: 'ext-1' })
+    await tx.insert(setupLinks).values({
+      id: Bun.randomUUIDv7(),
+      ...scope,
+      organizationId,
+      name: 'SSO setup',
+      prefix: 'tula_setup_',
+      tokenHash: Bun.randomUUIDv7(),
+      expiresAt: new Date('2030-01-01T00:00:00Z'),
+      createdByType: 'admin',
+    })
+  })
+  const tables = [
+    ssoConnections,
+    ssoConnectionDomains,
+    ssoIdentities,
+    organizationGroupRoles,
+    scimTokens,
+    scimUsers,
+    setupLinks,
+  ] as const
+  for (const table of tables) {
+    // The owner of the rows sees one.
+    const mine = await withTenant(db, a.environmentId, (tx) =>
+      tx.select({ id: table.id }).from(table)
+    )
+    expect(mine).toHaveLength(1)
+    const [row] = mine
+    // The other environment sees none, and neither does a session with no tenant.
+    expect(
+      await withTenant(db, b.environmentId, (tx) => tx.select({ id: table.id }).from(table))
+    ).toEqual([])
+    expect(await db.select({ id: table.id }).from(table)).toEqual([])
+    // And its writes find no row to change or delete. The group-role mapping has no UPDATE
+    // grant at all (it is replaced, migration 0053), so only its delete is tried.
+    if (table !== organizationGroupRoles) {
+      expect(
+        await withTenant(db, b.environmentId, (tx) =>
+          tx
+            .update(table)
+            .set({ updatedAt: new Date() })
+            .where(eq(table.id, row?.id ?? ''))
+            .returning({ id: table.id })
+        )
+      ).toEqual([])
+    }
+    expect(
+      await withTenant(db, b.environmentId, (tx) =>
+        tx
+          .delete(table)
+          .where(eq(table.id, row?.id ?? ''))
+          .returning({ id: table.id })
+      )
+    ).toEqual([])
+  }
+  for (const table of tables) {
+    expect(
+      await withTenant(db, a.environmentId, (tx) => tx.select({ id: table.id }).from(table))
+    ).toHaveLength(1)
   }
 })
 

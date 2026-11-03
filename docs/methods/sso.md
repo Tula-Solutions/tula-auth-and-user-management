@@ -4,7 +4,9 @@ A company signs its people in through its own identity provider (Okta, Entra ID,
 any OpenID Connect provider). An operator registers one **connection** per organization; people whose
 email is on one of its domains are sent to the provider. The reasoning (the SAML and OIDC split, the
 matching table, why discovery is by domain) is in [ADR 0067](../adr/0067-enterprise-sso.md). This page
-covers OIDC first and SAML [below](#saml).
+covers OIDC first and SAML [below](#saml). The path through the whole feature (enforcement, break-glass,
+the setup portal, the test sign-in) is [Enterprise single sign-on: the guide](../enterprise-sso.md), and each provider has a
+page with the values to paste, from [Okta](../sso-providers/okta.md) to [Ping](../sso-providers/ping.md).
 
 ## Switch it on
 
