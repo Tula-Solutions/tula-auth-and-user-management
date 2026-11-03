@@ -647,8 +647,8 @@ const byRole: OrganizationCheck = { role: 'admin' }
 _function_, defined in `packages/react/src/components/organization-profile.tsx`
 
 Manage an organization: General (its details, rename, leave, delete), Members (roles,
-removal), Invitations (invite, revoke) and Domains (claim, verify with the emailed code, what
-a verified domain does). A tab is drawn only where the user's role holds its permission, and
+removal), Invitations (invite, revoke), Domains (claim, verify with the emailed code, what
+a verified domain does) and Single sign-on (connections, on/off, enforcement). A tab is drawn only where the user's role holds its permission, and
 the server checks every call again: a refusal because the role changed (or the membership
 ended) reads the user's organizations again, says the permissions changed, and a user who is
 no longer a member is told so.
@@ -2899,6 +2899,7 @@ export interface TulaLocalization {
     tabMembers: string
     tabInvitations: string
     tabDomains: string
+    tabSso: string
     /** A section this version of the components does not know. */
     unsupportedTitle: string
     unsupportedMessage: string
@@ -3007,6 +3008,41 @@ export interface TulaLocalization {
     domainRemoved: string
     /** `{domain}`. */
     domainModeChanged: string
+    ssoTitle: string
+    ssoIntro: string
+    ssoLoading: string
+    ssoEmpty: string
+    ssoNameLabel: string
+    ssoIssuerLabel: string
+    ssoClientIdLabel: string
+    ssoClientSecretLabel: string
+    ssoFieldRequired: string
+    ssoAdd: string
+    /** `{name}`. */
+    ssoAdded: string
+    /** `{name}`. */
+    ssoUpdated: string
+    /** `{name}`. */
+    ssoDeleted: string
+    ssoStatusDraft: string
+    ssoStatusActive: string
+    ssoStatusDisabled: string
+    ssoEnforcedBadge: string
+    ssoSecretSet: string
+    ssoNoSecret: string
+    /** `{name}`. */
+    ssoTurnOn: string
+    /** `{name}`. */
+    ssoTurnOff: string
+    /** `{name}`. */
+    ssoEnforce: string
+    /** `{name}`. */
+    ssoUnenforce: string
+    /** `{name}`. */
+    ssoDelete: string
+    /** `{name}`. */
+    ssoDeleteConfirm: string
+    ssoDeleteConfirmButton: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {

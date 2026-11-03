@@ -516,6 +516,7 @@ export interface TulaLocalization {
     tabMembers: string
     tabInvitations: string
     tabDomains: string
+    tabSso: string
     /** A section this version of the components does not know. */
     unsupportedTitle: string
     unsupportedMessage: string
@@ -624,6 +625,41 @@ export interface TulaLocalization {
     domainRemoved: string
     /** `{domain}`. */
     domainModeChanged: string
+    ssoTitle: string
+    ssoIntro: string
+    ssoLoading: string
+    ssoEmpty: string
+    ssoNameLabel: string
+    ssoIssuerLabel: string
+    ssoClientIdLabel: string
+    ssoClientSecretLabel: string
+    ssoFieldRequired: string
+    ssoAdd: string
+    /** `{name}`. */
+    ssoAdded: string
+    /** `{name}`. */
+    ssoUpdated: string
+    /** `{name}`. */
+    ssoDeleted: string
+    ssoStatusDraft: string
+    ssoStatusActive: string
+    ssoStatusDisabled: string
+    ssoEnforcedBadge: string
+    ssoSecretSet: string
+    ssoNoSecret: string
+    /** `{name}`. */
+    ssoTurnOn: string
+    /** `{name}`. */
+    ssoTurnOff: string
+    /** `{name}`. */
+    ssoEnforce: string
+    /** `{name}`. */
+    ssoUnenforce: string
+    /** `{name}`. */
+    ssoDelete: string
+    /** `{name}`. */
+    ssoDeleteConfirm: string
+    ssoDeleteConfirmButton: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -1131,6 +1167,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     tabMembers: 'Members',
     tabInvitations: 'Invitations',
     tabDomains: 'Domains',
+    tabSso: 'Single sign-on',
     unsupportedTitle: 'This section is not supported',
     unsupportedMessage:
       'This version of the app cannot show that part of the organization. Update the app, or go back to the general settings.',
@@ -1215,6 +1252,34 @@ export const EN_LOCALIZATION: TulaLocalization = {
     domainRemoveConfirmButton: 'Yes, remove',
     domainRemoved: '{domain} was removed.',
     domainModeChanged: '{domain} was updated.',
+    ssoTitle: 'Single sign-on',
+    ssoIntro:
+      'Let people sign in with your identity provider. A new connection is a draft and signs nobody in until you turn it on. The client secret is never shown again once saved.',
+    ssoLoading: 'Loading connections…',
+    ssoEmpty: 'No connections yet.',
+    ssoNameLabel: 'Name',
+    ssoIssuerLabel: 'Issuer',
+    ssoClientIdLabel: 'Client ID',
+    ssoClientSecretLabel: 'Client secret',
+    ssoFieldRequired: 'Fill in this field.',
+    ssoAdd: 'Add connection',
+    ssoAdded: '{name} was added as a draft.',
+    ssoUpdated: '{name} was updated.',
+    ssoDeleted: '{name} was deleted.',
+    ssoStatusDraft: 'Draft',
+    ssoStatusActive: 'On',
+    ssoStatusDisabled: 'Off',
+    ssoEnforcedBadge: 'Required',
+    ssoSecretSet: 'A client secret is saved.',
+    ssoNoSecret: 'No client secret is saved.',
+    ssoTurnOn: 'Turn on {name}',
+    ssoTurnOff: 'Turn off {name}',
+    ssoEnforce: 'Require {name}',
+    ssoUnenforce: 'Stop requiring {name}',
+    ssoDelete: 'Delete {name}',
+    ssoDeleteConfirm:
+      'Delete {name}? A connection that someone has signed in through cannot be deleted: turn it off instead.',
+    ssoDeleteConfirmButton: 'Yes, delete',
   },
   stepUp: {
     title: 'Confirm it is you',
