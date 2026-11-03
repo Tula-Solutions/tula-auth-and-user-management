@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "organization admin manages the organization's single sign-on",
-  "description": "A member who holds org:sys:sso:manage manages their own organization's SSO connections with their own session (ADR 0067): a member without it is refused, the admin creates a draft SAML connection from the provider's metadata, the same activation gate as the administrator's applies (sso.test_required until a test sign-in of the current settings has passed), they start that test and read its result, and then turn the connection on and off.",
+  "description": "A member who holds org:sys:sso:manage manages their own organization's SSO connections with their own session (ADR 0067): a member without it is refused, an administrator makes a draft SAML connection, the admin works on it, the same activation gate as the administrator's applies (sso.test_required until a test sign-in of the current settings has passed), they start that test and read its result, and then turn the connection on and off.",
   "needsSecretKey": true,
   "variables": {
     "adminEmail": {
@@ -330,6 +330,50 @@
       }
     },
     {
+      "name": "an administrator creates a SAML connection from the provider's metadata, as a draft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "protocol": "saml",
+          "name": "Mock SAML IdP",
+          "saml": {
+            "metadataXml": "{{samlMetadata}}"
+          },
+          "domains": ["s{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "protocol": "saml",
+          "name": "Mock SAML IdP",
+          "status": "draft",
+          "clientSecretSet": false,
+          "saml": {
+            "idpEntityId": "$any",
+            "ssoUrl": "$any",
+            "metadataUrl": null,
+            "certificates": "$any",
+            "spEntityId": "$any",
+            "acsUrl": "$any",
+            "spMetadataUrl": "$any"
+          },
+          "defaultRole": "member",
+          "domains": ["s{{suffix}}.example"],
+          "createdAt": "$any",
+          "updatedAt": "$any"
+        }
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
       "name": "a member without the permission cannot list the connections",
       "request": {
         "method": "GET",
@@ -344,7 +388,7 @@
       }
     },
     {
-      "name": "the organization admin lists none",
+      "name": "the organization admin lists the connection an administrator made",
       "request": {
         "method": "GET",
         "path": "/v1/client/me/organizations/{{orgId}}/sso-connections",
@@ -353,23 +397,29 @@
       "expect": {
         "status": 200,
         "body": {
-          "connections": []
+          "connections": [
+            {
+              "id": "{{connectionId}}",
+              "organizationId": "{{orgId}}",
+              "status": "draft",
+              "tested": false
+            }
+          ]
         }
       }
     },
     {
-      "name": "the organization admin creates a draft SAML connection",
+      "name": "the organization admin creates a second draft connection",
       "request": {
         "method": "POST",
         "path": "/v1/client/me/organizations/{{orgId}}/sso-connections",
         "accessToken": "{{adminToken}}",
         "body": {
           "protocol": "saml",
-          "name": "Mock SAML IdP",
+          "name": "Second",
           "saml": {
             "metadataXml": "{{samlMetadata}}"
-          },
-          "domains": ["s{{suffix}}.example"]
+          }
         }
       },
       "expect": {
@@ -383,26 +433,18 @@
         }
       },
       "capture": {
-        "connectionId": "id"
+        "secondId": "id"
       }
     },
     {
-      "name": "the organization admin lists it",
+      "name": "and deletes it",
       "request": {
-        "method": "GET",
-        "path": "/v1/client/me/organizations/{{orgId}}/sso-connections",
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}/sso-connections/{{secondId}}",
         "accessToken": "{{adminToken}}"
       },
       "expect": {
-        "status": 200,
-        "body": {
-          "connections": [
-            {
-              "organizationId": "{{orgId}}",
-              "status": "draft"
-            }
-          ]
-        }
+        "status": 204
       }
     },
     {
