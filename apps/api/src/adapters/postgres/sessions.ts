@@ -465,7 +465,7 @@ export class PostgresSessionStore implements SessionStore {
     at: Date,
     options: RevokeByUserOptions
   ): Promise<string[]> {
-    const { exceptSessionId, activity } = options
+    const { exceptSessionId, onlyIds, activity } = options
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .update(sessions)
@@ -475,7 +475,8 @@ export class PostgresSessionStore implements SessionStore {
             eq(sessions.environmentId, environmentId),
             eq(sessions.userId, userId),
             isNull(sessions.revokedAt),
-            exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined
+            exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined,
+            onlyIds ? inArray(sessions.id, onlyIds) : undefined
           )
         )
         .returning({ id: sessions.id })

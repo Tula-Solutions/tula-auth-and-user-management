@@ -371,6 +371,9 @@ test('organization settings: weakenings are asked about first, the rest saves', 
   )
   expect(after.settings.organizations.allowUserCreated).toBe(true)
 
+  // The first save's toast is still showing: wait it out, so the next assertion matches the toast
+  // of the second save alone.
+  await expect(page.getByText('Settings saved')).toHaveCount(0)
   // Lowering the cap is not a weakening.
   await page.getByLabel('Organizations one user may create').fill('2')
   await page.getByRole('button', { name: 'Save changes' }).click()

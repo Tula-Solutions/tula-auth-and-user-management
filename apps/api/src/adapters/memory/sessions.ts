@@ -283,14 +283,15 @@ export class MemorySessionStore implements SessionStore {
     at: Date,
     options: RevokeByUserOptions
   ): Promise<string[]> {
-    const { exceptSessionId, activity } = options
+    const { exceptSessionId, onlyIds, activity } = options
     const revoked: string[] = []
     for (const session of this.#sessions.values()) {
       if (
         session.environmentId === environmentId &&
         session.userId === userId &&
         session.revokedAt === null &&
-        session.id !== exceptSessionId
+        session.id !== exceptSessionId &&
+        (!onlyIds || onlyIds.includes(session.id))
       ) {
         session.revokedAt = at
         session.revokeReason = reason

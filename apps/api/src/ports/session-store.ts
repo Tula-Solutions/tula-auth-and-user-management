@@ -304,6 +304,8 @@ export function beganBefore(
 export interface RevokeByUserOptions {
   /** A session to leave signed in. */
   exceptSessionId?: string
+  /** Revoke only these sessions (a snapshot taken earlier), never one created since. */
+  onlyIds?: string[]
   /** Builds the activity for each revoked session; recorded in the same transaction. */
   activity: (sessionId: string) => Recorded
 }

@@ -4215,28 +4215,9 @@ export async function confirmFactorEnrolment(
       { backupCodes: codes }
     )
   } catch (error) {
-    try {
-      await deps.factors.removeForUser(
-        tenant.environmentId,
-        userId,
-        Audit.entry(deps, tenant, {
-          type: 'user.mfa_disabled',
-          actor: systemActor(context),
-          target: { type: 'user', id: userId },
-          data: { method: 'enrolment_incomplete' },
-        }),
-        // Only the factor this request confirmed: if the user was reset and enrolled again
-        // meanwhile, that factor is not this request's to remove.
-        factorId
-      )
-    } catch (undo) {
-      // Both failed: the factor is on and its codes were never shown. The user signs in with
-      // the authenticator and makes new codes, or an administrator resets them.
-      logger.warn('could not undo an enrolment whose attempt did not complete', {
-        environmentId: tenant.environmentId,
-        err: errorName(undo),
-      })
-    }
+    // Only the factor this request confirmed: if the user was reset and enrolled again
+    // meanwhile, that factor is not this request's to remove.
+    await Mfa.undoEnrolment(deps, tenant, userId, factorId, systemActor(context))
     throw error
   }
   Notices.mfaChanged(deps, tenant, user, { change: 'enabled', at: deps.clock.now() })
