@@ -413,6 +413,7 @@ describe('the attempt secret stays inside the flow', () => {
         'prepareFirstFactor',
         'prepareSecondFactor',
         'resendCode',
+        'startSso',
         'startTotpEnrolment',
         'step',
         'submitNewPassword',

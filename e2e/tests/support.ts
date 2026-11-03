@@ -541,3 +541,31 @@ export async function consentAtProvider(
   }
   await page.getByRole('button', { name: consent.cancel ? 'Cancel' : 'Continue' }).click()
 }
+
+/**
+ * Bind `domain` to an active single sign-on connection on the API's own mock identity provider,
+ * so that `anyone@<domain>` continues with SSO. Enables organizations and SSO for the
+ * environment: a scenario that calls it puts the settings back (`POST /__test/settings`, `{}`).
+ */
+export async function bindSsoDomain(request: APIRequestContext, domain: string): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/sso`, { data: { domain } })
+  expect(response.ok()).toBe(true)
+}
+
+/**
+ * The mock identity provider signs in whoever the authorization request's `login_hint` names,
+ * and the API does not add one: play the user typing their address at the provider.
+ */
+export async function hintAtIdp(page: Page, email: string): Promise<void> {
+  await page.route('**/v1/dev/sso/authorize*', (route) => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('login_hint', email)
+    return route.continue({ url: url.toString() })
+  })
+}
+
+/** Put the fixture environment's settings back to the defaults. */
+export async function restoreSettings(request: APIRequestContext): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/settings`, { data: {} })
+  expect(response.ok()).toBe(true)
+}
