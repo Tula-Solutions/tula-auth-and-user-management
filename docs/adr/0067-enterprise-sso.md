@@ -113,9 +113,22 @@ description on purpose: no SDK or dashboard is generated from them. They answer 
 documents. Ownership is a column, `users.managed_by_directory_id`: only a user the directory
 created, and who has no other membership, is banned or deleted by it; anyone else only loses
 the membership. Membership changes go through the Organizations service, so the last-manager
-rule of ADR 0065 holds and answers 409. The actor of an audit entry is `directory`. Limits:
-names and emails are not updated by SCIM, groups and bulk are not supported, and a create is not
-one transaction. Usage is in [docs/scim.md](../scim.md).
+rule of ADR 0065 holds and answers 409. The actor of an audit entry is `directory`. A create
+that cannot join the organization removes the account it just made (a compensating delete, so a
+crash between the two leaves it), and a name sent by the directory is kept in step with the user.
+
+**Groups (TULA-150).** `/Groups` and `/Groups/:id` (list with `displayName eq`, create, read,
+replace, patch, delete) keep a group and its members per organization (`scim_groups`,
+`scim_group_members`). Patch takes `op` in any case, a `members` value array (Entra) and
+`members[value eq "id"]` paths (Okta); `excludedAttributes=members` leaves the members out. A
+group's role comes from the same mapping and the same function an SSO sign-in uses
+(`roleForGroups`), so the two cannot disagree; the SCIM default, when the organization maps no
+group a user is in, is `member`, which is not the connection's `defaultRole`. Role changes go
+through `Organizations.changeMemberRole`: taking the only manager out of the mapped group is a 409
+and nothing changes. The role changes and the group write are applied and rolled back by hand,
+not one database transaction. Group names never reach an audit entry or an event, only ids.
+A setup-portal link creates the organization's SCIM token (`POST /v1/setup/scim-tokens`, shown
+once, no list or read). Bulk is not supported. Usage is in [docs/scim.md](../scim.md).
 
 ## Amendments
 
