@@ -15,6 +15,7 @@ export const AUDIT_ACTOR_TYPES = [
   'agent',
   'instance_admin',
   'directory',
+  'setup_link',
 ] as const
 
 /**

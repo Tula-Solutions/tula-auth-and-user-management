@@ -24,6 +24,7 @@ export const AUDIT_ACTOR_TYPES = [
   'agent',
   'instance_admin',
   'directory',
+  'setup_link',
 ] as const
 
 /**
@@ -61,6 +62,7 @@ export const AUDIT_TARGET_TYPES = [
   'native_app',
   'sso_connection',
   'scim_token',
+  'setup_link',
   'organization',
   'organization_membership',
   'organization_role',

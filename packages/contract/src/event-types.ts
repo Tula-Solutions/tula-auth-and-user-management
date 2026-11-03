@@ -113,6 +113,8 @@ export const ACTIVITY_TYPES = [
   // Ids and enums only: never a token, a user name or an address.
   'scim_token.created',
   'scim_token.revoked',
+  'setup_link.created',
+  'setup_link.revoked',
   'user.scim_provisioned',
   // An organization and its members (ADR 0065). The events carry ids and role keys only:
   // never the organization's name or slug, and never a member's address or name.
@@ -234,6 +236,8 @@ export const EVENT_TARGET_TYPES = {
   'sso_connection.deleted': 'sso_connection',
   'scim_token.created': 'scim_token',
   'scim_token.revoked': 'scim_token',
+  'setup_link.created': 'setup_link',
+  'setup_link.revoked': 'setup_link',
   'user.scim_provisioned': 'user',
   'organization.created': 'organization',
   'organization.updated': 'organization',

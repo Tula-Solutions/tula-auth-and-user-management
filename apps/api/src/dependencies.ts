@@ -32,6 +32,7 @@ import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { ScimStore } from '~/ports/scim-store'
 import type { SessionStore } from '~/ports/session-store'
+import type { SetupLinkStore } from '~/ports/setup-link-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
 import type { SmsUsageStore } from '~/ports/sms-usage-store'
@@ -168,6 +169,7 @@ export interface Deps {
   ssoConnections: SsoConnectionStore
   /** An organization's SCIM tokens and the users its directory manages (ADR 0067). */
   scim: ScimStore
+  setupLinks: SetupLinkStore
   /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
   organizations: OrganizationStore
   /** The domains organizations claim, and the codes that verify them (ADR 0065, "Verified domains"). */

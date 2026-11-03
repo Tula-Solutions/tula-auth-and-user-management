@@ -115,7 +115,8 @@
               "system",
               "agent",
               "instance_admin",
-              "directory"
+              "directory",
+              "setup_link"
             ]
           },
           "id": {
@@ -2920,7 +2921,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 76
+            "maximum": 78
           },
           "enabled": {
             "type": "boolean"
@@ -4335,6 +4336,156 @@
           "data"
         ],
         "description": "A SCIM token was revoked: the directory it belonged to can no longer provision with it."
+      },
+      "SetupLinkCreatedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "description": "A setup link was created for an organization (ADR 0067). The token is not in the event."
+      },
+      "SetupLinkCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "setup_link.created"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "setup_link"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SetupLinkCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A setup link was created for an organization (ADR 0067). The token is not in the event."
+      },
+      "SetupLinkRevokedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "description": "A setup link was revoked: the portal it opened refuses it from the next request."
+      },
+      "SetupLinkRevokedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "setup_link.revoked"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "setup_link"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SetupLinkRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A setup link was revoked: the portal it opened refuses it from the next request."
       },
       "UserScimProvisionedEventData": {
         "type": "object",
@@ -6359,6 +6510,8 @@
               "sso_connection.deleted",
               "scim_token.created",
               "scim_token.revoked",
+              "setup_link.created",
+              "setup_link.revoked",
               "user.scim_provisioned",
               "organization.created",
               "organization.updated",
@@ -6399,7 +6552,8 @@
               "system",
               "agent",
               "instance_admin",
-              "directory"
+              "directory",
+              "setup_link"
             ]
           },
           "targetId": {
@@ -6803,6 +6957,12 @@
           },
           {
             "$ref": "#/components/schemas/ScimTokenRevokedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SetupLinkCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SetupLinkRevokedEvent"
           },
           {
             "$ref": "#/components/schemas/UserScimProvisionedEvent"
@@ -10188,6 +10348,8 @@
           "sso_connection.deleted",
           "scim_token.created",
           "scim_token.revoked",
+          "setup_link.created",
+          "setup_link.revoked",
           "user.scim_provisioned",
           "organization.created",
           "organization.updated",
@@ -10239,7 +10401,8 @@
               "system",
               "agent",
               "instance_admin",
-              "directory"
+              "directory",
+              "setup_link"
             ]
           },
           "from": {
@@ -10290,7 +10453,8 @@
               "system",
               "agent",
               "instance_admin",
-              "directory"
+              "directory",
+              "setup_link"
             ]
           },
           "from": {
@@ -12334,7 +12498,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 76,
+            "maxItems": 78,
             "type": "array",
             "items": {
               "type": "string",
@@ -12390,6 +12554,8 @@
                 "sso_connection.deleted",
                 "scim_token.created",
                 "scim_token.revoked",
+                "setup_link.created",
+                "setup_link.revoked",
                 "user.scim_provisioned",
                 "organization.created",
                 "organization.updated",
@@ -12440,7 +12606,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 76,
+            "maxItems": 78,
             "type": "array",
             "items": {
               "type": "string",
@@ -12496,6 +12662,8 @@
                 "sso_connection.deleted",
                 "scim_token.created",
                 "scim_token.revoked",
+                "setup_link.created",
+                "setup_link.revoked",
                 "user.scim_provisioned",
                 "organization.created",
                 "organization.updated",
@@ -12962,6 +13130,8 @@
               "sso_connection.deleted",
               "scim_token.created",
               "scim_token.revoked",
+              "setup_link.created",
+              "setup_link.revoked",
               "user.scim_provisioned",
               "organization.created",
               "organization.updated",
@@ -26944,7 +27114,8 @@
                 "system",
                 "agent",
                 "instance_admin",
-                "directory"
+                "directory",
+                "setup_link"
               ]
             }
           },
