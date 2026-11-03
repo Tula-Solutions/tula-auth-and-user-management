@@ -1,5 +1,7 @@
 import { messageFor, toApiError } from '~/api/errors'
+import type { SsoConnection, UpdateSsoConnectionRequest } from '~/api/generated/api.gen'
 import { own } from '~/lib/own'
+import { printableName } from '~/lib/printable'
 
 // The sentences the SSO section says about a refusal and a certificate. The rules (which
 // change is a weakening) are the server's, `weakens` in `modules/sso-connection/service.ts`;
@@ -66,4 +68,52 @@ export function certificateStanding(
     return 'expired'
   }
   return end - now <= CERTIFICATE_WARNING_DAYS * 86_400_000 ? 'soon' : 'ok'
+}
+
+/**
+ * What a change to a connection lets through that it did not before, one sentence each.
+ *
+ * The rule is the server's `weakens` in `modules/sso-connection/service.ts` (the audit entry
+ * says `weakened: true` for exactly these); the dashboard only asks first and words it.
+ * Break-glass is about password sign-in alone, so it is never worded as more.
+ *
+ * @param current - The connection as listed.
+ * @param changes - The fields about to be sent.
+ * @returns The sentences; empty when nothing is weakened.
+ */
+export function weakeningSentences(
+  current: SsoConnection,
+  changes: UpdateSsoConnectionRequest
+): string[] {
+  const sentences: string[] = []
+  if (changes.status === 'active') {
+    sentences.push('Activating lets people on the bound domains sign in through this connection.')
+  }
+  const content = Object.keys(changes).filter(
+    (key) => !['name', 'status', 'enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key)
+  )
+  if (current.status === 'active' && content.length > 0) {
+    sentences.push(
+      'This connection is active, so changing its provider values, role or domains changes who can sign in through it as soon as it is saved.'
+    )
+  }
+  if (changes.enforced === false && current.enforced) {
+    sentences.push(
+      'Turning enforcement off lets people on the bound domains sign in with a password again, not only through this connection.'
+    )
+  }
+  if (changes.trustIdpMfa === true && !current.trustIdpMfa) {
+    sentences.push(
+      'Trusting the identity provider for two-step verification means people who sign in through it are no longer asked for a second step by Tula.'
+    )
+  }
+  if (
+    typeof changes.breakGlassRole === 'string' &&
+    changes.breakGlassRole !== current.breakGlassRole
+  ) {
+    sentences.push(
+      `Anyone with the role ${printableName(changes.breakGlassRole)} keeps password sign-in even where enforcement is on.`
+    )
+  }
+  return sentences
 }

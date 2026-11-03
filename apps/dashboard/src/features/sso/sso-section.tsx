@@ -346,7 +346,7 @@ export function SsoSection({ organizationId, organizationName: typed }: SsoSecti
         onCancel={closeSwitch}
       >
         {switching?.status === 'active'
-          ? `People of ${organizationName} on the bound domains can then sign in through this connection.`
+          ? `People of ${organizationName} on the bound domains can then sign in through this connection. This is recorded in the audit log as a weakening.`
           : 'Nobody is offered this connection while it is disabled. The identities it created are kept.'}
       </ConfirmDialog>
       <ConfirmDialog

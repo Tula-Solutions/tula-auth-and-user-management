@@ -15,6 +15,7 @@ import {
   fakeOrganization,
   fakeProposal,
   fakeRole,
+  fakeSsoConnection,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -1413,6 +1414,51 @@ describe('organizations and roles', () => {
       0
     )
     expect(api.callsTo('DELETE', `/v1/admin/organizations/${ORGANIZATION}`)).toHaveLength(0)
+  })
+
+  test('a typed client secret and the question about a connection do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.settings.settings.sso = { enabled: true }
+    for (const environmentId of [IDS.development, IDS.production]) {
+      api.state.ssoConnections.push(
+        fakeSsoConnection({ organizationId: ORGANIZATION, environmentId, enforced: true })
+      )
+    }
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    const form = within(screen.getByRole('dialog'))
+    await user.type(form.getByLabelText('Client secret'), 'half-typed-secret')
+    await user.click(form.getByRole('switch', { name: 'Require this connection' }))
+    await user.click(form.getByRole('button', { name: 'Save changes' }))
+    await form.findByTestId('weakening')
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('heading', { level: 1, name: 'Acme Corp' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('half-typed-secret')).toBe(false)
+    expect(api.callsTo('PATCH', '/v1/admin/sso-connections')).toHaveLength(0)
+    expect(api.state.ssoConnections.every((entry) => entry.enforced)).toBe(true)
+  })
+
+  test('an open deletion of a connection does not survive a switch', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.settings.settings.sso = { enabled: true }
+    for (const environmentId of [IDS.development, IDS.production]) {
+      api.state.ssoConnections.push(
+        fakeSsoConnection({ organizationId: ORGANIZATION, environmentId })
+      )
+    }
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Delete Okta' }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('button', { name: 'Delete Okta' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.state.ssoConnections).toHaveLength(2)
   })
 
   test('an open change of a member’s role does not survive a switch', async () => {

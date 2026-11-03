@@ -9,14 +9,16 @@ import {
   useUpdateSsoConnection,
 } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
-import { Field, SelectField, TextField } from '~/components/field'
+import { Field, SelectField, SwitchRow, TextField } from '~/components/field'
 import { Modal } from '~/components/modal'
 import { notify } from '~/components/toaster'
 import { Textarea } from '~/components/ui/textarea'
+import { WeakeningQuestion } from '~/features/hooks/hook-form'
 import { useRoles } from '~/features/organizations/use-roles'
-import { useEnvironmentRequest } from '~/features/shell/environment-context'
+import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
+import { printableName } from '~/lib/printable'
 import { refreshSso } from './queries'
-import { ssoMessageFor } from './words'
+import { ssoMessageFor, weakeningSentences } from './words'
 
 type Protocol = 'oidc' | 'saml'
 type SamlSource = 'url' | 'xml' | 'manual'
@@ -57,6 +59,7 @@ export function ConnectionDialog({
 }: ConnectionDialogProps) {
   const queryClient = useQueryClient()
   const request = useEnvironmentRequest()
+  const environment = useEnvironment()
   const create = useCreateSsoConnection({ request, mutation: { gcTime: 0 } })
   const update = useUpdateSsoConnection({ request, mutation: { gcTime: 0 } })
   const roles = useRoles()
@@ -74,6 +77,11 @@ export function ConnectionDialog({
   const [nextCertificate, setNextCertificate] = useState('')
   const [defaultRole, setDefaultRole] = useState('member')
   const [domains, setDomains] = useState('')
+  const [enforced, setEnforced] = useState(false)
+  const [trustIdpMfa, setTrustIdpMfa] = useState(false)
+  const [breakGlassRole, setBreakGlassRole] = useState('')
+  // The change waiting for an answer to the weakening question, or null.
+  const [asking, setAsking] = useState<UpdateSsoConnectionRequest | null>(null)
   const [problems, setProblems] = useState<Record<string, string>>({})
   // Held from the submit until the list was read again: a second click would send it twice.
   const [saving, setSaving] = useState(false)
@@ -89,6 +97,9 @@ export function ConnectionDialog({
       setClientId(connection?.clientId ?? '')
       setDefaultRole(connection?.defaultRole ?? 'member')
       setDomains((connection?.domains ?? []).join('\n'))
+      setEnforced(connection?.enforced ?? false)
+      setTrustIdpMfa(connection?.trustIdpMfa ?? false)
+      setBreakGlassRole(connection?.breakGlassRole ?? '')
       setSource(connection?.saml ? 'manual' : 'url')
       setIdpEntityId(connection?.saml?.idpEntityId ?? '')
       setSsoUrl(connection?.saml?.ssoUrl ?? '')
@@ -100,6 +111,7 @@ export function ConnectionDialog({
       setCertificate('')
       setNextCertificate('')
       setProblems({})
+      setAsking(null)
       setSaving(false)
       createReset()
       updateReset()
@@ -186,10 +198,21 @@ export function ConnectionDialog({
       // A SAML change is sent only when something was typed: the stored values are not shown
       // back (a certificate is replaced as a whole).
       ...(protocol === 'saml' ? samlChange() : {}),
+      ...(enforced !== connection.enforced ? { enforced } : {}),
+      ...(trustIdpMfa !== connection.trustIdpMfa ? { trustIdpMfa } : {}),
+      ...(breakGlassRole !== (connection.breakGlassRole ?? '')
+        ? { breakGlassRole: breakGlassRole === '' ? null : breakGlassRole }
+        : {}),
     }
     if (Object.keys(data).length === 0) {
       setSaving(false)
       onClose()
+      return
+    }
+    if (asking === null && weakeningSentences(connection, data).length > 0) {
+      setSaving(false)
+      update.reset()
+      setAsking(data)
       return
     }
     update.mutate({ id: connection.id, data }, done)
@@ -210,6 +233,46 @@ export function ConnectionDialog({
   const errors = { ...fieldErrorMap(error), ...problems }
   const general = error && Object.keys(fieldErrorMap(error)).length === 0
   const roleList = roles.data?.data ?? []
+
+  if (asking !== null && connection !== null) {
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        title='Let more people through?'
+        description={<>You are changing {printableName(connection.name)}.</>}
+      >
+        <WeakeningQuestion
+          sentences={weakeningSentences(connection, asking)}
+          requireText={
+            environment.kind === 'production' ? printableName(connection.name) : undefined
+          }
+          pending={saving}
+          confirmLabel='Save changes'
+          onConfirm={() => {
+            setSaving(true)
+            update.mutate(
+              { id: connection.id, data: asking },
+              {
+                onError: () => setSaving(false),
+                onSuccess: async () => {
+                  await refreshSso(queryClient)
+                  notify('Connection saved')
+                  onClose()
+                },
+              }
+            )
+          }}
+          onCancel={() => setAsking(null)}
+        />
+        {update.error ? (
+          <p role='alert' className='mt-2 text-sm text-destructive'>
+            {ssoMessageFor(update.error)}
+          </p>
+        ) : null}
+      </Modal>
+    )
+  }
 
   return (
     <Modal
@@ -389,6 +452,35 @@ export function ConnectionDialog({
             />
           )}
         </Field>
+        {editing ? (
+          <div className='flex flex-col'>
+            <SwitchRow
+              label='Require this connection'
+              description='People on the bound domains can only sign in through it, not with a password.'
+              checked={enforced}
+              onChange={setEnforced}
+            />
+            <SwitchRow
+              label='Trust the identity provider for two-step verification'
+              description='People who sign in through it are not asked for a second step by Tula.'
+              checked={trustIdpMfa}
+              onChange={setTrustIdpMfa}
+            />
+            <SelectField
+              label='Break-glass role'
+              value={breakGlassRole}
+              onChange={(event) => setBreakGlassRole(event.target.value)}
+              hint='Anyone with this role keeps password sign-in even when the connection is required.'
+            >
+              <option value=''>None</option>
+              {roleList.map((role) => (
+                <option key={role.key} value={role.key}>
+                  {role.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+        ) : null}
         {general ? (
           <p role='alert' className='text-sm text-destructive'>
             {ssoMessageFor(error)}

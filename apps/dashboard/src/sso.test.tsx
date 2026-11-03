@@ -182,6 +182,83 @@ describe('the SSO section', () => {
     expect(api.state.ssoConnections[0]?.secret).toBe('seed-secret')
   })
 
+  test('enforcement on a draft is saved without a question', async () => {
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    await user.click(within(dialog()).getByRole('switch', { name: 'Require this connection' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')[0]?.body).toEqual({ enforced: true })
+  })
+
+  test('turning enforcement off asks first, and sends nothing until it is confirmed', async () => {
+    const api = arranged({ connections: [{ name: 'Okta', enforced: true }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    await user.click(within(dialog()).getByRole('switch', { name: 'Require this connection' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain(
+      'sign in with a password again'
+    )
+    expect(sent(api, 'PATCH')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    expect(api.state.ssoConnections[0]?.enforced).toBe(true)
+    // Back at the form with the draft kept; asking again, then confirming.
+    await screen.findByRole('dialog')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')[0]?.body).toEqual({ enforced: false })
+  })
+
+  test('trusting the identity provider for two-step verification asks first', async () => {
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    await user.click(
+      within(dialog()).getByRole('switch', {
+        name: 'Trust the identity provider for two-step verification',
+      })
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain('second step')
+    expect(sent(api, 'PATCH')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')[0]?.body).toEqual({ trustIdpMfa: true })
+  })
+
+  test('a break-glass role asks first and says it keeps password sign-in', async () => {
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    await user.selectOptions(within(dialog()).getByLabelText('Break-glass role'), 'admin')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain(
+      'keeps password sign-in'
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')[0]?.body).toEqual({ breakGlassRole: 'admin' })
+  })
+
+  test('changing the domains of an active connection asks first', async () => {
+    const api = arranged({ connections: [{ name: 'Okta', status: 'active' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    await user.type(within(dialog()).getByLabelText('Domains'), 'acme.com')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain('who can sign in')
+    expect(sent(api, 'PATCH')).toHaveLength(0)
+  })
+
+  test('activating says it is recorded as a weakening', async () => {
+    const { user } = start(arranged({ connections: [{ name: 'Okta' }] }))
+    await user.click(await screen.findByRole('button', { name: 'Activate Okta' }))
+    expect(dialog().textContent).toContain('recorded in the audit log as a weakening')
+  })
+
   test('activates and disables a connection after a confirmation', async () => {
     const api = arranged({ connections: [{ name: 'Okta' }] })
     const { user } = start(api)
