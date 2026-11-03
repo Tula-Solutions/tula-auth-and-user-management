@@ -1,11 +1,11 @@
+import { type SsoWeakening, ssoWeakenings } from '@tula-tech/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { SsoConnection, UpdateSsoConnectionRequest } from '~/api/generated/api.gen'
 import { own } from '~/lib/own'
 import { printableName } from '~/lib/printable'
 
-// The sentences the SSO section says about a refusal and a certificate. The rules (which
-// change is a weakening) are the server's, `weakens` in `modules/sso-connection/service.ts`;
-// only the words are the dashboard's.
+// The sentences the SSO section says about a refusal and a certificate. The rule (which
+// change is a weakening) is the contract's `ssoWeakenings`; only the words are the dashboard's.
 
 /** The code the server answers while an environment has single sign-on switched off. */
 export const SSO_DISABLED_CODE = 'sso.disabled'
@@ -73,12 +73,23 @@ export function certificateStanding(
   return end - now <= CERTIFICATE_WARNING_DAYS * 86_400_000 ? 'soon' : 'ok'
 }
 
+const WEAKENING_SENTENCES: Record<SsoWeakening, string> = {
+  activate: 'Activating lets people on the bound domains sign in through this connection.',
+  active_content:
+    'This connection is active, so changing its provider values, role or domains changes who can sign in through it as soon as it is saved.',
+  enforcement_off:
+    'Turning enforcement off lets people on the bound domains sign in with a password again, not only through this connection.',
+  trust_idp_mfa:
+    'Trusting the identity provider for two-step verification means people who sign in through it are no longer asked for a second step by Tula.',
+  break_glass_role: '',
+}
+
 /**
  * What a change to a connection lets through that it did not before, one sentence each.
  *
- * The rule is the server's `weakens` in `modules/sso-connection/service.ts` (the audit entry
- * says `weakened: true` for exactly these); the dashboard only asks first and words it.
- * Break-glass is about password sign-in alone, so it is never worded as more.
+ * The rule is the contract's `ssoWeakenings`, the same one the server's audit entry uses
+ * (`weakened: true`); the dashboard only asks first and words it. Break-glass is about
+ * password sign-in alone, so it is never worded as more.
  *
  * @param current - The connection as listed.
  * @param changes - The fields about to be sent.
@@ -88,35 +99,9 @@ export function weakeningSentences(
   current: SsoConnection,
   changes: UpdateSsoConnectionRequest
 ): string[] {
-  const sentences: string[] = []
-  if (changes.status === 'active') {
-    sentences.push('Activating lets people on the bound domains sign in through this connection.')
-  }
-  const content = Object.keys(changes).filter(
-    (key) => !['name', 'status', 'enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key)
+  return ssoWeakenings(current, changes).map((kind) =>
+    kind === 'break_glass_role'
+      ? `Anyone with the role ${printableName(String(changes.breakGlassRole))} keeps password sign-in even where enforcement is on.`
+      : WEAKENING_SENTENCES[kind]
   )
-  if (current.status === 'active' && content.length > 0) {
-    sentences.push(
-      'This connection is active, so changing its provider values, role or domains changes who can sign in through it as soon as it is saved.'
-    )
-  }
-  if (changes.enforced === false && current.enforced) {
-    sentences.push(
-      'Turning enforcement off lets people on the bound domains sign in with a password again, not only through this connection.'
-    )
-  }
-  if (changes.trustIdpMfa === true && !current.trustIdpMfa) {
-    sentences.push(
-      'Trusting the identity provider for two-step verification means people who sign in through it are no longer asked for a second step by Tula.'
-    )
-  }
-  if (
-    typeof changes.breakGlassRole === 'string' &&
-    changes.breakGlassRole !== current.breakGlassRole
-  ) {
-    sentences.push(
-      `Anyone with the role ${printableName(changes.breakGlassRole)} keeps password sign-in even where enforcement is on.`
-    )
-  }
-  return sentences
 }

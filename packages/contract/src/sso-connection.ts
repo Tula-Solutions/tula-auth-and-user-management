@@ -203,6 +203,57 @@ export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionReque
 /** A connection as the admin API returns it. */
 export type SsoConnection = z.infer<typeof SsoConnectionSchema>
 
+/** One way a change to a connection lets more people sign in, or asks less of them (ADR 0067). */
+export type SsoWeakening =
+  | 'activate'
+  | 'active_content'
+  | 'enforcement_off'
+  | 'trust_idp_mfa'
+  | 'break_glass_role'
+
+/**
+ * What a change to a connection lets through that it did not before. The one copy of the rule:
+ * the server's audit entry says `weakened: true` for exactly these, and the dashboard asks
+ * first and words each (ADR 0067). A name, or a field left `undefined`, is no change.
+ *
+ * @param current - The connection as it is.
+ * @param changes - The fields being changed.
+ * @returns The weakenings, in a fixed order; empty when nothing is weakened.
+ * @example
+ * ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, { status: 'active' }) // ['activate']
+ */
+export function ssoWeakenings(
+  current: Pick<SsoConnection, 'status' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa'>,
+  fields: object
+): SsoWeakening[] {
+  const changes = fields as Record<string, unknown>
+  const found: SsoWeakening[] = []
+  const content = Object.keys(changes).filter(
+    (key) =>
+      changes[key] !== undefined &&
+      !['name', 'status', 'enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key)
+  )
+  if (changes.status === 'active') {
+    found.push('activate')
+  }
+  if (current.status === 'active' && content.length > 0) {
+    found.push('active_content')
+  }
+  if (changes.enforced === false && current.enforced) {
+    found.push('enforcement_off')
+  }
+  if (changes.trustIdpMfa === true && !current.trustIdpMfa) {
+    found.push('trust_idp_mfa')
+  }
+  if (
+    typeof changes.breakGlassRole === 'string' &&
+    changes.breakGlassRole !== current.breakGlassRole
+  ) {
+    found.push('break_glass_role')
+  }
+  return found
+}
+
 /**
  * Start a single sign-on step of a sign-in attempt: where the app's page is that the browser
  * returns to. The connection is the one the attempt's email domain is bound to; the client never
