@@ -1464,6 +1464,114 @@
         "decision": "journey"
       }
     },
+    "scim tokens: create, use, revoke": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: Entra patch shapes": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: Okta shapes, filters and a duplicate": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: ownership and the last manager": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: paging, unsupported filters and discovery": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim: malformed requests and unknown users": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
     "second factor lockout": {
       "core": {
         "decision": "journey"
