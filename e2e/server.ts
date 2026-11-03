@@ -211,6 +211,73 @@ async function replaceSettings(request: Request): Promise<Response> {
   return json({ ok: true })
 }
 
+/** The loopback listener the mock identity provider is reached on; started by the first bind. */
+let ssoIdp: ReturnType<typeof Bun.serve> | undefined
+
+/**
+ * Bind a domain to an active OIDC single sign-on connection whose issuer is the API's own mock
+ * identity provider (`/v1/dev/sso`), through the admin API as an operator would: the
+ * organizations and SSO settings on, an organization, its domain claimed and verified (the
+ * code is read from the outbox) and the connection made active. `{ domain }` in; the address
+ * `ada@<domain>` then continues with SSO. `/__test/settings` puts the settings back.
+ */
+async function bindSsoDomain(body: unknown): Promise<Response> {
+  const domain = String((body as { domain?: unknown }).domain ?? '')
+  const settings = await replaceSettings(
+    new Request('http://fixture/', {
+      method: 'POST',
+      body: JSON.stringify({
+        organizations: {
+          enabled: true,
+          allowUserCreated: false,
+          maxCreatedPerUser: 1,
+          creatorRole: 'admin',
+          defaultRole: 'member',
+          personalAccount: true,
+        },
+        sso: { enabled: true },
+      }),
+    })
+  )
+  if (!settings.ok) {
+    return settings
+  }
+  const admin = async (method: string, path: string, payload: unknown) => {
+    const answer = await app.request(path, {
+      method,
+      headers: { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!answer.ok) {
+      throw new Error(`${method} ${path} answered ${answer.status}: ${await answer.text()}`)
+    }
+    return (await answer.json()) as { id: string }
+  }
+  const org = await admin('POST', '/v1/admin/organizations', {
+    name: 'SSO Org',
+    slug: `sso-${domain.split('.')[0]}`,
+  })
+  const base = `/v1/admin/organizations/${org.id}/domains`
+  const contact = `it@${domain}`
+  const claimed = await admin('POST', base, { domain, email: contact, mode: 'suggest' })
+  const code = deps.mailer.outbox
+    .findLast((sent) => sent.to === contact && /^\d{6}\b/.test(sent.subject))
+    ?.subject.slice(0, 6)
+  await admin('POST', `${base}/${claimed.id}/verify`, { code })
+  const connection = await admin('POST', '/v1/admin/sso-connections', {
+    organizationId: org.id,
+    name: 'Mock IdP',
+    // The outbound guard needs a loopback address, and `api` listens on a name: a listener of
+    // its own on 127.0.0.1 hands each request to the app (as the SDK journeys do).
+    issuer: `http://127.0.0.1:${(ssoIdp ??= Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (r) => app.request(r) })).port}/v1/dev/sso`,
+    clientId: 'e2e-sso',
+    clientSecret: 'e2e-sso-secret',
+    domains: [domain],
+  })
+  await admin('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'active' })
+  return json({ ok: true })
+}
+
 /** Test-only routes, next to the API's own. Reached by the test runner, never by the page. */
 /**
  * Create an account whose address was never verified, as an administrator can
@@ -386,6 +453,9 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   }
   if (request.method === 'POST' && url.pathname === '/__test/unverified-user') {
     return request.json().then(createUnverifiedUser)
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/sso') {
+    return request.json().then(bindSsoDomain)
   }
   if (request.method === 'POST' && url.pathname === '/__test/oauth') {
     return request.json().then(enableProviders)
