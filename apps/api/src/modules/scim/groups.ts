@@ -1,6 +1,7 @@
 import type { Deps } from '~/dependencies'
 import { NotFoundError } from '~/exceptions'
 import * as Logger from '~/lib/logger'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import type { ScimGroupRecord } from '~/ports/scim-store'
 import { invalidValue, ScimError, uniqueness } from './errors'
@@ -13,7 +14,7 @@ import { MAX_COUNT, type ScimContext } from './service'
 // SSO sign-in uses). A group name is directory data: it is stored and matched, and is never in
 // an audit entry, an event or a log line.
 
-function resource(group: ScimGroupRecord, withMembers: boolean): ScimGroupResource {
+function resource(deps: Deps, group: ScimGroupRecord, withMembers: boolean): ScimGroupResource {
   return {
     schemas: [GROUP_SCHEMA],
     id: group.id,
@@ -24,6 +25,7 @@ function resource(group: ScimGroupRecord, withMembers: boolean): ScimGroupResour
       resourceType: 'Group',
       created: group.createdAt.toISOString(),
       lastModified: group.updatedAt.toISOString(),
+      location: `${publicBase(deps.config)}/v1/scim/v2/Groups/${group.id}`,
     },
   }
 }
@@ -156,7 +158,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimGroupInput
         })
       ),
   })
-  return resource(group, true)
+  return resource(deps, group, true)
 }
 
 /**
@@ -167,7 +169,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimGroupInput
  * @throws NotFoundError when this directory has no such group.
  */
 export async function get(deps: Deps, ctx: ScimContext, id: string) {
-  return resource(await load(deps, ctx, id), true)
+  return resource(deps, await load(deps, ctx, id), true)
 }
 
 /** Parse `displayName eq "x"`, the one filter identity providers send for groups. */
@@ -224,7 +226,7 @@ export async function list(
     totalResults: total,
     startIndex,
     itemsPerPage: records.length,
-    Resources: records.map((one) => resource(one, withMembers)),
+    Resources: records.map((one) => resource(deps, one, withMembers)),
   }
 }
 
@@ -246,7 +248,7 @@ async function write(
       : []),
   ]
   if (changed.length === 0) {
-    return resource(current, true)
+    return resource(deps, current, true)
   }
   const at = deps.clock.now()
   await commit(deps, ctx, {
@@ -269,7 +271,7 @@ async function write(
         })
       ),
   })
-  return resource({ ...current, ...next, memberIds, updatedAt: at }, true)
+  return resource(deps, { ...current, ...next, memberIds, updatedAt: at }, true)
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 import type { Deps } from '~/dependencies'
 import { isLoopbackHost } from '~/env'
 import * as logger from '~/lib/logger'
+import { publicBase } from '~/lib/public-base'
 import { errorReason } from '~/lib/safe-error'
 import * as NativeApps from '~/modules/native-app/service'
 import * as Passkeys from '~/modules/passkey/service'
@@ -315,7 +316,7 @@ export async function fetchFiles(
   findings: NativeFindings | null,
   timeoutMs: number
 ): Promise<Fetched[]> {
-  const base = deps.config.publicUrl.replace(/\/+$/, '')
+  const base = publicBase(deps.config)
   const samples = findings?.samples.slice(0, NATIVE_APP_FILES_FETCHED) ?? []
   return Promise.all(
     samples.map(async (sample) => {

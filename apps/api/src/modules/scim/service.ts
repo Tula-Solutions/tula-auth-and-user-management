@@ -2,6 +2,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import { lapsed } from '~/modules/organization-domain/service'
@@ -26,7 +27,7 @@ export interface ScimContext {
   actor: Actor
 }
 
-function resource(user: UserRecord, record: ScimUserRecord): ScimUserResource {
+function resource(deps: Deps, user: UserRecord, record: ScimUserRecord): ScimUserResource {
   return {
     schemas: [USER_SCHEMA],
     id: user.id,
@@ -42,6 +43,7 @@ function resource(user: UserRecord, record: ScimUserRecord): ScimUserResource {
       resourceType: 'User',
       created: record.createdAt.toISOString(),
       lastModified: record.updatedAt.toISOString(),
+      location: `${publicBase(deps.config)}/v1/scim/v2/Users/${user.id}`,
     },
   }
 }
@@ -93,13 +95,7 @@ async function hasMembership(deps: Deps, ctx: ScimContext, userId: string) {
  * organization cannot be removed: 409) and, only for an account this directory created that
  * has no other membership, bans it, which signs it out and denylists its sessions.
  */
-async function setActive(
-  deps: Deps,
-  ctx: ScimContext,
-  user: UserRecord,
-  record: ScimUserRecord,
-  active: boolean
-) {
+async function setActive(deps: Deps, ctx: ScimContext, user: UserRecord, active: boolean) {
   const { environmentId } = ctx.tenant
   const member = await deps.organizations.findMembership(environmentId, ctx.organizationId, user.id)
   const managed = user.managedByDirectoryId === ctx.organizationId
@@ -133,7 +129,6 @@ async function setActive(
     { active },
     deps.clock.now()
   )
-  record.active = active
 }
 
 async function apply(
@@ -159,10 +154,10 @@ async function apply(
     }
   }
   if (changes.active !== undefined && changes.active !== record.active) {
-    await setActive(deps, ctx, user, record, changes.active)
+    await setActive(deps, ctx, user, changes.active)
   }
   const fresh = await load(deps, ctx, userId)
-  return resource(fresh.user, fresh.record)
+  return resource(deps, fresh.user, fresh.record)
 }
 
 /** The parts of `name` a directory sent; an absent part is left as it is. */
@@ -247,9 +242,11 @@ async function applyEmail(deps: Deps, ctx: ScimContext, user: UserRecord, userNa
  * organization has verified, plus the membership.
  *
  * An account created here and then refused a SCIM row (a racing duplicate `externalId`) is
- * deleted again, so the retry finds nothing to collide with. shortcut: that is a compensating
- * delete, not one transaction, so a crash between the two leaves the account; upgrade to one
- * store call.
+ * deleted again, so the retry finds nothing to collide with. That is a compensating delete,
+ * not one transaction (the two writes sit in different stores; ADR 0067, "SCIM"), so a crash
+ * between them can leave an account with no SCIM row. The repair is in this function: a
+ * retry for that address finds the account, which this directory manages and holds no row
+ * for, and completes it.
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -273,15 +270,19 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
   let user: UserRecord
   let method: 'created' | 'linked'
   if (existing) {
-    // A known address is never claimed by a directory unless the organization proved the domain.
-    if (
-      !verifiedDomain ||
-      (await deps.scim.findUser(environmentId, ctx.organizationId, existing.id))
-    ) {
+    const hasRecord = await deps.scim.findUser(environmentId, ctx.organizationId, existing.id)
+    if (existing.managedByDirectoryId === ctx.organizationId && !hasRecord) {
+      // Repair: an account this directory created whose SCIM row never landed (a crash between
+      // the two writes). The retry finishes the job instead of answering 409 for ever.
+      user = existing
+      method = 'created'
+    } else if (!verifiedDomain || hasRecord) {
+      // A known address is never claimed by a directory unless the organization proved the domain.
       throw uniqueness()
+    } else {
+      user = existing
+      method = 'linked'
     }
-    user = existing
-    method = 'linked'
   } else {
     user = {
       id: deps.ids.next(),
@@ -290,8 +291,8 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       email: parsed.email,
       emailNormalized: parsed.normalized,
       emailVerifiedAt: verifiedDomain ? now : null,
-      firstName: input.name?.givenName?.trim() || null,
-      lastName: input.name?.familyName?.trim() || null,
+      firstName: nameOf(input.name?.givenName),
+      lastName: nameOf(input.name?.familyName),
       bannedAt: null,
       lastSignInAt: null,
       createdAt: now,
@@ -322,9 +323,8 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     organizationId: ctx.organizationId,
     userId: user.id,
     externalId,
-    // Stored as the opposite of what is wanted so that `apply` below sees a change and does the
-    // work (membership, ban) through the one path.
-    active: wanted === false,
+    // Inactive until `setActive` below gives the membership (or bans) through the one path.
+    active: false,
     createdAt: now,
     updatedAt: now,
   }
@@ -347,7 +347,9 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     }
     throw error
   }
-  return apply(deps, ctx, user.id, { active: wanted })
+  await setActive(deps, ctx, user, wanted)
+  const fresh = await load(deps, ctx, user.id)
+  return resource(deps, fresh.user, fresh.record)
 }
 
 /**
@@ -359,7 +361,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
  */
 export async function get(deps: Deps, ctx: ScimContext, userId: string) {
   const { record, user } = await load(deps, ctx, userId)
-  return resource(user, record)
+  return resource(deps, user, record)
 }
 
 /** Parse `userName eq "x"` / `externalId eq "x"`, the two filters identity providers send. */
@@ -430,7 +432,7 @@ export async function list(
   )
   const resources = records.flatMap((record) => {
     const user = users.get(record.userId)
-    return user ? [resource(user, record)] : []
+    return user ? [resource(deps, user, record)] : []
   })
   return {
     schemas: [LIST_SCHEMA],

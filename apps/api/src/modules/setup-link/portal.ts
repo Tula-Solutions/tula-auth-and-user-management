@@ -11,6 +11,7 @@ import type {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
+import { publicBase } from '~/lib/public-base'
 import * as ScimTokens from '~/modules/scim-token/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
@@ -266,7 +267,7 @@ export async function startTest(
   actor: Actor
 ): Promise<SsoTestStart> {
   await requireOwn(deps, tenant, scope, id)
-  const page = `${deps.config.publicUrl.replace(/\/+$/, '')}${PORTAL_PATH}`
+  const page = `${publicBase(deps.config)}${PORTAL_PATH}`
   return SsoTests.start(deps, tenant, id, page, actor, true)
 }
 

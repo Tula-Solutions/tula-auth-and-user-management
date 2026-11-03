@@ -524,3 +524,37 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
     expect(await emailOf(id)).toBe('lee@acme.test')
   })
 })
+
+describe('create converges after a crash, and resources say where they are', () => {
+  test('an account left without a SCIM row is completed by the retry, not 409 for ever', async () => {
+    const insert = spyOn(deps.scim, 'insertUser').mockImplementationOnce(async () => {
+      throw new Error('crash')
+    })
+    const gone = spyOn(deps.users, 'delete').mockImplementationOnce(async () => {
+      throw new Error('crash again')
+    })
+    const first = await scim('POST', '/Users', okta('orphan@acme.test'))
+    insert.mockRestore()
+    gone.mockRestore()
+    expect(first.status).toBe(500)
+    const orphan = await deps.users.findByEmail(TENANT.environmentId, 'orphan@acme.test')
+    expect(orphan).not.toBeNull()
+    const retry = await scim('POST', '/Users', okta('orphan@acme.test'))
+    expect(retry.status).toBe(201)
+    expect(retry.body.id).toBe(orphan?.id)
+    expect(await members(retry.body.id)).toBe(1)
+  })
+
+  test('a User and a Group carry meta.location under PUBLIC_URL', async () => {
+    const id = await provision()
+    const user = await scim('GET', `/Users/${id}`)
+    expect(user.body.meta.location).toBe(`${deps.config.publicUrl}/v1/scim/v2/Users/${id}`)
+    const group = await scim('POST', '/Groups', {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+      displayName: 'Eng',
+    })
+    expect(group.body.meta.location).toBe(
+      `${deps.config.publicUrl}/v1/scim/v2/Groups/${group.body.id}`
+    )
+  })
+})

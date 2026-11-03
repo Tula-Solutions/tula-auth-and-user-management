@@ -2,6 +2,7 @@ import type { EnvironmentSettings, OAuthProvider } from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { isLoopbackUrl } from '~/env'
 import * as logger from '~/lib/logger'
+import { publicBase } from '~/lib/public-base'
 import { errorReason } from '~/lib/safe-error'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
@@ -806,7 +807,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
   const { config } = deps
   const probes = deps.diagnostics
   const loopback = isLoopbackUrl(config.publicUrl)
-  const statusUrl = `${config.publicUrl.replace(/\/+$/, '')}/v1/status`
+  const statusUrl = `${publicBase(config)}/v1/status`
   const redisProbe = probes.redis
   const scan = attempt('stored_secrets', (signal) => scanStored(deps, signal), timeoutMs)
   // Only ever under the deployment's own PUBLIC_URL, and never a loopback one: what the

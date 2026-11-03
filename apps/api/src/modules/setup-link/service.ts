@@ -8,6 +8,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ConflictError, ForbiddenError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { randomToken, sha256Hex } from '~/lib/crypto'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import type { SetupLinkRecord } from '~/ports/setup-link-store'
@@ -176,7 +177,7 @@ export async function create(
     updatedAt: activity.occurredAt,
   }
   await deps.setupLinks.insert(record, activity)
-  const base = deps.config.publicUrl.replace(/\/+$/, '')
+  const base = publicBase(deps.config)
   return { ...view(record), token, url: `${base}${PORTAL_PATH}#token=${token}` }
 }
 
