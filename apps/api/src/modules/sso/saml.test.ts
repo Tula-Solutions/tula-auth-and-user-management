@@ -341,3 +341,75 @@ describe('two instances sharing one replay guard', () => {
     expect(await run(b)).toBe('sso.provider_error')
   })
 })
+
+describe('the mock identity provider (SAML)', () => {
+  /** Ask the mock as the browser would: its page, and the form it posts. */
+  async function viaMock(
+    s: Awaited<ReturnType<typeof started>>,
+    extra: Record<string, string> = {}
+  ) {
+    const query = new URLSearchParams({
+      SAMLRequest: s.url.searchParams.get('SAMLRequest') ?? '',
+      RelayState: s.relayState,
+      login_hint: `ada@${DOMAIN}`,
+      idp: IDP,
+      ...extra,
+    })
+    const page = await app.request(`/v1/dev/sso/saml/sso?${query}`, {
+      headers: { host: 'localhost:3003' },
+    })
+    const html = await page.text()
+    return {
+      page,
+      html,
+      response: Buffer.from(
+        /name="SAMLResponse" value="([^"]+)"/.exec(html)?.[1] ?? '',
+        'base64'
+      ).toString(),
+    }
+  }
+
+  test('serves a self-posting form that signs the user in, under a strict CSP', async () => {
+    const s = await started()
+    const mock = await viaMock(s)
+    expect(mock.page.status).toBe(200)
+    expect(mock.page.headers.get('content-security-policy')).toContain("script-src 'sha256-")
+    expect(mock.html).toContain(`action="${acsUrl}"`)
+    const back = await acs(mock.response, s.relayState)
+    expect(back.fragment.get('tula_error')).toBeNull()
+    expect((await exchange(back, s.begun.binding)).status).toBe(200)
+  })
+
+  test('can be told to produce a failure, which the ACS refuses', async () => {
+    const s = await started()
+    const mock = await viaMock(s, { failure: 'expired' })
+    expect((await acs(mock.response, s.relayState)).fragment.get('tula_error')).toBe(
+      'sso.provider_error'
+    )
+  })
+
+  test('refuses a request whose ACS is not this API\u2019s own', async () => {
+    const s = await started()
+    const xml = s.xml.replace(acsUrl, 'https://evil.example/acs')
+    const { deflateRawSync } = await import('node:zlib')
+    const mock = await viaMock(s, {
+      SAMLRequest: deflateRawSync(Buffer.from(xml)).toString('base64'),
+    })
+    expect(mock.page.status).toBe(400)
+  })
+
+  test('is not served to a non-loopback host', async () => {
+    const res = await app.request('/v1/dev/sso/saml/metadata', {
+      headers: { host: 'idp.example.test' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  test('publishes its metadata with both signing certificates', async () => {
+    const res = await app.request('/v1/dev/sso/saml/metadata', {
+      headers: { host: 'localhost:3003' },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.text()).match(/<ds:X509Certificate>/g)).toHaveLength(2)
+  })
+})

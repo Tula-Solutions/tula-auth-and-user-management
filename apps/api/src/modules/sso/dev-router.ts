@@ -1,11 +1,14 @@
+import { inflateRawSync } from 'node:zlib'
 import { Hono } from 'hono'
 import { exportJWK, importPKCS8, type JWK, SignJWT } from 'jose'
 import { z } from 'zod'
-import { MOCK_SAML_KEY_A } from '~/adapters/oauth/mock-saml-keys'
+import { buildMockSamlResponse, MOCK_SAML_KEYS } from '~/adapters/oauth/mock-saml'
+import { MOCK_SAML_KEY_A, MOCK_SAML_KEY_B } from '~/adapters/oauth/mock-saml-keys'
 import type { AppEnv } from '~/dependencies'
 import { isLoopbackHost } from '~/env'
 import { ForbiddenError } from '~/exceptions'
 import { timingSafeEqual } from '~/lib/crypto'
+import { escapeHtml } from '~/modules/email/templates'
 
 // The mock enterprise identity provider (ADR 0067): an OpenID Connect provider served by the
 // API itself, for development, the conformance scenarios and the SDK journeys. Mounted only
@@ -161,6 +164,113 @@ router.post('/token', async (c) => {
     .setExpirationTime(now + LIFETIME_MS / 1000)
     .sign((await key()).privateKey)
   return c.json({ access_token: 'mock', token_type: 'Bearer', id_token: idToken })
+})
+
+// SAML (SP-initiated, HTTP-Redirect in, HTTP-POST out): `GET /saml/sso` reads the
+// AuthnRequest a connection's redirect carries and answers a page that posts a signed response
+// to the request's ACS at once. `login_hint` names the user; `failure` (a MockSamlFailure) and
+// `key` (a, b or c) make the response wrong on purpose, and `idp` the entity id it speaks as.
+const SamlSsoSchema = z.object({
+  SAMLRequest: z.string().min(1).max(16_384),
+  RelayState: z.string().max(512).optional(),
+  login_hint: z.string().min(3).max(320),
+  idp: z.string().max(2048).optional(),
+  key: z.enum(['a', 'b', 'c']).optional(),
+  failure: z
+    .enum([
+      'wrong_audience',
+      'wrong_recipient',
+      'wrong_destination',
+      'missing_in_response_to',
+      'wrong_in_response_to',
+      'expired',
+      'not_yet_valid',
+      'unsigned',
+      'response_signed_assertion_unsigned',
+      'second_assertion',
+      'comment_in_name_id',
+      'doctype',
+      'entity',
+      'wrong_issuer',
+      'status_failure',
+    ])
+    .optional(),
+  /** Fixed to replay one assertion (scenario 131). */
+  assertion_id: z.string().max(200).optional(),
+})
+
+/** The one script of the page: it submits the form. Allowed by hash, so no other script is. */
+const SUBMIT_SCRIPT = 'document.forms[0].submit()'
+const SUBMIT_HASH = new Bun.CryptoHasher('sha256').update(SUBMIT_SCRIPT).digest('base64')
+
+router.get('/saml/sso', (c) => {
+  const deps = c.get('deps')
+  const parsed = SamlSsoSchema.safeParse(c.req.query())
+  if (!parsed.success) {
+    return c.text('The mock identity provider could not read the request.', 400)
+  }
+  const asked = parsed.data
+  let xml: string
+  try {
+    xml = inflateRawSync(Buffer.from(asked.SAMLRequest, 'base64'), {
+      maxOutputLength: 65_536,
+    }).toString()
+  } catch {
+    return c.text('The mock identity provider could not read the request.', 400)
+  }
+  const attribute = (name: string) => new RegExp(`${name}="([^"]+)"`).exec(xml)?.[1]
+  const requestId = attribute('ID')
+  const acsUrl = attribute('AssertionConsumerServiceURL')
+  const spEntityId = /<saml:Issuer[^>]*>([^<]+)</.exec(xml)?.[1]
+  // Only to this API's own ACS: the mock is no open poster.
+  const own = new RegExp(
+    `^${deps.config.publicUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/v1/environments/[^/]+/sso/saml/[^/]+/acs$`
+  )
+  if (!requestId || !acsUrl || !spEntityId || !own.test(acsUrl)) {
+    return c.text('The mock identity provider could not read the request.', 400)
+  }
+  const response = buildMockSamlResponse({
+    mockProviderEnabled: deps.config.oauthMock,
+    spEntityId,
+    acsUrl,
+    idpEntityId: asked.idp ?? `${issuerOf(c.req.header('host'))}/saml`,
+    requestId,
+    subject: asked.login_hint,
+    now: deps.clock.now(),
+    ...(asked.key && { key: asked.key }),
+    ...(asked.failure && { failure: asked.failure }),
+    ...(asked.assertion_id && { assertionId: asked.assertion_id }),
+  })
+  c.header('Cache-Control', 'no-store')
+  c.header(
+    'Content-Security-Policy',
+    `default-src 'none'; script-src 'sha256-${SUBMIT_HASH}'; form-action ${new URL(acsUrl).origin}`
+  )
+  return c.html(
+    `<!doctype html><html><body><form method="post" action="${escapeHtml(acsUrl)}">` +
+      `<input type="hidden" name="SAMLResponse" value="${Buffer.from(response).toString('base64')}">` +
+      `<input type="hidden" name="RelayState" value="${escapeHtml(asked.RelayState ?? '')}">` +
+      `<noscript><button>Continue</button></noscript></form><script>${SUBMIT_SCRIPT}</script></body></html>`
+  )
+})
+
+/** The mock identity provider's metadata, with both of its configurable signing keys. */
+router.get('/saml/metadata', (c) => {
+  const bare = (pem: string) => pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')
+  const base = issuerOf(c.req.header('host'))
+  const keyXml = (cert: string) =>
+    `<md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${bare(cert)}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>`
+  return c.body(
+    '<?xml version="1.0"?>' +
+      `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="${escapeHtml(base)}/saml">` +
+      '<md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">' +
+      keyXml(MOCK_SAML_KEYS.a.certificate) +
+      keyXml(MOCK_SAML_KEY_B.certificate) +
+      `<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="${escapeHtml(base)}/saml/sso"/>` +
+      '</md:IDPSSODescriptor></md:EntityDescriptor>',
+    200,
+    { 'content-type': 'application/samlmetadata+xml' }
+  )
 })
 
 export default router
