@@ -69,6 +69,8 @@ describe('conformance scenarios, in process', () => {
       'sso group roles keep the last manager',
       'sso connection activates only after a passing test',
       'sso test sign-in fails with its reason',
+      "organization admin manages the organization's single sign-on",
+      'single sign-on client routes refuse a member without the permission',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',

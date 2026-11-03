@@ -1119,6 +1119,24 @@
         "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
       }
     },
+    "organization admin manages the organization's single sign-on": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+      }
+    },
     "organization invitations": {
       "core": {
         "decision": "journey"
@@ -1742,6 +1760,24 @@
       },
       "kotlin": {
         "decision": "journey"
+      }
+    },
+    "single sign-on client routes refuse a member without the permission": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
       }
     },
     "sso connection activates only after a passing test": {

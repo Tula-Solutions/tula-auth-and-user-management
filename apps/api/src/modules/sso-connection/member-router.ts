@@ -60,7 +60,7 @@ const errors = {
 const needs =
   'Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call ' +
   '(never from the token’s claims): a user who is not a member answers ' +
-  '`organization.not_a_member` and a member without it `auth.forbidden` (403). A connection ' +
+  '`organization.not_a_member` and a member without it `organization.permission_required` (403). A connection ' +
   'of another organization is `sso.connection_not_found`. The client secret is accepted and ' +
   'never returned.'
 

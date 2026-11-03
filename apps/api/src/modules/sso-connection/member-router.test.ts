@@ -205,7 +205,7 @@ describe('who may call', () => {
     ]
     for (const res of await Promise.all(calls)) {
       expect(res.status).toBe(403)
-      expect(await codeOf(res)).toBe('auth.forbidden')
+      expect(await codeOf(res)).toBe('organization.permission_required')
     }
     expect(deps.activityLog.entries).toHaveLength(before)
   })

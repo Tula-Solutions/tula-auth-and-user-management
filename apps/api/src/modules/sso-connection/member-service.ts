@@ -8,7 +8,7 @@ import {
   type UpdateSsoConnectionRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, ForbiddenError } from '~/exceptions'
+import { AuthError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Organizations from '~/modules/organization/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
@@ -35,7 +35,7 @@ type Full = Parameters<typeof SsoConnections.update>[0]
  *
  * @throws AuthError `organization.disabled`, `organization.not_a_member` (also for an
  *   organization that does not exist).
- * @throws ForbiddenError (`auth.forbidden`) for a member without the permission.
+ * @throws AuthError `organization.permission_required` for a member without the permission.
  */
 async function requireManager(
   deps: Base,
@@ -53,7 +53,7 @@ async function requireManager(
     throw new AuthError('organization.not_a_member')
   }
   if (!held.permissions.includes(SSO_MANAGE_PERMISSION)) {
-    throw new ForbiddenError()
+    throw new AuthError('organization.permission_required', { permission: SSO_MANAGE_PERMISSION })
   }
   return held.permissions
 }
@@ -114,7 +114,7 @@ export function needsStepUp(current: SsoConnection, input: UpdateSsoConnectionRe
  * @param organizationId - The organization.
  * @returns The connections, without secrets.
  * @throws AuthError `organization.disabled`, `organization.not_a_member`, `sso.disabled`.
- * @throws ForbiddenError without `org:sys:sso:manage`.
+ * @throws AuthError `organization.permission_required` without `org:sys:sso:manage`.
  */
 export async function list(
   deps: Parameters<typeof SsoConnections.list>[0] & Base,
