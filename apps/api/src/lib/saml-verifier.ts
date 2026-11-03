@@ -264,7 +264,9 @@ function signedAssertionXml(xml: string, signature: Element, certificates: reado
     // never one the response carries (CVE-2024-32962).
     const sig = new SignedXml({ publicCert: pem(cert), getCertFromKeyInfo: () => null })
     try {
-      sig.loadSignature(signature)
+      // `never`: xml-crypto types its parameter as the DOM's Node, @xmldom's Element is not that
+      // type under a package that compiles this file with the DOM lib (nextjs, expo).
+      sig.loadSignature(signature as never)
       if (sig.checkSignature(xml)) {
         const signed = sig.getSignedReferences()
         if (signed.length === 1) {

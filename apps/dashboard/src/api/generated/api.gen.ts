@@ -1782,6 +1782,7 @@ export type SsoConnectionCreatedEventDataProtocol = typeof SsoConnectionCreatedE
 
 export const SsoConnectionCreatedEventDataProtocol = {
   oidc: 'oidc',
+  saml: 'saml',
 } as const;
 
 export type SsoConnectionCreatedEventDataStatus = typeof SsoConnectionCreatedEventDataStatus[keyof typeof SsoConnectionCreatedEventDataStatus];
@@ -1833,6 +1834,7 @@ export type SsoConnectionUpdatedEventDataProtocol = typeof SsoConnectionUpdatedE
 
 export const SsoConnectionUpdatedEventDataProtocol = {
   oidc: 'oidc',
+  saml: 'saml',
 } as const;
 
 export type SsoConnectionUpdatedEventDataChangedItem = typeof SsoConnectionUpdatedEventDataChangedItem[keyof typeof SsoConnectionUpdatedEventDataChangedItem];
@@ -1843,6 +1845,7 @@ export const SsoConnectionUpdatedEventDataChangedItem = {
   issuer: 'issuer',
   clientId: 'clientId',
   clientSecret: 'clientSecret',
+  saml: 'saml',
   defaultRole: 'defaultRole',
   domains: 'domains',
   status: 'status',
@@ -1864,7 +1867,7 @@ export interface SsoConnectionUpdatedEventData {
   protocol: SsoConnectionUpdatedEventDataProtocol;
   /**
      * @minItems 1
-     * @maxItems 7
+     * @maxItems 8
      */
   changed: SsoConnectionUpdatedEventDataChangedItem[];
   status: SsoConnectionUpdatedEventDataStatus;
@@ -1898,6 +1901,7 @@ export type SsoConnectionDeletedEventDataProtocol = typeof SsoConnectionDeletedE
 
 export const SsoConnectionDeletedEventDataProtocol = {
   oidc: 'oidc',
+  saml: 'saml',
 } as const;
 
 /**
@@ -3247,6 +3251,7 @@ export const ErrorCode = {
   ssodomain_taken: 'sso.domain_taken',
   ssodomain_not_verified: 'sso.domain_not_verified',
   ssoissuer_not_allowed: 'sso.issuer_not_allowed',
+  ssosaml_invalid: 'sso.saml_invalid',
   ssoconnection_in_use: 'sso.connection_in_use',
   ssoinvalid_transition: 'sso.invalid_transition',
   ssounavailable: 'sso.unavailable',
@@ -6311,11 +6316,30 @@ export interface UpdateNativeAppRequest {
   appLinkPaths?: string[];
 }
 
+export type SamlConnectionCertificatesItem = {
+  fingerprint: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  notAfter: string;
+  expired: boolean;
+};
+
+export interface SamlConnection {
+  idpEntityId: string;
+  ssoUrl: string;
+  /** @nullable */
+  metadataUrl: string | null;
+  certificates: SamlConnectionCertificatesItem[];
+  spEntityId: string;
+  acsUrl: string;
+  spMetadataUrl: string;
+}
+
 export type SsoConnectionProtocol = typeof SsoConnectionProtocol[keyof typeof SsoConnectionProtocol];
 
 
 export const SsoConnectionProtocol = {
   oidc: 'oidc',
+  saml: 'saml',
 } as const;
 
 export type SsoConnectionStatus = typeof SsoConnectionStatus[keyof typeof SsoConnectionStatus];
@@ -6337,7 +6361,8 @@ export interface SsoConnection {
   status: SsoConnectionStatus;
   issuer: string;
   clientId: string;
-  clientSecretSet: true;
+  clientSecretSet: boolean;
+  saml: SamlConnection | null;
   defaultRole: string;
   domains: string[];
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -6350,11 +6375,36 @@ export interface SsoConnectionList {
   connections: SsoConnection[];
 }
 
+export interface SamlSettingsInput {
+  /**
+     * @minLength 1
+     * @maxLength 524288
+     */
+  metadataXml?: string;
+  /** @maxLength 2048 */
+  metadataUrl?: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  idpEntityId?: string;
+  /** @maxLength 2048 */
+  ssoUrl?: string;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     * @items.minLength 1
+     * @items.maxLength 16384
+     */
+  certificates?: string[];
+}
+
 export type CreateSsoConnectionRequestProtocol = typeof CreateSsoConnectionRequestProtocol[keyof typeof CreateSsoConnectionRequestProtocol];
 
 
 export const CreateSsoConnectionRequestProtocol = {
   oidc: 'oidc',
+  saml: 'saml',
 } as const;
 
 export interface CreateSsoConnectionRequest {
@@ -6367,17 +6417,18 @@ export interface CreateSsoConnectionRequest {
      */
   name: string;
   /** @maxLength 2048 */
-  issuer: string;
+  issuer?: string;
   /**
      * @minLength 1
      * @maxLength 512
      */
-  clientId: string;
+  clientId?: string;
   /**
      * @minLength 1
      * @maxLength 4096
      */
-  clientSecret: string;
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
   defaultRole?: OrganizationRoleKey;
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
@@ -6410,6 +6461,7 @@ export interface UpdateSsoConnectionRequest {
      * @maxLength 4096
      */
   clientSecret?: string;
+  saml?: SamlSettingsInput;
   defaultRole?: OrganizationRoleKey;
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
@@ -14443,6 +14495,81 @@ export const useDeleteSsoConnection = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getRefreshSsoConnectionMetadataUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/refresh-metadata`
+}
+
+/**
+ * Fetches the identity provider’s metadata from the address the connection was given (through the outbound guard: a private address is refused) and takes its entity id, SSO URL and signing certificates. `sso.saml_invalid` when the connection was not given an address. Limited to 10 such requests a minute per environment. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const refreshSsoConnectionMetadata = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getRefreshSsoConnectionMetadataUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRefreshSsoConnectionMetadataMutationKey = () => ['refreshSsoConnectionMetadata'] as const;
+
+export const getRefreshSsoConnectionMetadataMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext> => {
+
+const mutationKey = getRefreshSsoConnectionMetadataMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, RefreshSsoConnectionMetadataMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshSsoConnectionMetadata(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshSsoConnectionMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>>
+
+    export type RefreshSsoConnectionMetadataMutationError = ErrorEnvelope
+    export type RefreshSsoConnectionMetadataMutationVariables = {id: string}
+
+    /**
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const useRefreshSsoConnectionMetadata = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>,
+        TError,
+        RefreshSsoConnectionMetadataMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRefreshSsoConnectionMetadataMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {

@@ -4,12 +4,33 @@ import type { Recorded } from '~/ports/activity-log'
 export type SsoConnectionStatus = 'draft' | 'active' | 'disabled'
 
 /** An organization's single sign-on connection as stored. */
+/** One signing certificate of a SAML identity provider, with when it stops being valid. */
+export interface SamlCertificate {
+  /** PEM. */
+  pem: string
+  /** ISO time of the certificate's `notAfter`. */
+  notAfter: string
+}
+
+/** A SAML connection's identity provider values (ADR 0067). */
+export interface SamlSettings {
+  idpEntityId: string
+  /** The HTTP-Redirect single sign-on URL. */
+  ssoUrl: string
+  /** Where the values were last read from, or `null` when they were given by hand or pasted. */
+  metadataUrl: string | null
+  /** One or two; any of them may sign a response, so a certificate rotates with no downtime. */
+  certificates: SamlCertificate[]
+}
+
 export interface SsoConnectionRecord {
   id: string
   projectId: string
   environmentId: string
   organizationId: string
-  protocol: 'oidc'
+  protocol: 'oidc' | 'saml'
+  /** The identity provider's values of a SAML connection; `null` for OIDC. */
+  saml: SamlSettings | null
   name: string
   status: SsoConnectionStatus
   issuer: string
@@ -26,6 +47,7 @@ export interface SsoConnectionRecord {
 
 /** The fields of a connection an update may change; one left out keeps its value. */
 export interface SsoConnectionChanges {
+  saml?: SamlSettings
   name?: string
   issuer?: string
   clientId?: string

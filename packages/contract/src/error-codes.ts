@@ -539,6 +539,10 @@ export const ERROR_DEFINITIONS = {
     status: 422,
     message: 'The issuer is not an address the server may call.',
   },
+  'sso.saml_invalid': {
+    status: 422,
+    message: 'The SAML settings could not be read or are incomplete.',
+  },
   'sso.connection_in_use': {
     status: 409,
     message: 'The connection has signed users in; disable it instead.',

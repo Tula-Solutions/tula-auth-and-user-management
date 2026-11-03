@@ -3907,7 +3907,8 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "oidc"
+              "oidc",
+              "saml"
             ]
           },
           "status": {
@@ -3998,12 +3999,13 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "oidc"
+              "oidc",
+              "saml"
             ]
           },
           "changed": {
             "minItems": 1,
-            "maxItems": 7,
+            "maxItems": 8,
             "type": "array",
             "items": {
               "type": "string",
@@ -4012,6 +4014,7 @@
                 "issuer",
                 "clientId",
                 "clientSecret",
+                "saml",
                 "defaultRole",
                 "domains",
                 "status"
@@ -4104,7 +4107,8 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "oidc"
+              "oidc",
+              "saml"
             ]
           }
         },
@@ -7073,6 +7077,7 @@
           "sso.domain_taken",
           "sso.domain_not_verified",
           "sso.issuer_not_allowed",
+          "sso.saml_invalid",
           "sso.connection_in_use",
           "sso.invalid_transition",
           "sso.unavailable",
@@ -14412,6 +14417,65 @@
         },
         "additionalProperties": false
       },
+      "SamlConnection": {
+        "type": "object",
+        "properties": {
+          "idpEntityId": {
+            "type": "string"
+          },
+          "ssoUrl": {
+            "type": "string"
+          },
+          "metadataUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "certificates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fingerprint": {
+                  "type": "string"
+                },
+                "notAfter": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "expired": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fingerprint",
+                "notAfter",
+                "expired"
+              ]
+            }
+          },
+          "spEntityId": {
+            "type": "string"
+          },
+          "acsUrl": {
+            "type": "string"
+          },
+          "spMetadataUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "idpEntityId",
+          "ssoUrl",
+          "metadataUrl",
+          "certificates",
+          "spEntityId",
+          "acsUrl",
+          "spMetadataUrl"
+        ]
+      },
       "SsoConnection": {
         "type": "object",
         "properties": {
@@ -14428,7 +14492,8 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "oidc"
+              "oidc",
+              "saml"
             ]
           },
           "name": {
@@ -14449,8 +14514,17 @@
             "type": "string"
           },
           "clientSecretSet": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
+          },
+          "saml": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SamlConnection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "defaultRole": {
             "type": "string"
@@ -14481,6 +14555,7 @@
           "issuer",
           "clientId",
           "clientSecretSet",
+          "saml",
           "defaultRole",
           "domains",
           "createdAt",
@@ -14501,6 +14576,42 @@
           "connections"
         ]
       },
+      "SamlSettingsInput": {
+        "type": "object",
+        "properties": {
+          "metadataXml": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 524288
+          },
+          "metadataUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "idpEntityId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "ssoUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "certificates": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateSsoConnectionRequest": {
         "type": "object",
         "properties": {
@@ -14513,7 +14624,8 @@
             "default": "oidc",
             "type": "string",
             "enum": [
-              "oidc"
+              "oidc",
+              "saml"
             ]
           },
           "name": {
@@ -14536,6 +14648,9 @@
             "minLength": 1,
             "maxLength": 4096
           },
+          "saml": {
+            "$ref": "#/components/schemas/SamlSettingsInput"
+          },
           "defaultRole": {
             "$ref": "#/components/schemas/OrganizationRoleKey"
           },
@@ -14550,10 +14665,7 @@
         },
         "required": [
           "organizationId",
-          "name",
-          "issuer",
-          "clientId",
-          "clientSecret"
+          "name"
         ],
         "additionalProperties": false
       },
@@ -14579,6 +14691,9 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096
+          },
+          "saml": {
+            "$ref": "#/components/schemas/SamlSettingsInput"
           },
           "defaultRole": {
             "$ref": "#/components/schemas/OrganizationRoleKey"
@@ -39530,6 +39645,128 @@
         ]
       }
     },
+    "/v1/admin/sso-connections/{id}/refresh-metadata": {
+      "post": {
+        "operationId": "refreshSsoConnectionMetadata",
+        "tags": [
+          "SSO connections"
+        ],
+        "summary": "Read a SAML connection’s metadata address again",
+        "description": "Fetches the identity provider’s metadata from the address the connection was given (through the outbound guard: a private address is refused) and takes its entity id, SSO URL and signing certificates. `sso.saml_invalid` when the connection was not given an address. Limited to 10 such requests a minute per environment. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoConnection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
     "/v1/sso/callback/{connectionId}": {
       "get": {
         "operationId": "ssoCallback",
@@ -39568,6 +39805,130 @@
           }
         },
         "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/environments/{environmentId}/sso/saml/{connectionId}/metadata": {
+      "get": {
+        "operationId": "ssoSamlMetadata",
+        "tags": [
+          "SSO"
+        ],
+        "summary": "SAML service provider metadata of a connection",
+        "description": "The SAML metadata of a connection’s service provider: its entity id (this address), an assertion consumer service with the HTTP-POST binding and the email NameID format. Public and stable; it holds no secret. Give this address, or the values, to the identity provider.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The metadata XML.",
+            "content": {
+              "application/samlmetadata+xml": {}
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "environmentId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/environments/{environmentId}/sso/saml/{connectionId}/acs": {
+      "post": {
+        "operationId": "ssoSamlAcs",
+        "tags": [
+          "SSO"
+        ],
+        "summary": "SAML assertion consumer service of a connection",
+        "description": "Where a SAML identity provider posts its response (`SAMLResponse` and `RelayState`, form-encoded). Not called by apps. Only a response to a sign-in this server started is taken (IdP-initiated responses are refused). It is checked as the OIDC callback’s answer is: the browser is redirected (303) to the app’s page with a single-use ticket in the fragment, or with `#tula_error=sso.provider_error` for every refusal; the reason is logged and never shown. A `RelayState` that matches no sign-in gets a static page (400).",
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "Back to the app’s page."
+          },
+          "400": {
+            "description": "The state matches no sign-in."
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "environmentId",
+            "required": true
+          },
           {
             "schema": {
               "type": "string"

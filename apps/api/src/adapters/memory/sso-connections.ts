@@ -110,6 +110,7 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       issuer: changes.issuer ?? record.issuer,
       clientId: changes.clientId ?? record.clientId,
       clientSecretSealed: changes.clientSecretSealed ?? record.clientSecretSealed,
+      saml: changes.saml ?? record.saml,
       defaultRole: changes.defaultRole ?? record.defaultRole,
       domains: changes.domains ? [...changes.domains].sort() : record.domains,
       status: changes.status ?? record.status,

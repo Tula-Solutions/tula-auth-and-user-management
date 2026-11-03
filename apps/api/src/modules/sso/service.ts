@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib'
 import type { SessionClient } from '@tula-tech/contract'
 import {
   createLocalJWKSet,
@@ -14,11 +15,14 @@ import { timingSafeEqual } from '~/lib/crypto'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Outbound from '~/lib/outbound'
+import { SAML_NAME_ID_FORMAT } from '~/lib/saml-metadata'
+import * as SamlVerifier from '~/lib/saml-verifier'
 import * as Audit from '~/modules/audit/service'
+import { escapeHtml } from '~/modules/email/templates'
 import * as Hooks from '~/modules/hook/service'
 import * as Organizations from '~/modules/organization/service'
 import * as Settings from '~/modules/settings/service'
-import { SECRET_PURPOSE, secretAad } from '~/modules/sso-connection/service'
+import { SECRET_PURPOSE, samlUrls, secretAad } from '~/modules/sso-connection/service'
 import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import type { UserRecord } from '~/ports/user-repository'
 
@@ -300,6 +304,114 @@ export async function exchange(
     throw refused('id_token', 'azp')
   }
   return profileOf(payload)
+}
+
+/**
+ * The browser's redirect to a SAML identity provider (HTTP-Redirect binding): an unsigned
+ * `AuthnRequest` whose `ID` the attempt holds, so only a response to *this* request is accepted.
+ *
+ * @param deps - Config and clock.
+ * @param connection - A SAML connection.
+ * @param params - The request's `ID` (an XML name) and the attempt's `state`, sent as `RelayState`.
+ * @returns The identity provider's URL with `SAMLRequest` and `RelayState`.
+ */
+export function samlRedirectUrl(
+  deps: Pick<Deps, 'config' | 'clock'>,
+  connection: SsoConnectionRecord,
+  params: { requestId: string; relayState: string }
+): string {
+  const saml = connection.saml
+  if (!saml) {
+    throw new AuthError('auth.method_disabled', { method: 'sso' })
+  }
+  const { spEntityId, acsUrl } = samlUrls(deps.config, connection)
+  const e = escapeHtml
+  const xml =
+    `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${e(params.requestId)}" Version="2.0" IssueInstant="${deps.clock.now().toISOString()}" Destination="${e(saml.ssoUrl)}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" AssertionConsumerServiceURL="${e(acsUrl)}">` +
+    `<saml:Issuer>${e(spEntityId)}</saml:Issuer><samlp:NameIDPolicy Format="${SAML_NAME_ID_FORMAT}" AllowCreate="true"/></samlp:AuthnRequest>`
+  const url = new URL(saml.ssoUrl)
+  url.searchParams.set('SAMLRequest', deflateRawSync(xml).toString('base64'))
+  url.searchParams.set('RelayState', params.relayState)
+  return url.toString()
+}
+
+const EMAIL_ATTRIBUTES = [
+  'email',
+  'mail',
+  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+  'urn:oid:0.9.2342.19200300.100.1.3',
+]
+const GIVEN_ATTRIBUTES = [
+  'givenName',
+  'firstName',
+  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
+]
+const FAMILY_ATTRIBUTES = [
+  'sn',
+  'surname',
+  'lastName',
+  'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname',
+]
+
+/**
+ * Check a SAML response with the one verifier (`lib/saml-verifier.ts`): every refusal becomes
+ * the one generic `sso.provider_error`, and the fixed reason code is logged, never shown.
+ *
+ * Any of the connection's certificates may have signed it (rotation). The email comes from
+ * the assertion's attributes, or from the `NameID` when that is an address; the connection's
+ * domains vouch for it later, in {@link resolveAccount}.
+ *
+ * @param deps - Clock, replay guard and config.
+ * @param connection - A SAML connection.
+ * @param samlResponse - The `SAMLResponse` form field.
+ * @param requestId - The `ID` of the attempt's `AuthnRequest`.
+ * @returns The profile.
+ * @throws AuthError `sso.provider_error` when the response is refused for any reason.
+ * @throws ServiceUnavailableError when the replay guard cannot answer.
+ */
+export async function verifySaml(
+  deps: Pick<Deps, 'clock' | 'proofReplay' | 'config'>,
+  connection: SsoConnectionRecord,
+  samlResponse: string,
+  requestId: string
+): Promise<SsoProfile> {
+  const saml = connection.saml
+  if (!saml) {
+    throw refused('saml', 'not_saml')
+  }
+  const { spEntityId, acsUrl } = samlUrls(deps.config, connection)
+  // The POST binding base64-encodes the document; the verifier reads the XML itself.
+  const xml = Buffer.from(samlResponse, 'base64').toString('utf8')
+  const verdict = await SamlVerifier.verify(deps, xml, {
+    spEntityId,
+    acsUrl,
+    requestId,
+    idpEntityId: saml.idpEntityId,
+    certificates: saml.certificates.map((c) => c.pem),
+  })
+  if (!verdict.ok) {
+    throw refused('saml', verdict.reason)
+  }
+  const { subject, attributes } = verdict.assertion
+  const first = (names: string[]) => {
+    for (const name of names) {
+      const value = attributes[name]?.[0]?.trim()
+      if (value) {
+        return value
+      }
+    }
+    return undefined
+  }
+  const email = first(EMAIL_ATTRIBUTES) ?? (subject.includes('@') ? subject : undefined)
+  const given = first(GIVEN_ATTRIBUTES)?.slice(0, 100)
+  const family = first(FAMILY_ATTRIBUTES)?.slice(0, 100)
+  return {
+    subject,
+    email: email ?? null,
+    emailVerified: true,
+    ...(given !== undefined && { givenName: given }),
+    ...(family !== undefined && { familyName: family }),
+  }
 }
 
 function profileOf(payload: JWTPayload): SsoProfile {

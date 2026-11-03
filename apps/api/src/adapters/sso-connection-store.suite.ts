@@ -49,6 +49,7 @@ export function describeSsoConnectionStore(
       environmentId: tenant.environmentId,
       organizationId,
       protocol: 'oidc',
+      saml: null,
       name: 'Okta',
       status: 'draft',
       issuer: 'https://idp.example.com',
@@ -199,6 +200,28 @@ export function describeSsoConnectionStore(
       })
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'acme.test')).toBeNull()
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'new.test')).not.toBeNull()
+    })
+
+    test('SAML settings round-trip with each certificate expiry, and an update replaces them', async () => {
+      const saml = {
+        idpEntityId: 'https://idp.example.com/e',
+        ssoUrl: 'https://idp.example.com/sso',
+        metadataUrl: null,
+        certificates: [{ pem: 'PEM-A', notAfter: '2030-01-01T00:00:00.000Z' }],
+      }
+      const record = connection(ctx.a, org, { protocol: 'saml', saml, clientSecretSealed: '' })
+      await insert(record)
+      expect((await ctx.store.find(ctx.a.environmentId, record.id))?.saml).toEqual(saml)
+      const next = {
+        ...saml,
+        certificates: [
+          ...saml.certificates,
+          { pem: 'PEM-B', notAfter: '2031-01-01T00:00:00.000Z' },
+        ],
+      }
+      const updated = await update(record.id, { saml: next })
+      expect(updated).toMatchObject({ saml: next })
+      expect(await update(record.id, { name: 'Renamed' })).toMatchObject({ saml: next })
     })
 
     test('an update refuses a taken name and an unknown connection', async () => {

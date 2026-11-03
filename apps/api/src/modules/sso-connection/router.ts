@@ -3,7 +3,7 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor } from '~/lib/actor'
-import { adminRateLimit } from '~/middleware/rate-limit'
+import { adminRateLimit, byEnvironment, rateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as openapi from '~/openapi'
@@ -15,6 +15,9 @@ import {
   SsoConnectionSchema,
   UpdateSsoConnectionRequestSchema,
 } from './schema'
+
+/** Metadata refreshes a minute per environment: each one makes the server call an address. */
+const REFRESH_RATE_LIMIT = 10
 
 const router = new Hono<AppEnv>()
 
@@ -154,6 +157,44 @@ router.patch(
       adminActor(c)
     )
     return c.json(SsoConnectionSchema.parse(updated))
+  }
+)
+
+router.post(
+  '/:id/refresh-metadata',
+  describeRoute({
+    operationId: 'refreshSsoConnectionMetadata',
+    tags: ['SSO connections'],
+    summary: 'Read a SAML connection’s metadata address again',
+    description:
+      'Fetches the identity provider’s metadata from the address the connection was given ' +
+      '(through the outbound guard: a private address is refused) and takes its entity id, ' +
+      'SSO URL and signing certificates. `sso.saml_invalid` when the connection was not ' +
+      `given an address. Limited to ${REFRESH_RATE_LIMIT} such requests a minute per environment. ${weakening}`,
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The connection.', content: json(SsoConnectionSchema) },
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  rateLimit({
+    name: 'sso_refresh_metadata',
+    limit: REFRESH_RATE_LIMIT,
+    window: '1m',
+    key: byEnvironment,
+  }),
+  validator('param', SsoConnectionIdParamSchema, validationHook),
+  async (c) => {
+    const refreshed = await SsoConnections.refreshMetadata(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').id,
+      adminActor(c)
+    )
+    return c.json(SsoConnectionSchema.parse(refreshed))
   }
 )
 

@@ -330,6 +330,13 @@
       "when": 1793712276035,
       "tag": "0048_user_and_session_sso_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793714689494,
+      "tag": "0049_sso_saml_connections",
+      "breakpoints": true
     }
   ]
 }

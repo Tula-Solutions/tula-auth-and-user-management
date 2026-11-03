@@ -561,6 +561,8 @@ const StateSchema = z.object({
       /** PKCE verifier and OIDC nonce: needed once, for the code exchange. */
       codeVerifier: z.string().optional(),
       nonce: z.string().optional(),
+      /** A SAML connection's `AuthnRequest` ID: the one response accepted (instead of PKCE). */
+      requestId: z.string().optional(),
       /** SHA-256 of the binding the starting browser was given. */
       bindingHash: z.string(),
       /** SHA-256 of the ticket, and when it stops being accepted (epoch milliseconds). */
@@ -2625,13 +2627,13 @@ export async function startSso(
   await chargeEnvironment(deps, tenant, 'oauth')
 
   const ssoState = `${tenant.environmentId}.${attempt.id}.${randomToken()}`
+  // SAML: the request's ID is what ties the response to this attempt; OIDC: PKCE and a nonce.
+  const requestId = connection.protocol === 'saml' ? `_${randomToken()}` : undefined
   const codeVerifier = randomToken()
   const nonce = randomToken()
-  const authorizationUrl = await Sso.authorizationUrl(deps, connection, {
-    state: ssoState,
-    nonce,
-    codeVerifier,
-  })
+  const authorizationUrl = requestId
+    ? Sso.samlRedirectUrl(deps, connection, { requestId, relayState: ssoState })
+    : await Sso.authorizationUrl(deps, connection, { state: ssoState, nonce, codeVerifier })
   const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
   const started: State = {
     ...state,
@@ -2640,8 +2642,7 @@ export async function startSso(
       connectionId: connection.id,
       redirectUrl,
       stateHash: sha256Hex(ssoState),
-      codeVerifier,
-      nonce,
+      ...(requestId ? { requestId } : { codeVerifier, nonce }),
       bindingHash: sha256Hex(binding),
     },
   }
@@ -2685,7 +2686,7 @@ export async function startSso(
 export async function ssoCallback(
   deps: Deps,
   connectionId: string,
-  input: Omit<OAuthCallbackInput, 'user'>
+  input: Omit<OAuthCallbackInput, 'user'> & { samlResponse?: string }
 ): Promise<OAuthCallbackResult> {
   const [environmentId, attemptId, random] = (input.state ?? '').split('.')
   if (
@@ -2731,21 +2732,27 @@ export async function ssoCallback(
   if (!consumed) {
     return failed('oauth.state_invalid')
   }
-  if (input.error !== undefined) {
+  const { requestId } = sso
+  if (requestId === undefined && input.error !== undefined) {
     return failed(input.error === 'access_denied' ? 'oauth.access_denied' : 'sso.provider_error')
   }
-  if (!input.code || !sso.codeVerifier || !sso.nonce) {
+  if (
+    requestId !== undefined ? !input.samlResponse : !input.code || !sso.codeVerifier || !sso.nonce
+  ) {
     return failed('sso.provider_error')
   }
   let profile: Sso.SsoProfile
   try {
     await chargeEnvironment(deps, tenant, 'oauth')
     const connection = await Sso.requireActive(deps, tenant, connectionId)
-    profile = await Sso.exchange(deps, connection, {
-      code: input.code,
-      codeVerifier: sso.codeVerifier,
-      nonce: sso.nonce,
-    })
+    profile =
+      requestId !== undefined
+        ? await Sso.verifySaml(deps, connection, input.samlResponse ?? '', requestId)
+        : await Sso.exchange(deps, connection, {
+            code: input.code ?? '',
+            codeVerifier: sso.codeVerifier ?? '',
+            nonce: sso.nonce ?? '',
+          })
   } catch (error) {
     if (error instanceof AuthError) {
       return failed(error.code)
@@ -2763,7 +2770,7 @@ export async function ssoCallback(
 
   const ticket = `${OAUTH_TICKET_PREFIX}${randomToken()}`
   // The verifier and the nonce have done their job and are not kept.
-  const { codeVerifier: _verifier, nonce: _nonce, ...kept } = sso
+  const { codeVerifier: _verifier, nonce: _nonce, requestId: _request, ...kept } = sso
   const proven: State = {
     ...state,
     oauthPhase: 'proven',
