@@ -1442,7 +1442,13 @@ export async function revokeForProposal(
 export async function revokeOthers(
   deps: RevokeDeps,
   scope: Scope,
-  input: { userId: string; currentSessionId: string; reason?: SessionRevokeReason; actor: Actor }
+  input: {
+    userId: string
+    currentSessionId: string
+    reason?: SessionRevokeReason
+    actor: Actor
+    onlyIds?: string[]
+  }
 ): Promise<number> {
   return revokeForUser(
     deps,
@@ -1450,7 +1456,8 @@ export async function revokeOthers(
     input.userId,
     input.reason ?? 'revoked_by_user',
     input.actor,
-    input.currentSessionId
+    input.currentSessionId,
+    input.onlyIds
   )
 }
 
@@ -1460,18 +1467,22 @@ async function revokeForUser(
   userId: string,
   reason: SessionRevokeReason,
   actor: Actor,
-  exceptSessionId?: string
+  exceptSessionId?: string,
+  onlyIds?: string[]
 ): Promise<number> {
   const now = deps.clock.now()
   // Only active sessions can have unexpired access tokens, so those are denylisted up front.
   const active = await deps.sessions.listActiveByUser(scope.environmentId, userId, now)
   await denylist(
     deps,
-    active.map((session) => session.id).filter((id) => id !== exceptSessionId),
+    active
+      .map((session) => session.id)
+      .filter((id) => id !== exceptSessionId && (!onlyIds || onlyIds.includes(id))),
     now
   )
   const ended = await deps.sessions.revokeByUser(scope.environmentId, userId, reason, now, {
     exceptSessionId,
+    onlyIds,
     activity: (sessionId) => revoked(deps, scope, { id: sessionId, userId }, reason, actor),
   })
   // Covers a session created between the list and the update.
@@ -1487,6 +1498,7 @@ async function revokeForUser(
  * @param userId - The user.
  * @param reason - Why the sessions end.
  * @param actor - Who is ending them, for the audit log.
+ * @param onlyIds - Revoke just these (a snapshot taken earlier), none created since.
  * @returns How many sessions were revoked.
  */
 export async function revokeAllForUser(
@@ -1494,9 +1506,10 @@ export async function revokeAllForUser(
   scope: Scope,
   userId: string,
   reason: SessionRevokeReason,
-  actor: Actor
+  actor: Actor,
+  onlyIds?: string[]
 ): Promise<number> {
-  return revokeForUser(deps, scope, userId, reason, actor)
+  return revokeForUser(deps, scope, userId, reason, actor, undefined, onlyIds)
 }
 
 /**

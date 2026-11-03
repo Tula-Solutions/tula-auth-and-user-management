@@ -515,6 +515,11 @@ export async function confirmTotp(
   if ((await Settings.current(deps, scope)).mfa.policy === 'off') {
     throw new AuthError('mfa.not_available')
   }
+  // Taken before the factor is read: a session made by a request that confirms first (TULA-155)
+  // appears only after that, so this request, if it loses, never revokes the winner's session.
+  const before = (await deps.sessions.listActiveByUser(scope.environmentId, userId, now)).map(
+    (session) => session.id
+  )
   const [factor, user] = await Promise.all([
     deps.factors.findTotp(scope.environmentId, userId),
     deps.users.findById(scope.environmentId, userId),
@@ -537,16 +542,20 @@ export async function confirmTotp(
   // (as a password reset does). If this first sweep fails, nothing has changed: the enrolment
   // is still pending and can be confirmed again. The other order could leave the factor on,
   // sessions that never proved it alive, and the backup codes lost with the failed response.
-  const sweep = () =>
+  const sweep = (onlyIds?: string[]) =>
     self.sessionId
       ? Sessions.revokeOthers(deps, scope, {
           userId,
           currentSessionId: self.sessionId,
           reason: 'mfa_changed',
           actor,
+          onlyIds,
         })
-      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
-  await sweep()
+      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor, onlyIds)
+  // Only the sessions seen before the read: if another request confirms first, this one fails
+  // below and must not have ended the session that request created. The sweep after the
+  // confirmation takes everything.
+  await sweep(before)
   const confirmed = await deps.factors.confirmTotp(scope.environmentId, factor.id, {
     step,
     at: now,
