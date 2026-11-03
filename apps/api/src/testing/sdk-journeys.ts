@@ -3278,7 +3278,14 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       async function ssoServer(
         protocol: 'oidc' | 'saml' = 'oidc',
         options: { mfaRequired?: boolean } = {}
-      ): Promise<Server & { domain: string; patch(body: object): Promise<void> }> {
+      ): Promise<
+        Server & {
+          domain: string
+          orgId: string
+          connectionId: string
+          patch(body: object): Promise<void>
+        }
+      > {
         const s = await oauthServer()
         const proxy = Bun.serve({
           hostname: '127.0.0.1',
@@ -3354,13 +3361,21 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         const patch = async (body: object) => {
           expect((await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, body)).status).toBe(200)
         }
-        return Object.assign(s, { domain, patch })
+        return Object.assign(s, { domain, orgId: org.id, connectionId: id, patch })
       }
 
       /** Play the user at the identity provider; returns where the API's callback sent the browser. */
-      async function atIdp(s: Server, authorizationUrl: string, email: string): Promise<string> {
+      async function atIdp(
+        s: Server,
+        authorizationUrl: string,
+        email: string,
+        groups?: string
+      ): Promise<string> {
         const url = new URL(authorizationUrl)
         url.searchParams.set('login_hint', email)
+        if (groups !== undefined) {
+          url.searchParams.set('groups', groups)
+        }
         const signedIn = await s.navigate(pathOf(url.toString()))
         expect(signedIn.status).toBe(303)
         const callback = await s.navigate(pathOf(signedIn.headers.get('location') ?? ''))
@@ -3487,6 +3502,79 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           await first.tula.session.signOut()
           const again = await signInOnce()
           expect(again.tula.state).toMatchObject({ status: 'signed-in', user: { id: userId } })
+        }
+      )
+
+      /** One single-sign-on round at the mock IdP with `groups`; the user id it signed in. */
+      async function ssoWithGroups(
+        s: Server & { domain: string },
+        email: string,
+        groups: string
+      ): Promise<string> {
+        const browserTab = tab()
+        browserTab.open(SIGN_IN_PAGE)
+        const start = s.client('web')
+        const flow = await start.tula.signIn.start({ identifier: email })
+        const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+        const landingUrl = await atIdp(s, url, email, groups)
+        browserTab.open(landingUrl)
+        const landing = s.client('web', { cookies: start.cookies })
+        expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+        const state = landing.tula.state
+        return state.status === 'signed-in' ? (state.user?.id ?? '') : ''
+      }
+
+      async function roleOfMember(
+        s: Server & { orgId: string },
+        userId: string
+      ): Promise<string | undefined> {
+        const list = await s.admin('GET', `/v1/admin/organizations/${s.orgId}/memberships`)
+        const { data } = (await list.json()) as { data: { userId: string; role: string }[] }
+        return data.find((one) => one.userId === userId)?.role
+      }
+
+      page(
+        'sso group roles follow the identity provider',
+        'SSO: the saved order of the group mapping is the precedence, and the role follows the group across two sign-ins',
+        async () => {
+          const s = await ssoServer()
+          const saved = await s.admin(
+            'PUT',
+            `/v1/admin/sso-connections/${s.connectionId}/group-roles`,
+            {
+              mappings: [
+                { group: 'ops', role: 'admin' },
+                { group: 'staff', role: 'member' },
+              ],
+            }
+          )
+          expect(saved.status).toBe(200)
+          // A second admin, so that the first can be demoted.
+          await ssoWithGroups(s, `bob@${s.domain}`, 'ops')
+          const ada = await ssoWithGroups(s, `ada@${s.domain}`, 'staff,ops')
+          expect(await roleOfMember(s, ada)).toBe('admin')
+          expect(await ssoWithGroups(s, `ada@${s.domain}`, 'staff')).toBe(ada)
+          expect(await roleOfMember(s, ada)).toBe('member')
+        }
+      )
+
+      page(
+        'sso group roles keep the last manager',
+        'SSO: a mapping to a role that does not exist is refused, and the only manager keeps the role while the sign-in succeeds',
+        async () => {
+          const s = await ssoServer()
+          const path = `/v1/admin/sso-connections/${s.connectionId}/group-roles`
+          const refused = await s.admin('PUT', path, {
+            mappings: [{ group: 'ops', role: 'nobody' }],
+          })
+          expect(refused.status).toBe(422)
+          expect(
+            (await s.admin('PUT', path, { mappings: [{ group: 'ops', role: 'admin' }] })).status
+          ).toBe(200)
+          const ada = await ssoWithGroups(s, `ada@${s.domain}`, 'ops')
+          expect(await roleOfMember(s, ada)).toBe('admin')
+          expect(await ssoWithGroups(s, `ada@${s.domain}`, 'other')).toBe(ada)
+          expect(await roleOfMember(s, ada)).toBe('admin')
         }
       )
 

@@ -55,6 +55,7 @@ export function describeSsoConnectionStore(
       issuer: 'https://idp.example.com',
       clientId: 'client-1',
       clientSecretSealed: 'sealed',
+      attributeMapping: null,
       defaultRole: 'member',
       enforced: false,
       breakGlassRole: null,
@@ -344,6 +345,38 @@ export function describeSsoConnectionStore(
           linked(ctx.b, userId, record.id)
         )
       ).toBe(false)
+    })
+
+    test('an attribute mapping is stored and changed with the connection', async () => {
+      const record = connection(ctx.a, org, { attributeMapping: { idp: 'okta', groups: 'roles' } })
+      expect(((await insert(record)) as SsoConnectionRecord).attributeMapping).toEqual({
+        idp: 'okta',
+        groups: 'roles',
+      })
+      const changed = (await update(record.id, {
+        attributeMapping: { idp: 'entra' },
+      })) as SsoConnectionRecord
+      expect(changed.attributeMapping).toEqual({ idp: 'entra' })
+    })
+
+    test('an organization’s group roles are replaced whole and kept in order', async () => {
+      const mappings = [
+        { group: 'Admins', role: 'admin' },
+        { group: 'Everyone', role: 'member' },
+      ]
+      const write = (list: typeof mappings) =>
+        ctx.store.replaceGroupRoles(
+          { ...ctx.a, organizationId: org, mappings: list },
+          later,
+          activity(ctx.a, 'sso_connection.updated', org)
+        )
+      expect(await ctx.store.listGroupRoles(ctx.a.environmentId, org)).toEqual([])
+      await write(mappings)
+      expect(await ctx.store.listGroupRoles(ctx.a.environmentId, org)).toEqual(mappings)
+      expect(await ctx.store.listGroupRoles(ctx.b.environmentId, org)).toEqual([])
+      const member = { group: 'Everyone', role: 'member' }
+      await write([member])
+      expect(await ctx.store.listGroupRoles(ctx.a.environmentId, org)).toEqual([member])
     })
   })
 }

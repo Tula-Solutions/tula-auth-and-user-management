@@ -1677,6 +1677,7 @@ describe('a provider sign-in on an SSO-enforced domain (TULA-140)', () => {
         clientId: 'client',
         clientSecretSealed: 'sealed',
         saml: null,
+        attributeMapping: null,
         defaultRole: 'member',
         enforced,
         breakGlassRole: null,

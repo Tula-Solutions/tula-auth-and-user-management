@@ -76,6 +76,7 @@ export function fakeSsoConnection(overrides: Partial<FakeSsoConnection> = {}): F
     enforced: false,
     breakGlassRole: null,
     trustIdpMfa: false,
+    attributeMapping: null,
     domains: [],
     createdAt: NOW,
     updatedAt: NOW,

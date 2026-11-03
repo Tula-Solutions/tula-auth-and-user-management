@@ -65,6 +65,8 @@ describe('conformance scenarios, in process', () => {
       'scim users: ownership and the last manager',
       'scim: malformed requests and unknown users',
       'email code sign-in',
+      'sso group roles follow the identity provider',
+      'sso group roles keep the last manager',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',

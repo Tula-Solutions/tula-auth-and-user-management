@@ -499,6 +499,9 @@
                   "subject": {
                     "type": "string"
                   },
+                  "groups": {
+                    "type": "string"
+                  },
                   "unverified": {
                     "type": "boolean"
                   },
@@ -1293,6 +1296,9 @@
                     "type": "string"
                   },
                   "subject": {
+                    "type": "string"
+                  },
+                  "groups": {
                     "type": "string"
                   },
                   "unverified": {

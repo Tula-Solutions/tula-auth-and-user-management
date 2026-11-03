@@ -128,6 +128,7 @@ async function connect(
     enforced: false,
     breakGlassRole: null,
     trustIdpMfa: false,
+    attributeMapping: null,
     domains: [domain],
     createdAt: now,
     updatedAt: now,
