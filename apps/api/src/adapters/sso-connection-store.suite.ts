@@ -301,6 +301,15 @@ export function describeSsoConnectionStore(
       expect(await ctx.recorded()).toEqual(['sso_connection.created', 'sso_connection.deleted'])
     })
 
+    test('delete refuses an active connection and changes nothing', async () => {
+      const record = connection(ctx.a, org, { status: 'active' })
+      await insert(record)
+      const gone = activity(ctx.a, 'sso_connection.deleted', record.id)
+      expect(await ctx.store.delete(ctx.a.environmentId, record.id, gone)).toBe('in_use')
+      expect((await ctx.store.find(ctx.a.environmentId, record.id))?.status).toBe('active')
+      expect(await ctx.recorded()).toEqual(['sso_connection.created'])
+    })
+
     test('a connection with an identity is deleted with it', async () => {
       const record = connection(ctx.a, org, { status: 'active' })
       await insert(record)
@@ -314,6 +323,7 @@ export function describeSsoConnectionStore(
         )
       ).toBe(true)
       expect(await ctx.recorded()).toEqual(['sso_connection.created', 'user.sso_linked'])
+      expect(await update(record.id, { status: 'disabled' })).toMatchObject({ status: 'disabled' })
       const attempt = activity(ctx.a, 'sso_connection.deleted', record.id)
       expect(await ctx.store.delete(ctx.a.environmentId, record.id, attempt)).toBe('deleted')
       expect(await ctx.store.find(ctx.a.environmentId, record.id)).toBeNull()
@@ -321,6 +331,7 @@ export function describeSsoConnectionStore(
       expect(await ctx.recorded()).toEqual([
         'sso_connection.created',
         'user.sso_linked',
+        'sso_connection.updated',
         'sso_connection.deleted',
       ])
     })

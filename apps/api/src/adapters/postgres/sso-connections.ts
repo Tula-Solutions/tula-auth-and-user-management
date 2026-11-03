@@ -283,9 +283,21 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
     environmentId: string,
     id: string,
     recorded: Recorded
-  ): Promise<'deleted' | 'missing'> {
+  ): Promise<'deleted' | 'missing' | 'in_use'> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
+      // The row lock orders this against a concurrent Activate: whichever commits second sees the other.
+      const [current] = await tx
+        .select({ status: ssoConnections.status })
+        .from(ssoConnections)
+        .where(and(eq(ssoConnections.environmentId, environmentId), eq(ssoConnections.id, id)))
+        .for('update')
+      if (!current) {
+        return 'missing' as const
+      }
+      if (current.status === 'active') {
+        return 'in_use' as const
+      }
       // The mark has no foreign key (migration 0048), so it is cleared by hand, with the rest.
       await tx
         .update(users)

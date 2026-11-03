@@ -152,15 +152,19 @@ export interface SsoConnectionStore {
 
   /**
    * Remove a connection, its domains and its identities, and clear the mark of the users it
-   * managed (they keep their accounts), in one transaction (decision 13). The caller has
-   * checked that the connection is not active.
+   * managed (they keep their accounts), in one transaction (decision 13). An active connection
+   * is refused by the delete itself, so an Activate racing a check made earlier cannot lose.
    *
    * @param environmentId - The environment.
    * @param id - The connection.
    * @param activity - Recorded in the same transaction, only if something was removed.
-   * @returns `deleted` or `missing`.
+   * @returns `deleted`, `missing`, or `in_use` when the connection is active.
    */
-  delete(environmentId: string, id: string, activity: Recorded): Promise<'deleted' | 'missing'>
+  delete(
+    environmentId: string,
+    id: string,
+    activity: Recorded
+  ): Promise<'deleted' | 'missing' | 'in_use'>
 
   /**
    * @param environmentId - The environment.

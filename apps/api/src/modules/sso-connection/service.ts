@@ -785,4 +785,7 @@ export async function remove(
   if (result === 'missing') {
     throw new AuthError('sso.connection_not_found')
   }
+  if (result === 'in_use') {
+    throw new AuthError('sso.connection_in_use')
+  }
 }

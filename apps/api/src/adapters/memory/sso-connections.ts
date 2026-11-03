@@ -177,10 +177,14 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
     environmentId: string,
     id: string,
     recorded: Recorded
-  ): Promise<'deleted' | 'missing'> {
+  ): Promise<'deleted' | 'missing' | 'in_use'> {
     const activity = activityOf(recorded)
-    if (!this.#own(environmentId, id)) {
+    const current = this.#own(environmentId, id)
+    if (!current) {
       return 'missing'
+    }
+    if (current.status === 'active') {
+      return 'in_use'
     }
     for (const [key, one] of this.#identities) {
       if (one.connectionId === id) {
