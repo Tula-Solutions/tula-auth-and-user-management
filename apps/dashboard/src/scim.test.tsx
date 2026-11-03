@@ -65,7 +65,7 @@ describe('SCIM tokens on the organization page', () => {
     const token = (await within(dialog()).findByTestId('created-scim-token')).textContent ?? ''
     expect(token).toStartWith('tula_scim_')
     expect(within(dialog()).getByTestId('scim-base-url').textContent).toBe(
-      `${window.location.origin}/v1/scim/v2`
+      'https://auth.example.test/v1/scim/v2'
     )
     expect(localStorage.length + sessionStorage.length).toBe(0)
     await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))

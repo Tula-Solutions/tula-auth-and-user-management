@@ -228,7 +228,7 @@ function ScimToken() {
             <CopyButton value={created.token} label='Copy SCIM token' />
           </div>
           <p className='text-sm text-muted-foreground'>
-            SCIM base address: <code>{`${window.location.origin}/v1/scim/v2`}</code>
+            SCIM base address: <code>{created.scimBaseUrl}</code>
           </p>
         </div>
       ) : null}
@@ -527,7 +527,7 @@ function ServiceProviderValues({ connection }: { connection: SsoConnection }) {
           ['Entity ID (audience)', connection.saml?.spEntityId ?? ''],
           ['ACS URL (reply URL)', connection.saml?.acsUrl ?? ''],
         ]
-      : [['Redirect URI', `${window.location.origin}/v1/sso/callback/${connection.id}`]]
+      : [['Redirect URI', connection.redirectUri ?? '']]
   return (
     <Section
       title='2. Give these values to your identity provider'

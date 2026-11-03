@@ -15379,6 +15379,12 @@
               }
             ]
           },
+          "redirectUri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "attributeMapping": {
             "anyOf": [
               {
@@ -15434,6 +15440,7 @@
           "clientId",
           "clientSecretSet",
           "saml",
+          "redirectUri",
           "attributeMapping",
           "defaultRole",
           "enforced",

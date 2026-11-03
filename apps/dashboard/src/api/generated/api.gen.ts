@@ -6772,6 +6772,8 @@ export interface SsoConnection {
   clientId: string;
   clientSecretSet: boolean;
   saml: SamlConnection | null;
+  /** @nullable */
+  redirectUri: string | null;
   attributeMapping: SsoAttributeMapping | null;
   defaultRole: string;
   enforced: boolean;

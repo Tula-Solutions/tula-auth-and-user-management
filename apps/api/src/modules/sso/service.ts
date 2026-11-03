@@ -19,6 +19,7 @@ import { timingSafeEqual } from '~/lib/crypto'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Outbound from '~/lib/outbound'
+import { publicBase } from '~/lib/public-base'
 import { SAML_NAME_ID_FORMAT } from '~/lib/saml-metadata'
 import * as SamlVerifier from '~/lib/saml-verifier'
 import * as Audit from '~/modules/audit/service'
@@ -193,7 +194,7 @@ export async function requireActive(
  * @returns The absolute callback URL.
  */
 export function callbackUrl(deps: Pick<Deps, 'config'>, connectionId: string): string {
-  return `${deps.config.publicUrl}/v1/sso/callback/${connectionId}`
+  return `${publicBase(deps.config)}/v1/sso/callback/${connectionId}`
 }
 
 /** Documents and key sets by URL, each with when it stops being reused. */

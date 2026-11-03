@@ -153,7 +153,7 @@ export function scimRoutes(
           JSON.stringify({
             ...view(token),
             token: token.secret,
-            scimBaseUrl: 'http://localhost:3003/v1/scim/v2',
+            scimBaseUrl: 'https://auth.example.test/v1/scim/v2',
           }),
           {
             status: 201,

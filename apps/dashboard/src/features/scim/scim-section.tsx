@@ -24,16 +24,6 @@ import { printable, printableName } from '~/lib/printable'
 const QUERY_ROOT = '/v1/admin/scim-tokens'
 
 /**
- * The address the identity provider's SCIM client is pointed at: the API this dashboard is
- * served from (`<PUBLIC_URL>/v1/scim/v2`, docs/scim.md).
- *
- * @returns The SCIM base URL.
- */
-export function scimBaseUrl(): string {
-  return `${window.location.origin}/v1/scim/v2`
-}
-
-/**
  * Create a token, then show it exactly once with the base URL to paste into the provider.
  * The token is component state only: closing the dialog drops it.
  */
@@ -60,7 +50,7 @@ function CreateTokenDialog({
   })
   const [name, setName] = useState('')
   const [problem, setProblem] = useState<string>()
-  const [created, setCreated] = useState<string | null>(null)
+  const [created, setCreated] = useState<{ token: string; baseUrl: string } | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -95,7 +85,7 @@ function CreateTokenDialog({
       { data: { organizationId, name: trimmed } },
       {
         onSuccess: (result) => {
-          setCreated(result.token)
+          setCreated({ token: result.token, baseUrl: result.scimBaseUrl })
           create.reset()
         },
       }
@@ -116,18 +106,18 @@ function CreateTokenDialog({
             data-testid='created-scim-token'
             className='rounded-md border bg-muted px-3 py-2 font-mono text-sm break-all select-all'
           >
-            {created}
+            {created.token}
           </code>
-          <CopyButton value={created} label='Copy token' />
+          <CopyButton value={created.token} label='Copy token' />
           <div className='flex flex-col gap-1'>
             <p className='text-sm font-medium'>SCIM base URL</p>
             <code
               data-testid='scim-base-url'
               className='rounded-md border bg-muted px-3 py-2 font-mono text-sm break-all select-all'
             >
-              {scimBaseUrl()}
+              {created.baseUrl}
             </code>
-            <CopyButton value={scimBaseUrl()} label='Copy base URL' />
+            <CopyButton value={created.baseUrl} label='Copy base URL' />
           </div>
           <p className='text-sm text-muted-foreground'>
             Paste both into the identity provider, the token as a bearer token. It opens the SCIM

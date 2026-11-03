@@ -95,6 +95,15 @@ beforeEach(() => {
 })
 
 describe('SSO connection admin service', () => {
+  test('the view carries the OIDC redirect URI built from the public URL, for the IdP form', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    expect(made.redirectUri).toBe(`${deps.config.publicUrl}/v1/sso/callback/${made.id}`)
+    const trimmed = { ...deps, config: { ...deps.config, publicUrl: `${deps.config.publicUrl}//` } }
+    expect((await Sso.get(trimmed, TENANT, made.id)).redirectUri).toBe(made.redirectUri)
+  })
+
   test('a draft is created with its secret sealed and never returned', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')

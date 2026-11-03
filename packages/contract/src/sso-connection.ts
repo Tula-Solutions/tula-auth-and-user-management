@@ -169,6 +169,8 @@ export const SsoConnectionSchema = z
     clientId: z.string(),
     clientSecretSet: z.boolean(),
     saml: SamlConnectionViewSchema.nullable(),
+    /** An OIDC connection's redirect URI to register with the provider, built from `PUBLIC_URL`; null for SAML. */
+    redirectUri: z.string().nullable(),
     attributeMapping: SsoAttributeMappingSchema.nullable(),
     defaultRole: z.string(),
     enforced: z.boolean(),

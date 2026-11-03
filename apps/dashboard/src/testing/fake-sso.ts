@@ -76,6 +76,7 @@ export function fakeSsoConnection(overrides: Partial<FakeSsoConnection> = {}): F
     clientId: protocol === 'oidc' ? 'client-1' : '',
     clientSecretSet: protocol === 'oidc',
     saml: null,
+    redirectUri: protocol === 'oidc' ? `${SP_BASE}/v1/sso/callback/${id}` : null,
     defaultRole: 'member',
     enforced: false,
     breakGlassRole: null,

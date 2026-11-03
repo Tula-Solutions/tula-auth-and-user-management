@@ -146,6 +146,8 @@ function view(
       })),
       ...samlUrls(config, record),
     },
+    redirectUri:
+      record.protocol === 'oidc' ? `${publicBase(config)}/v1/sso/callback/${record.id}` : null,
     attributeMapping: record.attributeMapping,
     defaultRole: record.defaultRole,
     enforced: record.enforced,

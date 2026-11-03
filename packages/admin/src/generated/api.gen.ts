@@ -1922,6 +1922,7 @@ export interface Schemas {
     clientId: string
     clientSecretSet: boolean
     saml: Schemas['SamlConnection'] | null
+    redirectUri: string | null
     attributeMapping: Schemas['SsoAttributeMapping'] | null
     defaultRole: string
     enforced: boolean

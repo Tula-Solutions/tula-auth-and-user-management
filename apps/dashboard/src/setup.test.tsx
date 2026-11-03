@@ -19,6 +19,7 @@ const connection = {
   clientId: 'abc',
   clientSecretSet: true,
   saml: null,
+  redirectUri: `https://auth.example.test/v1/sso/callback/${CONNECTION_ID}`,
   attributeMapping: null,
   domains: [],
   tested: false,
@@ -143,7 +144,7 @@ describe('the setup portal', () => {
     await user.type(screen.getByLabelText('Client secret'), 'hunter2')
     await user.click(screen.getByLabelText('acme.test'))
     await user.click(screen.getByRole('button', { name: 'Create connection' }))
-    await screen.findByText(`${window.location.origin}/v1/sso/callback/${CONNECTION_ID}`)
+    await screen.findByText(`https://auth.example.test/v1/sso/callback/${CONNECTION_ID}`)
     const post = calls.find((c) => c.method === 'POST')
     expect(post?.body).toMatchObject({
       protocol: 'oidc',
@@ -187,6 +188,7 @@ describe('the setup portal', () => {
               revokedAt: null,
               createdAt: '2026-01-01T00:00:00.000Z',
               token: secret,
+              scimBaseUrl: 'https://auth.example.test/v1/scim/v2',
             },
           }
         : { status: 200, body: portal([]) }
@@ -198,6 +200,7 @@ describe('the setup portal', () => {
     await user.type(screen.getByLabelText('Token name'), 'Okta')
     await user.click(screen.getByRole('button', { name: 'Create a SCIM token' }))
     await screen.findByText(secret)
+    expect(document.body.textContent).toContain('https://auth.example.test/v1/scim/v2')
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Okta' })
     expect(JSON.stringify({ ...localStorage })).not.toContain('scimsecretvalue')
     expect(JSON.stringify({ ...sessionStorage })).not.toContain('scimsecretvalue')

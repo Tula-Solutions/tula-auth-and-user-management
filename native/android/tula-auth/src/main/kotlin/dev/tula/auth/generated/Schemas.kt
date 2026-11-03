@@ -2225,6 +2225,7 @@ data class SsoConnection(
     val clientId: String,
     val clientSecretSet: Boolean,
     val saml: SamlConnection?,
+    val redirectUri: String?,
     val attributeMapping: SsoAttributeMapping?,
     val defaultRole: String,
     val enforced: Boolean,
