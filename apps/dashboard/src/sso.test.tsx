@@ -133,6 +133,62 @@ describe('the SSO section', () => {
     expect(download.getAttribute('download')).toBe('tula-sp-metadata.xml')
   })
 
+  test('an empty form says what is missing and sends nothing', async () => {
+    const api = arranged()
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'New connection' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Create connection' }))
+    expect(await within(dialog()).findByText(/Enter a name for the connection/)).toBeTruthy()
+    expect(within(dialog()).getByText('Enter the provider’s issuer address.')).toBeTruthy()
+    expect(within(dialog()).getByText('Enter the client id.')).toBeTruthy()
+    expect(within(dialog()).getByText('Enter the client secret.')).toBeTruthy()
+    expect(sent(api, 'POST')).toHaveLength(0)
+  })
+
+  test('creates a SAML connection from values typed by hand, with a next certificate', async () => {
+    const api = arranged()
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'New connection' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Entra')
+    await user.selectOptions(within(dialog()).getByLabelText('Protocol'), 'saml')
+    await user.selectOptions(within(dialog()).getByLabelText('Identity provider values'), 'manual')
+    await user.type(
+      within(dialog()).getByLabelText('Identity provider entity id'),
+      'https://idp.example.com/entity'
+    )
+    await user.type(within(dialog()).getByLabelText('Sign-in URL'), 'https://idp.example.com/sso')
+    await user.type(within(dialog()).getByLabelText('Signing certificate'), 'CERT-ONE')
+    await user.type(
+      within(dialog()).getByLabelText('Next signing certificate (optional)'),
+      'CERT-TWO'
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Create connection' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'POST')[0]?.body).toMatchObject({
+      saml: {
+        idpEntityId: 'https://idp.example.com/entity',
+        ssoUrl: 'https://idp.example.com/sso',
+        certificates: ['CERT-ONE', 'CERT-TWO'],
+      },
+    })
+  })
+
+  test('creates a SAML connection from pasted metadata', async () => {
+    const api = arranged()
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'New connection' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Entra')
+    await user.selectOptions(within(dialog()).getByLabelText('Protocol'), 'saml')
+    await user.selectOptions(within(dialog()).getByLabelText('Identity provider values'), 'xml')
+    await user.click(within(dialog()).getByLabelText('Metadata XML'))
+    await user.paste('<EntityDescriptor/>')
+    await user.click(within(dialog()).getByRole('button', { name: 'Create connection' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'POST')[0]?.body).toMatchObject({
+      saml: { metadataXml: '<EntityDescriptor/>' },
+    })
+  })
+
   test('says what a refused create means', async () => {
     const { user } = start(arranged({ connections: [{ name: 'Okta' }] }))
     await user.click(await screen.findByRole('button', { name: 'New connection' }))
