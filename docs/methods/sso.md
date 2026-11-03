@@ -76,9 +76,17 @@ holds `sso` and its token carries the `sso_conn` claim.
 
 ## SDK calls
 
-`@tula-tech/admin` manages connections (the `/v1/admin/sso-connections` operations). The client SDKs hand the `sso` step on
-unchanged; starting it is `POST /v1/client/sign-ins/:attemptId/sso`, which returns `authorizationUrl`
-(a client call arrives with TULA-141 and TULA-142). The mock provider (`OAUTH_MOCK_PROVIDER=true`) serves a
+`@tula-tech/admin` manages connections (the `/v1/admin/sso-connections` operations). Starting the `sso` step is
+`POST /v1/client/sign-ins/:attemptId/sso`, which returns `authorizationUrl` and a binding. In
+`@tula-tech/core` it is `flow.startSso({ redirectUrl })`: it keeps the binding in the tab's session
+storage (the OAuth round trip's own key and rules) and navigates to the provider, and the page at
+`redirectUrl` finishes with `signIn.handleOAuthCallback()`. The Swift, Kotlin and Expo clients arrive with
+TULA-142. `<SignIn>` offers "Continue with SSO" when the step offers `sso`, and shows only that (no password
+field) when it is the only strategy; `oauthCallbackUrl` on the provider names the return page, as for
+a provider sign-in, and `@tula-tech/nextjs` needs nothing more than its callback page. The words are
+`signIn.sso` (the button and the title) and `signIn.ssoPrompt` (the line under the title) in the
+localization table; no new element name is added (the other ways to sign in are the `alternatives` element). The
+mock provider (`OAUTH_MOCK_PROVIDER=true`) serves a
 mock identity provider at `/v1/dev/sso` for tests.
 
 ## Troubleshooting

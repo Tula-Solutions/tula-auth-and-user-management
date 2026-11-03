@@ -88,6 +88,14 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep | null>
   /**
+   * Start single sign-on (the `sso` first factor): the page is replaced by the identity
+   * provider's. The sign-in finishes on the `redirectUrl` page, in `<OAuthCallback>` or
+   * `signIn.handleOAuthCallback()`. It answers the step it was on, which is unchanged.
+   *
+   * @param input - `redirectUrl`: a page of this origin that finishes the round trip.
+   */
+  startSso(input: { redirectUrl: string }): Promise<FlowStep | null>
+  /**
    * Whether an emailed link can be used in this browser: it needs storage the browser's tabs
    * share, which some privacy modes and sandboxed frames refuse. Offer only the code where it
    * cannot.
@@ -205,6 +213,10 @@ export function useSignIn(): UseSignInResult {
     (options?: { signal?: AbortSignal }) => watch((flow) => flow.waitForEmailLink(options)),
     [watch]
   )
+  const startSso = useCallback(
+    (input: { redirectUrl: string }) => act((flow) => flow.startSso(input).then(() => flow.step)),
+    [act]
+  )
   const canUseEmailLink = useCallback(() => client.signIn.canUseEmailLink(), [client])
   const prepareSecondFactor = useCallback(
     (input: { method: 'sms_code' }) => act((flow) => flow.prepareSecondFactor(input)),
@@ -237,6 +249,7 @@ export function useSignIn(): UseSignInResult {
     prepareFirstFactor,
     attemptFirstFactor,
     waitForEmailLink,
+    startSso,
     canUseEmailLink,
     prepareSecondFactor,
     submitSecondFactor,

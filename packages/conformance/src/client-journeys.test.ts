@@ -111,12 +111,7 @@ describe('the committed list', () => {
 
   test('what each client has not built yet: nothing for @tula-tech/core, and for @tula-tech/expo a number per ticket that only this line lets change', async () => {
     const list = await loadClientJourneys()
-    expect(notBuilt(list, 'core').map((entry) => entry.ticket)).toEqual([
-      'TULA-141',
-      'TULA-141',
-      'TULA-141',
-      'TULA-141',
-    ])
+    expect(notBuilt(list, 'core').map((entry) => entry.ticket)).toEqual([])
     const perTicket = new Map<string, number>()
     for (const { ticket } of notBuilt(list, 'expo')) {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)

@@ -80,6 +80,10 @@ export interface TulaLocalization {
     emailResent: string
     /** The button that asks for a texted code, and the title before one was asked for. */
     smsCode: string
+    /** The button that starts single sign-on, and the title of its screen. */
+    sso: string
+    /** The line under that title. */
+    ssoPrompt: string
     /** Before a code was asked for. */
     smsCodePrompt: string
     /** The title once a code was asked for. */
@@ -798,6 +802,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailResendIn: 'Send a new email in {time}',
     emailResent: 'A new email is on its way.',
     smsCode: 'Text me a code',
+    sso: 'Continue with SSO',
+    ssoPrompt: 'Your organization signs you in through its identity provider.',
     smsCodePrompt: 'We will text a 6-digit code to this number, if you can sign in with it.',
     smsTitle: 'Check your phone',
     smsCodeSubtitle:

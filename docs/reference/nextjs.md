@@ -2345,6 +2345,10 @@ export interface TulaLocalization {
     emailResent: string
     /** The button that asks for a texted code, and the title before one was asked for. */
     smsCode: string
+    /** The button that starts single sign-on, and the title of its screen. */
+    sso: string
+    /** The line under that title. */
+    ssoPrompt: string
     /** Before a code was asked for. */
     smsCodePrompt: string
     /** The title once a code was asked for. */
@@ -3470,6 +3474,14 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param options - `signal`: stop waiting.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep | null>
+  /**
+   * Start single sign-on (the `sso` first factor): the page is replaced by the identity
+   * provider's. The sign-in finishes on the `redirectUrl` page, in `<OAuthCallback>` or
+   * `signIn.handleOAuthCallback()`. It answers the step it was on, which is unchanged.
+   *
+   * @param input - `redirectUrl`: a page of this origin that finishes the round trip.
+   */
+  startSso(input: { redirectUrl: string }): Promise<FlowStep | null>
   /**
    * Whether an emailed link can be used in this browser: it needs storage the browser's tabs
    * share, which some privacy modes and sandboxed frames refuse. Offer only the code where it
