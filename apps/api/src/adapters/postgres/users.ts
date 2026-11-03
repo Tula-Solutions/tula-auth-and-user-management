@@ -770,6 +770,40 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so only a real change writes and is recorded.
+      const [changed] = await tx
+        .update(users)
+        .set({ firstName: names.firstName, lastName: names.lastName, updatedAt: at })
+        .where(
+          and(
+            isUser,
+            or(
+              sql`${users.firstName} is distinct from ${names.firstName}`,
+              sql`${users.lastName} is distinct from ${names.lastName}`
+            )
+          )
+        )
+        .returning(columns)
+      if (changed) {
+        await recordActivity(tx, activity ? [activity] : [])
+        return changed
+      }
+      const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
+      return unchanged ?? null
+    })
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,

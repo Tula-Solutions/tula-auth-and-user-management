@@ -140,10 +140,11 @@ async function apply(
   deps: Deps,
   ctx: ScimContext,
   userId: string,
-  changes: { active?: boolean; externalId?: string | null }
+  changes: { active?: boolean; externalId?: string | null; name?: NameChange }
 ) {
   const { record, user } = await load(deps, ctx, userId)
   const { environmentId } = ctx.tenant
+  await applyNames(deps, ctx, user, changes.name)
   if (changes.externalId !== undefined && changes.externalId !== record.externalId) {
     const refusal = await deps.scim.updateUser(
       environmentId,
@@ -163,13 +164,50 @@ async function apply(
   return resource(fresh.user, fresh.record)
 }
 
+/** The parts of `name` a directory sent; an absent part is left as it is. */
+type NameChange = { givenName?: string | null; familyName?: string | null }
+
+const nameOf = (value: string | null | undefined) => {
+  const trimmed = value?.trim()
+  return trimmed ? [...trimmed].slice(0, 100).join('') : null
+}
+
+/**
+ * Apply a directory's rename, only to an account this directory created: a linked account is
+ * the person's own and their name is theirs to change. The address never changes here.
+ */
+async function applyNames(deps: Deps, ctx: ScimContext, user: UserRecord, name?: NameChange) {
+  if (!name || user.managedByDirectoryId !== ctx.organizationId) {
+    return
+  }
+  const firstName = name.givenName === undefined ? user.firstName : nameOf(name.givenName)
+  const lastName = name.familyName === undefined ? user.lastName : nameOf(name.familyName)
+  if (firstName === user.firstName && lastName === user.lastName) {
+    return
+  }
+  const changed: Array<'name'> = ['name']
+  await deps.users.setNames(
+    ctx.tenant.environmentId,
+    user.id,
+    { firstName, lastName },
+    deps.clock.now(),
+    Audit.entry(deps, ctx.tenant, {
+      type: 'user.scim_updated',
+      actor: ctx.actor,
+      target: { type: 'user', id: user.id },
+      data: { organizationId: ctx.organizationId, changed },
+    })
+  )
+}
+
 /**
  * Provision a user: a new account this directory manages, or an existing one on a domain the
  * organization has verified, plus the membership.
  *
- * Not one transaction: an account created here and then refused a SCIM row (a racing
- * duplicate `externalId`) is left without a membership. shortcut: the retry finds it by
- * address and, being on no verified domain link, answers 409; upgrade to one store call.
+ * An account created here and then refused a SCIM row (a racing duplicate `externalId`) is
+ * deleted again, so the retry finds nothing to collide with. shortcut: that is a compensating
+ * delete, not one transaction, so a crash between the two leaves the account; upgrade to one
+ * store call.
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -248,17 +286,24 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     createdAt: now,
     updatedAt: now,
   }
-  const refusal = await deps.scim.insertUser(
-    record,
-    Audit.entry(deps, ctx.tenant, {
-      type: 'user.scim_provisioned',
-      actor: ctx.actor,
-      target: { type: 'user', id: user.id },
-      data: { organizationId: ctx.organizationId, method },
-    })
-  )
-  if (refusal) {
-    throw uniqueness()
+  try {
+    const refusal = await deps.scim.insertUser(
+      record,
+      Audit.entry(deps, ctx.tenant, {
+        type: 'user.scim_provisioned',
+        actor: ctx.actor,
+        target: { type: 'user', id: user.id },
+        data: { organizationId: ctx.organizationId, method },
+      })
+    )
+    if (refusal) {
+      throw uniqueness()
+    }
+  } catch (error) {
+    if (method === 'created') {
+      await Users.remove(deps, ctx.tenant, user.id, ctx.actor)
+    }
+    throw error
   }
   return apply(deps, ctx, user.id, { active: wanted })
 }
@@ -355,9 +400,8 @@ export async function list(
 }
 
 /**
- * Replace (PUT): `active` and `externalId` are what a directory may change. The address and
- * the names are not (shortcut: a rename in the directory is ignored; upgrade when a name
- * update method exists on the user store).
+ * Replace (PUT): `active`, `externalId` and, for an account the directory created, the
+ * names. The address never changes.
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -370,6 +414,7 @@ export async function replace(deps: Deps, ctx: ScimContext, userId: string, inpu
   return apply(deps, ctx, userId, {
     active: input.active ?? true,
     externalId: input.externalId ?? null,
+    ...(input.name && { name: input.name }),
   })
 }
 
@@ -402,9 +447,28 @@ export async function patch(
   userId: string,
   operations: Array<{ op: string; path?: string; value?: unknown }>
 ) {
-  const changes: { active?: boolean; externalId?: string | null } = {}
+  const changes: { active?: boolean; externalId?: string | null; name?: NameChange } = {}
+  const part = (key: 'givenName' | 'familyName', value: unknown, removing: boolean) => {
+    changes.name = {
+      ...changes.name,
+      [key]: removing || value == null ? null : typeof value === 'string' ? value : undefined,
+    }
+  }
   const set = (name: string, value: unknown, removing: boolean) => {
-    if (name === 'active') {
+    if (name === 'name.givenName') {
+      part('givenName', value, removing)
+    } else if (name === 'name.familyName') {
+      part('familyName', value, removing)
+    } else if (name === 'name' && value && typeof value === 'object') {
+      const given = (value as NameChange).givenName
+      const family = (value as NameChange).familyName
+      if (given !== undefined) {
+        part('givenName', given, removing)
+      }
+      if (family !== undefined) {
+        part('familyName', family, removing)
+      }
+    } else if (name === 'active') {
       changes.active = removing ? false : flag(value)
     } else if (name === 'externalId') {
       changes.externalId = removing || value === null ? null : String(value).slice(0, 255)

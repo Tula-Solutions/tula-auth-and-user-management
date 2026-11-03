@@ -1570,6 +1570,39 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
     })
 
+    test('sets the names, and another environment, or a missing user, changes nothing', async () => {
+      const input = user(ctx.a)
+      await ctx.users.create(input, Audit.none('fixture'))
+      const names = { firstName: 'Maya', lastName: null }
+      const set = await ctx.users.setNames(
+        ctx.a.environmentId,
+        input.id,
+        names,
+        later(1),
+        Audit.none('fixture')
+      )
+      expect(set).toMatchObject(names)
+      expect(
+        await ctx.users.setNames(
+          ctx.b.environmentId,
+          input.id,
+          { firstName: 'X', lastName: 'Y' },
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(
+        await ctx.users.setNames(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          names,
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject(names)
+    })
+
     test('one environment cannot read or change another’s users', async () => {
       const input = user(ctx.a, { emailVerifiedAt: null })
       await ctx.users.create(input, Audit.none('fixture'))

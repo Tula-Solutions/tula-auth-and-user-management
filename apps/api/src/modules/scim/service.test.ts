@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
@@ -348,5 +348,63 @@ describe('audit and ownership', () => {
     const res = await scim('GET', '/Users')
     expect(res.status).toBe(403)
     expect(res.body.status).toBe('403')
+  })
+})
+
+describe('create is one unit, and a directory rename reaches the user', () => {
+  test('a racing duplicate externalId leaves no orphan account', async () => {
+    const spy = spyOn(deps.scim, 'insertUser').mockImplementationOnce(
+      async () => 'external_id_taken'
+    )
+    const res = await scim('POST', '/Users', okta('race@acme.test'))
+    spy.mockRestore()
+    expect(res.body).toMatchObject({ status: '409', scimType: 'uniqueness' })
+    expect(await deps.users.findByEmail(TENANT.environmentId, 'race@acme.test')).toBeNull()
+    // The retry works: nothing is left to collide with.
+    expect((await scim('POST', '/Users', okta('race@acme.test'))).status).toBe(201)
+  })
+
+  test('PUT applies the names of a managed user and leaves the address', async () => {
+    const id = await provision()
+    const res = await scim(
+      'PUT',
+      `/Users/${id}`,
+      okta('maya@acme.test', { name: { givenName: 'Maya', familyName: 'Lindqvist' } })
+    )
+    expect(res.status).toBe(200)
+    expect(res.body.name).toMatchObject({ familyName: 'Lindqvist' })
+    const user = await deps.users.findById(TENANT.environmentId, id)
+    expect(user?.lastName).toBe('Lindqvist')
+    expect(user?.email).toBe('maya@acme.test')
+  })
+
+  test('PATCH applies name.givenName by path and name inside an object, and records names only', async () => {
+    const id = await provision()
+    await scim('PATCH', `/Users/${id}`, {
+      Operations: [{ op: 'Replace', path: 'name.givenName', value: 'Mayaa' }],
+    })
+    await scim('PATCH', `/Users/${id}`, {
+      Operations: [{ op: 'replace', value: { name: { familyName: 'Okoro' } } }],
+    })
+    const user = await deps.users.findById(TENANT.environmentId, id)
+    expect([user?.firstName, user?.lastName]).toEqual(['Mayaa', 'Okoro'])
+    const entries = (
+      await deps.activityLog.listAudit(TENANT.environmentId, { page: 1, size: 100 })
+    ).entries.filter((entry) => entry.type === 'user.scim_updated')
+    expect(entries).toHaveLength(2)
+    expect(JSON.stringify(entries)).not.toContain('Okoro')
+  })
+
+  test('an account the directory only linked keeps its names', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const existing = await Users.create(
+      deps,
+      TENANT,
+      { email: 'lee@acme.test', emailVerified: true, firstName: 'Lee' },
+      TEST_ACTOR
+    )
+    await scim('POST', '/Users', okta('lee@acme.test'))
+    await scim('PUT', `/Users/${existing.id}`, okta('lee@acme.test', { name: { givenName: 'X' } }))
+    expect((await deps.users.findById(TENANT.environmentId, existing.id))?.firstName).toBe('Lee')
   })
 })

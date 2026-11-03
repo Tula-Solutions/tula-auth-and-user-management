@@ -332,10 +332,13 @@
       "expect": {
         "status": 200,
         "body": {
-          "totalResults": 1,
+          "totalResults": 2,
           "Resources": [
             {
               "id": "User"
+            },
+            {
+              "id": "Group"
             }
           ]
         }
@@ -352,7 +355,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "totalResults": 1
+          "totalResults": 2
         }
       }
     }

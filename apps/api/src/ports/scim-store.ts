@@ -49,21 +49,6 @@ export interface ScimGroupRecord {
 /** Why a write to a group stored nothing. */
 export type ScimGroupRefusal = 'name_taken' | 'missing'
 
-/** A group the directory pushed, with the users in it. */
-export interface ScimGroupRecord {
-  id: string
-  projectId: string
-  environmentId: string
-  organizationId: string
-  /** Directory data: never in an audit entry, an event or a log line. */
-  displayName: string
-  externalId: string | null
-  /** Ids of users the directory manages in this organization. */
-  memberIds: string[]
-  createdAt: Date
-  updatedAt: Date
-}
-
 /** Why a write to a directory user stored nothing. */
 export type ScimUserRefusal = 'external_id_taken' | 'exists' | 'missing'
 
@@ -182,95 +167,6 @@ export interface ScimStore {
    * @param userId - The user.
    */
   deleteUser(environmentId: string, organizationId: string, userId: string): Promise<void>
-
-  /**
-   * Store a group and its members in one write.
-   *
-   * @param record - The group.
-   * @param recorded - Written with it (`scim_group.created`).
-   * @returns `null` when stored, or `name_taken`.
-   */
-  insertGroup(record: ScimGroupRecord, recorded: Recorded): Promise<ScimGroupRefusal | null>
-
-  /**
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param id - The group.
-   * @returns The group with its members, or `null`.
-   */
-  findGroup(
-    environmentId: string,
-    organizationId: string,
-    id: string
-  ): Promise<ScimGroupRecord | null>
-
-  /**
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param displayName - The exact name.
-   * @returns The group with its members, or `null`.
-   */
-  findGroupByName(
-    environmentId: string,
-    organizationId: string,
-    displayName: string
-  ): Promise<ScimGroupRecord | null>
-
-  /**
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param offset - Rows to skip.
-   * @param limit - Most rows to return.
-   * @returns A page of groups with their members, oldest first, and how many there are.
-   */
-  listGroups(
-    environmentId: string,
-    organizationId: string,
-    offset: number,
-    limit: number
-  ): Promise<{ records: ScimGroupRecord[]; total: number }>
-
-  /**
-   * Replace a group's name, external id and whole member list in one write.
-   *
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param id - The group.
-   * @param next - The new state.
-   * @param at - Update time.
-   * @param recorded - Written with the change (`scim_group.updated`).
-   * @returns `null` when stored, else `missing` or `name_taken`.
-   */
-  replaceGroup(
-    environmentId: string,
-    organizationId: string,
-    id: string,
-    next: { displayName: string; externalId: string | null; memberIds: string[] },
-    at: Date,
-    recorded: Recorded
-  ): Promise<ScimGroupRefusal | null>
-
-  /**
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param id - The group.
-   * @param recorded - Written only when a group was removed (`scim_group.deleted`).
-   * @returns Whether a group was removed.
-   */
-  deleteGroup(
-    environmentId: string,
-    organizationId: string,
-    id: string,
-    recorded: Recorded
-  ): Promise<boolean>
-
-  /**
-   * @param environmentId - The environment.
-   * @param organizationId - The organization.
-   * @param userId - The user.
-   * @returns The names of the directory's groups the user is in.
-   */
-  groupNamesOfUser(environmentId: string, organizationId: string, userId: string): Promise<string[]>
 
   /**
    * Store a group and its members in one write.
