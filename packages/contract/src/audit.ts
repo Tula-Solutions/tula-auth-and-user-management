@@ -17,7 +17,14 @@ export const ActivityTypeSchema = z.enum(ACTIVITY_TYPES).meta({ ref: 'ActivityTy
  * `instance_admin`: the operator of the deployment, through the dashboard (the id is the
  * dashboard session's) or with the instance admin token itself (no id).
  */
-export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent', 'instance_admin'] as const
+export const AUDIT_ACTOR_TYPES = [
+  'user',
+  'admin',
+  'system',
+  'agent',
+  'instance_admin',
+  'directory',
+] as const
 
 /**
  * What the instance audit log records: what the operator of a deployment did outside any one
@@ -53,6 +60,7 @@ export const AUDIT_TARGET_TYPES = [
   'hook',
   'native_app',
   'sso_connection',
+  'scim_token',
   'organization',
   'organization_membership',
   'organization_role',

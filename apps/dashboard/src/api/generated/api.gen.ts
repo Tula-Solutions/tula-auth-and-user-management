@@ -34,6 +34,7 @@ export const EventActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export interface EventActor {
@@ -56,6 +57,7 @@ export const UserCreatedEventDataMethod = {
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
   sso: 'sso',
+  scim: 'scim',
 } as const;
 
 /**
@@ -1297,7 +1299,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 73
+     * @maximum 76
      */
   eventTypes: number;
   enabled: boolean;
@@ -1933,6 +1935,105 @@ export interface SsoConnectionDeletedEvent {
   actor: EventActor;
   target: SsoConnectionDeletedEventTarget;
   data: SsoConnectionDeletedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenCreatedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenCreatedEventTarget;
+  data: ScimTokenCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenRevokedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenRevokedEventTarget;
+  data: ScimTokenRevokedEventData;
+  test?: true;
+}
+
+export type UserScimProvisionedEventDataMethod = typeof UserScimProvisionedEventDataMethod[keyof typeof UserScimProvisionedEventDataMethod];
+
+
+export const UserScimProvisionedEventDataMethod = {
+  created: 'created',
+  linked: 'linked',
+} as const;
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  method: UserScimProvisionedEventDataMethod;
+}
+
+export type UserScimProvisionedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_provisioned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimProvisionedEventTarget;
+  data: UserScimProvisionedEventData;
   test?: true;
 }
 
@@ -2846,6 +2947,9 @@ export const AuditExportedEventDataAction = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -2881,6 +2985,7 @@ export const AuditExportedEventDataActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 /**
@@ -3007,7 +3112,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | UserScimProvisionedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4398,6 +4503,9 @@ export const ActivityType = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4433,6 +4541,7 @@ export const AuditLogQueryActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export interface AuditLogQuery {
@@ -4467,6 +4576,7 @@ export const AuditExportRequestActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export type AuditExportRequestFormat = typeof AuditExportRequestFormat[keyof typeof AuditExportRequestFormat];
@@ -5314,6 +5424,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5349,7 +5462,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 73
+     * @maxItems 76
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5408,6 +5521,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5443,7 +5559,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 73
+     * @maxItems 76
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5620,6 +5736,9 @@ export const SendTestWebhookRequestEventType = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -6478,6 +6597,50 @@ export interface UpdateSsoConnectionRequest {
   status?: UpdateSsoConnectionRequestStatus;
 }
 
+export interface ScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface ScimTokenList {
+  tokens: ScimToken[];
+}
+
+export interface CreatedScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The bearer token. Shown once; only its hash is stored. */
+  token: string;
+}
+
+export interface CreateScimTokenRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
 export interface SmsPrefixUsage {
   /** @pattern ^\+[0-9]{1,4}$ */
   prefix: string;
@@ -7039,6 +7202,7 @@ export const ListAuditLogsActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export type ListWebhookDeliveriesParams = {
@@ -7134,6 +7298,20 @@ size?: number;
 };
 
 export type ListSsoConnectionsParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type ListScimTokensParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeScimTokenParams = {
 /**
  * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
  */
@@ -14580,6 +14758,288 @@ export const useRefreshSsoConnectionMetadata = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getRefreshSsoConnectionMetadataMutationOptions(options), queryClient);
+    }
+
+export const getListScimTokensUrl = (params: ListScimTokensParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens?${stringifiedParams}` : `/v1/admin/scim-tokens`
+}
+
+/**
+ * The tokens of one organization, revoked ones included, newest first. No secrets.
+ * @summary List an organization’s SCIM tokens
+ */
+export const listScimTokens = async (params: ListScimTokensParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<ScimTokenList> => {
+
+  return dashboardFetch<ScimTokenList>(getListScimTokensUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListScimTokensQueryKey = (params?: ListScimTokensParams,) => {
+    return [
+    `/v1/admin/scim-tokens`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListScimTokensQueryOptions = <TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListScimTokensQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScimTokens>>> = ({ signal }) => listScimTokens(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListScimTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listScimTokens>>>
+export type ListScimTokensQueryError = ErrorEnvelope
+
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SCIM tokens
+ */
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListScimTokensQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateScimTokenUrl = () => {
+
+
+
+
+  return `/v1/admin/scim-tokens`
+}
+
+/**
+ * Creates the bearer token an organization’s identity provider presents to `/v1/scim/v2`. The token is in this answer and nowhere else: only its hash is stored. An organization holds at most ten live tokens (`resource.conflict`, 409).
+ * @summary Create a SCIM token
+ */
+export const createScimToken = async (createScimTokenRequest: CreateScimTokenRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedScimToken> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedScimToken>(getCreateScimTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createScimTokenRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateScimTokenMutationKey = () => ['createScimToken'] as const;
+
+export const getCreateScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getCreateScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScimToken>>, CreateScimTokenMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScimToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createScimToken>>>
+    export type CreateScimTokenMutationBody = CreateScimTokenRequest
+    export type CreateScimTokenMutationError = ErrorEnvelope
+    export type CreateScimTokenMutationVariables = {data: CreateScimTokenRequest}
+
+    /**
+ * @summary Create a SCIM token
+ */
+export const useCreateScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScimToken>>,
+        TError,
+        CreateScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getRevokeScimTokenUrl = (id: string,
+    params: RevokeScimTokenParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens/${id}?${stringifiedParams}` : `/v1/admin/scim-tokens/${id}`
+}
+
+/**
+ * Revokes a token that is not revoked yet. The identity provider holding it is refused from its next request; users it provisioned keep their accounts.
+ * @summary Revoke a SCIM token
+ */
+export const revokeScimToken = async (id: string,
+    params: RevokeScimTokenParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeScimTokenUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeScimTokenMutationKey = () => ['revokeScimToken'] as const;
+
+export const getRevokeScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getRevokeScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeScimToken>>, RevokeScimTokenMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeScimToken(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokeScimToken>>>
+
+    export type RevokeScimTokenMutationError = ErrorEnvelope
+    export type RevokeScimTokenMutationVariables = {id: string;params: RevokeScimTokenParams}
+
+    /**
+ * @summary Revoke a SCIM token
+ */
+export const useRevokeScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeScimToken>>,
+        TError,
+        RevokeScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeScimTokenMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {

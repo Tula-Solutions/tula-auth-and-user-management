@@ -14,6 +14,7 @@ const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
 const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
 const SSO_CONNECTION = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b9c'
+const SCIM_TOKEN = '0199c2f4-7a1b-7cde-8cfd-f0ab1e7d8cad'
 const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
 const ORGANIZATION = '0199c2f4-7a1d-7f00-8e1f-12cd3a9f0e14'
 const MEMBERSHIP = '0199c2f4-7a1e-7011-9f2a-23de4b0a1f15'
@@ -41,6 +42,8 @@ const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } 
 const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
 const aboutSsoConnection = { type: 'sso_connection', id: SSO_CONNECTION } as const
+const aboutScimToken = { type: 'scim_token', id: SCIM_TOKEN } as const
+const directory = { type: 'directory', id: SCIM_TOKEN } as const
 const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
 const aboutMembership = { type: 'organization_membership', id: MEMBERSHIP } as const
 const aboutRole = { type: 'organization_role', id: ORGANIZATION_ROLE } as const
@@ -534,6 +537,33 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutSsoConnection,
     data: { protocol: 'oidc', changed: ['status'], status: 'disabled', weakened: true },
+  },
+  'scim_token.created': {
+    id: eventId(1431),
+    type: 'scim_token.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutScimToken,
+    data: { organizationId: ORGANIZATION },
+  },
+  'scim_token.revoked': {
+    id: eventId(1432),
+    type: 'scim_token.revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutScimToken,
+    data: { organizationId: ORGANIZATION },
+  },
+  'user.scim_provisioned': {
+    id: eventId(1433),
+    type: 'user.scim_provisioned',
+    schemaVersion,
+    occurredAt,
+    actor: directory,
+    target: aboutUser,
+    data: { organizationId: ORGANIZATION, method: 'created' },
   },
   'sso_connection.deleted': {
     id: eventId(121),
