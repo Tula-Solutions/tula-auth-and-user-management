@@ -155,3 +155,30 @@ one transaction. Usage is in [docs/scim.md](../scim.md).
   connection-update audit entry says `weakened: true`. Connections are not in `tula apply`
   (only `settings.sso.enabled` is), so the classification lives on that entry; the
   dashboard screen arrives with TULA-146.
+
+## Organization admins manage their own SSO (TULA-148)
+
+- **Routes.** `/v1/client/me/organizations/:organizationId/sso-connections` (list, read,
+  create, change, delete, refresh metadata, group roles) and `…/:id/tests` (start) and
+  `…/:id/tests/:testId` (result), behind `publishableKey()` and `sessionAuth()`, each with a
+  per-IP limit; a test start also has a per-environment limit. They are another way in to
+  the same service functions (`SsoConnections`, `SsoTests`) as the admin routes, never a
+  second implementation of a rule: the activation gate (`sso.test_required`), the domain
+  rule and the weakenings apply to an organization admin exactly as to an operator.
+- **The permission is `org:sys:sso:manage`**, read from the caller's membership on every
+  call (`findUserMembership`), never taken from a token or the SDK. A member without it,
+  a user who is not a member and a connection that belongs to another organization are
+  refused the way the sibling organization routes refuse them (`organization.permission_required`,
+  `organization.not_a_member`, `sso.connection_not_found`). Every route has a test for that.
+- **Weakenings need a recent authentication.** Turning a connection on, switching
+  enforcement off, turning `trustIdpMfa` on and setting a break-glass role are weakenings
+  (`weakened: true` in the audit entry) and answer `auth.step_up_required` until the session
+  has authenticated recently (`Mfa.requireRecentAuthentication`).
+- **The client secret is write-only**: accepted on create and change, answered only as
+  `clientSecretSet`.
+- **Break-glass covers the password only** (it is the password step that lets the role
+  through); the dashboard copy of TULA-146 says "keeps password sign-in".
+- `@tula-tech/core` exposes `organizations.sso`, `@tula-tech/react` an SSO tab in
+  `<OrganizationProfile>` for OIDC connections (list, add, turn on and off, require, delete).
+  SAML, group roles and the test sign-in are not drawn there yet; the test is available to
+  any client through `startTest` and `testResult`.

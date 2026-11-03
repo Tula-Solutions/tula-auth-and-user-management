@@ -87,7 +87,13 @@ test('the profile: rename, members, invitations, domains, leave and delete', asy
 
   // An admin sees every tab.
   const tabs = page.getByRole('tablist', { name: 'Organization settings' })
-  await expect(tabs.getByRole('tab')).toHaveText(['General', 'Members', 'Invitations', 'Domains'])
+  await expect(tabs.getByRole('tab')).toHaveText([
+    'General',
+    'Members',
+    'Invitations',
+    'Domains',
+    'Single sign-on',
+  ])
   await accessibleInBothSchemes(page, 'Organization profile: general')
 
   const renamed = `${name} Inc`
@@ -150,6 +156,26 @@ test('the profile: rename, members, invitations, domains, leave and delete', asy
   await expect(page).toHaveURL(/\/organizations$/)
   await page.getByRole('button', { name: /^Organization: / }).click()
   await expect(page.getByRole('button', { name: renamed })).toHaveCount(0)
+})
+
+test('the profile: an admin opens single sign-on, sees none, and is asked for what is missing', async ({
+  page,
+  request,
+}) => {
+  await useSettings(request, { ...ORGANIZATIONS, sso: { enabled: true } })
+  const name = await createOrganization(page, request, 'org-sso')
+  await page.getByRole('button', { name: `Organization: ${name}` }).click()
+  await page.getByRole('button', { name: 'Manage organization' }).click()
+  const tabs = page.getByRole('tablist', { name: 'Organization settings' })
+  await tabs.getByRole('tab', { name: 'Single sign-on' }).click()
+  await expect(page.getByText('No connections yet.')).toBeVisible()
+  await accessibleInBothSchemes(page, 'Organization profile: single sign-on, none yet')
+
+  // Nothing is sent for an empty form; every missing field is named.
+  await page.getByRole('button', { name: 'Add connection' }).click()
+  await expect(page.getByText('Fill in this field.').first()).toBeVisible()
+  await accessibleInBothSchemes(page, 'Organization profile: single sign-on, fields missing')
+  await expect(page.getByText('No connections yet.')).toBeVisible()
 })
 
 test('a visitor without a session is sent to sign in, and a user is told when organizations are off', async ({
