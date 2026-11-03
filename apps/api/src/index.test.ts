@@ -318,6 +318,8 @@ describe('documentation routes', () => {
       '/v1/admin/native-apps/{id}',
       '/v1/admin/sso-connections',
       '/v1/admin/sso-connections/{id}',
+      '/v1/admin/scim-tokens',
+      '/v1/admin/scim-tokens/{id}',
       '/v1/sso/callback/{connectionId}',
       '/v1/admin/sms/usage',
       '/v1/admin/message-preview',

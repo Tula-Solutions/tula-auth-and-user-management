@@ -204,6 +204,10 @@ export interface Schemas {
     operation: Schemas['ProposalOperation']
     target: Schemas['ProposalTarget']
   }
+  CreateScimTokenRequest: {
+    organizationId: string
+    name: string
+  }
   CreateSsoConnectionRequest: {
     organizationId: string
     protocol?: 'oidc'
@@ -259,6 +263,18 @@ export interface Schemas {
   CreatedProject: {
     project: Schemas['Project']
     environments: Schemas['Environment'][]
+  }
+  CreatedScimToken: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell tokens apart in a list. */
+    prefix: string
+    lastUsedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+    /** The bearer token. Shown once; only its hash is stored. */
+    token: string
   }
   CreatedWebhookEndpoint: {
     id: string
@@ -1455,6 +1471,16 @@ export interface Schemas {
     /** The new signing secret. Store it now: it is shown only once. */
     secret: string
   }
+  ScimToken: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell tokens apart in a list. */
+    prefix: string
+    lastUsedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+  }
   ScimTokenCreatedEvent: {
     id: string
     type: 'scim_token.created'
@@ -1470,6 +1496,9 @@ export interface Schemas {
   }
   ScimTokenCreatedEventData: {
     organizationId: string
+  }
+  ScimTokenList: {
+    tokens: Schemas['ScimToken'][]
   }
   ScimTokenRevokedEvent: {
     id: string
@@ -2495,6 +2524,8 @@ export interface Operations {
   createOrganizationRole: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateOrganizationRoleRequest']; response: Schemas['OrganizationRole'] }
   /** Propose a change (`POST /v1/agent/proposals`). */
   createProposal: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateProposalRequest']; response: Schemas['Proposal'] }
+  /** Create a SCIM token (`POST /v1/admin/scim-tokens`). */
+  createScimToken: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateScimTokenRequest']; response: Schemas['CreatedScimToken'] }
   /** Create an SSO connection (`POST /v1/admin/sso-connections`). */
   createSsoConnection: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateSsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Create a user (`POST /v1/admin/users`). */
@@ -2575,6 +2606,8 @@ export interface Operations {
   listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number; q?: string }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
   /** List proposals (`GET /v1/admin/proposals`). */
   listProposals: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ProposalList'] }
+  /** List an organization’s SCIM tokens (`GET /v1/admin/scim-tokens`). */
+  listScimTokens: { params: Record<string, never>; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: Schemas['ScimTokenList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
   /** List an organization’s SSO connections (`GET /v1/admin/sso-connections`). */
@@ -2607,6 +2640,8 @@ export interface Operations {
   revokeOrganizationInvitation: { params: { id: string; invitationId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** End a secret rotation’s overlap now (`DELETE /v1/admin/webhook-endpoints/{id}/secret/previous`). */
   revokePreviousWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
+  /** Revoke a SCIM token (`DELETE /v1/admin/scim-tokens/{id}`). */
+  revokeScimToken: { params: { id: string }; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: undefined }
   /** End one of a user’s sessions (`DELETE /v1/admin/users/{userId}/sessions/{sessionId}`). */
   revokeUserSession: { params: { userId: string; sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Sign a user out everywhere (`DELETE /v1/admin/users/{userId}/sessions`). */
@@ -2672,6 +2707,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   createOrganization: { method: 'POST', path: '/v1/admin/organizations' },
   createOrganizationRole: { method: 'POST', path: '/v1/admin/organization-roles' },
   createProposal: { method: 'POST', path: '/v1/agent/proposals' },
+  createScimToken: { method: 'POST', path: '/v1/admin/scim-tokens' },
   createSsoConnection: { method: 'POST', path: '/v1/admin/sso-connections' },
   createUser: { method: 'POST', path: '/v1/admin/users' },
   createWebhookEndpoint: { method: 'POST', path: '/v1/admin/webhook-endpoints' },
@@ -2712,6 +2748,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOrganizationRoles: { method: 'GET', path: '/v1/admin/organization-roles' },
   listOrganizations: { method: 'GET', path: '/v1/admin/organizations' },
   listProposals: { method: 'GET', path: '/v1/admin/proposals' },
+  listScimTokens: { method: 'GET', path: '/v1/admin/scim-tokens' },
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
   listSsoConnections: { method: 'GET', path: '/v1/admin/sso-connections' },
   listUserOrganizations: { method: 'GET', path: '/v1/admin/users/{userId}/organizations' },
@@ -2728,6 +2765,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   revokeApiKey: { method: 'DELETE', path: '/v1/admin/api-keys/{id}' },
   revokeOrganizationInvitation: { method: 'DELETE', path: '/v1/admin/organizations/{id}/invitations/{invitationId}' },
   revokePreviousWebhookSecret: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}/secret/previous' },
+  revokeScimToken: { method: 'DELETE', path: '/v1/admin/scim-tokens/{id}' },
   revokeUserSession: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions/{sessionId}' },
   revokeUserSessions: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions' },
   rotateSigningKeys: { method: 'POST', path: '/v1/admin/signing-keys/rotate' },
