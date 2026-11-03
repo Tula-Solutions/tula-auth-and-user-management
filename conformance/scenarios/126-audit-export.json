@@ -1,0 +1,92 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "audit log export",
+  "description": "An administrator streams the audit log as NDJSON or CSV, and each export is itself an entry in the log. A request with no key is refused.",
+  "needsSecretKey": true,
+  "steps": [
+    {
+      "name": "an export with no key is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/audit-logs/export",
+        "auth": "none",
+        "body": {}
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an NDJSON export streams with a secret key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/audit-logs/export",
+        "auth": "secret",
+        "body": {
+          "format": "ndjson"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "a CSV export streams with a secret key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/audit-logs/export",
+        "auth": "secret",
+        "body": {
+          "format": "csv"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "a malformed resume cursor is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/audit-logs/export",
+        "auth": "secret",
+        "body": {
+          "after": "not-a-cursor"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the exports are in the audit log",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=audit.exported",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "audit.exported",
+              "metadata": {
+                "format": "csv"
+              }
+            },
+            {
+              "action": "audit.exported",
+              "metadata": {
+                "format": "ndjson"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
