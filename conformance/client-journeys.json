@@ -1636,6 +1636,68 @@
         "decision": "journey"
       }
     },
+    "sso connections: create, read, update, delete": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session, neither of which a client SDK holds; `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; an app holds a publishable key and a user’s session and reaches neither."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; the Swift client talks to `/v1/client/*` only and reaches neither."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; the Kotlin client talks to `/v1/client/*` only and reaches neither."
+      }
+    },
+    "sso home-realm discovery is by domain": {
+      "core": {
+        "decision": "not_built",
+        "ticket": "TULA-141",
+        "reason": "`@tula-tech/core` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-141 builds the start and this journey."
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso oidc sign-in": {
+      "core": {
+        "decision": "not_built",
+        "ticket": "TULA-141",
+        "reason": "`@tula-tech/core` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-141 builds the start and this journey."
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
     "stateful session": {
       "core": {
         "decision": "journey"

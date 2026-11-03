@@ -509,6 +509,9 @@ export interface Schemas {
   SmsFactorConfirmRequest: {
     code: string
   }
+  SsoStartRequest: {
+    redirectUrl: string
+  }
   StartOrganizationDomainRequest: {
     domain: Schemas['OrganizationDomainName']
     email: string
@@ -726,6 +729,8 @@ export interface Operations {
   startSignUpTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). */
   startSmsFactorEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
+  /** Continue with the identity provider of the address’s domain (`POST /v1/client/sign-ins/{attemptId}/sso`). */
+  startSsoSignIn: { params: { attemptId: string }; body: Schemas['SsoStartRequest']; response: Schemas['OAuthStart'] }
   /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). */
   startTotpEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Prove it is still me (`POST /v1/client/sessions/step-up`). */
@@ -850,6 +855,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startSignUp: { method: 'POST', path: '/v1/client/sign-ups', session: false },
   startSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp', session: false },
   startSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms', session: true },
+  startSsoSignIn: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/sso', session: false },
   startTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp', session: true },
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },

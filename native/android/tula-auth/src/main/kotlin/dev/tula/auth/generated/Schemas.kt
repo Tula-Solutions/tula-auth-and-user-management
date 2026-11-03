@@ -2021,6 +2021,11 @@ data class SmsFactorConfirmRequest(
 )
 
 @Serializable
+data class SsoStartRequest(
+    val redirectUrl: String,
+)
+
+@Serializable
 data class StartOrganizationDomainRequest(
     val domain: OrganizationDomainName,
     val email: String,

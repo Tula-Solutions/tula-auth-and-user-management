@@ -282,10 +282,9 @@ const {
   // A session bound to a key the phone's key store keeps (ADR 0052). The journeys' keys are
   // software keys behind the key store's interface: no secure hardware was ever asked.
   deviceKey: true,
-  // Nothing an app can reach is left unbuilt: the emailed link, the last entry (TULA-48), is
-  // a journey of this file since TULA-73. A scenario this package cannot run yet goes here
-  // with its ticket, in the change that says `not_built` in the list.
-  notBuilt: {},
+  // A scenario this package cannot run yet goes here with its ticket, in the change that says
+  // `not_built` in the list: the SSO sign-in (ADR 0067), which TULA-142 builds.
+  notBuilt: { 'TULA-142': 2 },
   sources: [import.meta.path],
 })
 

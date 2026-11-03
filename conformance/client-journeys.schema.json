@@ -19,7 +19,10 @@
               "$ref": "#/$defs/ClientSuite"
             }
           },
-          "required": ["description", "suite"],
+          "required": [
+            "description",
+            "suite"
+          ],
           "additionalProperties": false
         },
         "expo": {
@@ -33,7 +36,10 @@
               "$ref": "#/$defs/ClientSuite"
             }
           },
-          "required": ["description", "suite"],
+          "required": [
+            "description",
+            "suite"
+          ],
           "additionalProperties": false
         },
         "swift": {
@@ -47,7 +53,10 @@
               "$ref": "#/$defs/ClientSuite"
             }
           },
-          "required": ["description", "suite"],
+          "required": [
+            "description",
+            "suite"
+          ],
           "additionalProperties": false
         },
         "kotlin": {
@@ -61,11 +70,19 @@
               "$ref": "#/$defs/ClientSuite"
             }
           },
-          "required": ["description", "suite"],
+          "required": [
+            "description",
+            "suite"
+          ],
           "additionalProperties": false
         }
       },
-      "required": ["core", "expo", "swift", "kotlin"],
+      "required": [
+        "core",
+        "expo",
+        "swift",
+        "kotlin"
+      ],
       "additionalProperties": false
     },
     "scenarios": {
@@ -92,7 +109,10 @@
               "$ref": "#/$defs/ClientBehaviourDecisions"
             }
           },
-          "required": ["description", "clients"],
+          "required": [
+            "description",
+            "clients"
+          ],
           "additionalProperties": false
         },
         "refresh_without_answer": {
@@ -106,7 +126,10 @@
               "$ref": "#/$defs/ClientBehaviourDecisions"
             }
           },
-          "required": ["description", "clients"],
+          "required": [
+            "description",
+            "clients"
+          ],
           "additionalProperties": false
         },
         "unknown_step_not_supported": {
@@ -120,7 +143,10 @@
               "$ref": "#/$defs/ClientBehaviourDecisions"
             }
           },
-          "required": ["description", "clients"],
+          "required": [
+            "description",
+            "clients"
+          ],
           "additionalProperties": false
         },
         "session_kept_through_failed_refresh_offline": {
@@ -134,7 +160,10 @@
               "$ref": "#/$defs/ClientBehaviourDecisions"
             }
           },
-          "required": ["description", "clients"],
+          "required": [
+            "description",
+            "clients"
+          ],
           "additionalProperties": false
         }
       },
@@ -147,13 +176,20 @@
       "additionalProperties": false
     }
   },
-  "required": ["clients", "scenarios", "behaviours"],
+  "required": [
+    "clients",
+    "scenarios",
+    "behaviours"
+  ],
   "additionalProperties": false,
   "title": "ClientJourneys",
   "$defs": {
     "ClientSuite": {
       "type": "string",
-      "enum": ["exists", "planned"]
+      "enum": [
+        "exists",
+        "planned"
+      ]
     },
     "ClientDecisions": {
       "type": "object",
@@ -183,7 +219,9 @@
               "const": "journey"
             }
           },
-          "required": ["decision"],
+          "required": [
+            "decision"
+          ],
           "additionalProperties": false
         },
         {
@@ -199,7 +237,10 @@
               "pattern": "^\\S[\\s\\S]*\\S$"
             }
           },
-          "required": ["decision", "reason"],
+          "required": [
+            "decision",
+            "reason"
+          ],
           "additionalProperties": false
         },
         {
@@ -219,7 +260,11 @@
               "pattern": "^\\S[\\s\\S]*\\S$"
             }
           },
-          "required": ["decision", "ticket", "reason"],
+          "required": [
+            "decision",
+            "ticket",
+            "reason"
+          ],
           "additionalProperties": false
         },
         {
@@ -230,7 +275,9 @@
               "const": "undecided"
             }
           },
-          "required": ["decision"],
+          "required": [
+            "decision"
+          ],
           "additionalProperties": false
         }
       ]
@@ -263,7 +310,9 @@
               "const": "journey"
             }
           },
-          "required": ["decision"],
+          "required": [
+            "decision"
+          ],
           "additionalProperties": false
         },
         {
@@ -279,7 +328,10 @@
               "pattern": "^\\S[\\s\\S]*\\S$"
             }
           },
-          "required": ["decision", "reason"],
+          "required": [
+            "decision",
+            "reason"
+          ],
           "additionalProperties": false
         },
         {
@@ -290,7 +342,9 @@
               "const": "undecided"
             }
           },
-          "required": ["decision"],
+          "required": [
+            "decision"
+          ],
           "additionalProperties": false
         }
       ]

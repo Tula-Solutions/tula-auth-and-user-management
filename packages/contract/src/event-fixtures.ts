@@ -186,6 +186,15 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     target: aboutUser,
     data: { provider: 'google', method: 'auto' },
   },
+  'user.sso_linked': {
+    id: eventId(122),
+    type: 'user.sso_linked',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { connectionId: '0190a1b2-0000-7000-8000-0000000000c1', method: 'email' },
+  },
   'user.identity_unlinked': {
     id: eventId(12),
     type: 'user.identity_unlinked',

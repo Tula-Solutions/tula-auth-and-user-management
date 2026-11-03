@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   CUSTOM_CLAIMS_CLAIM,
   ORGANIZATION_ID_CLAIM,
+  SSO_CONNECTION_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
 } from './custom-claims'
@@ -144,6 +145,8 @@ export const AccessTokenClaimsSchema = z
      * `readOrganizationClaims`, which treats any other combination as no organization.
      */
     [ORGANIZATION_ID_CLAIM]: z.string().optional(),
+    /** The SSO connection the session was signed in through (ADR 0067); absent for any other sign-in. */
+    [SSO_CONNECTION_CLAIM]: z.string().optional(),
     /** The key of the user's role in the active organization (`admin`, `member`, …). */
     [ORGANIZATION_ROLE_CLAIM]: z.string().optional(),
     /**

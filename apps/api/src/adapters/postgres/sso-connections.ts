@@ -272,7 +272,8 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
   async linkIdentity(
     environmentId: string,
     identity: SsoIdentityRecord,
-    at: Date
+    at: Date,
+    recorded: Recorded
   ): Promise<boolean> {
     try {
       return await withTenant(this.db, environmentId, async (tx) => {
@@ -292,6 +293,8 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
           createdAt: at,
           updatedAt: at,
         })
+        const activity = activityOf(recorded)
+        await recordActivity(tx, activity ? [activity] : [])
         return true
       })
     } catch (error) {

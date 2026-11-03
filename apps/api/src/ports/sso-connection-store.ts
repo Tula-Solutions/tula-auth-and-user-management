@@ -137,7 +137,13 @@ export interface SsoConnectionStore {
    * @param environmentId - The environment.
    * @param identity - The pair to store.
    * @param at - When it is stored.
+   * @param recorded - The audit entry written in the same transaction (`user.sso_linked`).
    * @returns `false` when the subject, or the user at this connection, already has one.
    */
-  linkIdentity(environmentId: string, identity: SsoIdentityRecord, at: Date): Promise<boolean>
+  linkIdentity(
+    environmentId: string,
+    identity: SsoIdentityRecord,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean>
 }

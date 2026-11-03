@@ -39,6 +39,7 @@ import {
   SessionClientSchema,
   type SignInStartRequest,
   type SignUpRequest,
+  type SsoStartRequest,
   type TotpEnrolment,
 } from '@tula-tech/contract'
 import { z } from 'zod'
@@ -70,6 +71,8 @@ import * as Phone from '~/modules/phone/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import * as Sms from '~/modules/sms/service'
+import * as Sso from '~/modules/sso/service'
+import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
@@ -543,6 +546,38 @@ const StateSchema = z.object({
         .optional(),
     })
     .optional(),
+  /**
+   * What a single-sign-on attempt keeps server-side (ADR 0067). It rides the same round-trip
+   * phases as OAuth (`oauthPhase`). None of it is ever sent to a client.
+   */
+  /** The SSO connection that proved the first factor (ADR 0067): the session's `sso_conn`. */
+  ssoConnectionId: z.string().optional(),
+  sso: z
+    .object({
+      connectionId: z.string(),
+      redirectUrl: z.string(),
+      /** SHA-256 of the `state` parameter. */
+      stateHash: z.string(),
+      /** PKCE verifier and OIDC nonce: needed once, for the code exchange. */
+      codeVerifier: z.string().optional(),
+      nonce: z.string().optional(),
+      /** SHA-256 of the binding the starting browser was given. */
+      bindingHash: z.string(),
+      /** SHA-256 of the ticket, and when it stops being accepted (epoch milliseconds). */
+      ticketHash: z.string().optional(),
+      ticketExpiresAt: z.number().optional(),
+      /** What the identity provider vouched for, kept from the callback until the exchange. */
+      profile: z
+        .object({
+          subject: z.string(),
+          email: z.string().nullable(),
+          emailVerified: z.boolean(),
+          givenName: z.string().optional(),
+          familyName: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -855,6 +890,7 @@ async function finish(
     hookBypassed: clearance === 'bypassed',
     // Only what the attempt's start fixed: nothing of this request decides the binding.
     deviceThumbprint: state.deviceThumbprint,
+    ssoConnectionId: state.ssoConnectionId ?? null,
   })
   if (
     attempt.kind !== 'sign_up' &&
@@ -1124,18 +1160,32 @@ async function issueCode(
 export async function signIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
+    | 'flowAttempts'
+    | 'clock'
+    | 'ids'
+    | 'environmentSettings'
+    | 'config'
+    | 'oauthProviders'
+    | 'sms'
+    | 'ssoConnections'
   >,
   tenant: Tenant,
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
-  const strategies = Factors.firstFactors(
-    await Settings.current(deps, tenant),
-    await OAuth.enabledProviders(deps, tenant),
-    { smsSender: deps.sms.configured }
-  )
+  const strategies: FirstFactorStrategy[] = [
+    ...Factors.firstFactors(
+      await Settings.current(deps, tenant),
+      await OAuth.enabledProviders(deps, tenant),
+      { smsSender: deps.sms.configured }
+    ),
+  ]
+  // Offered by the address's domain alone, never by whether an account exists: a known and an
+  // unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
+  if ((await Sso.offered(deps, tenant, normalizeEmail(input.identifier))) !== null) {
+    strategies.push('sso')
+  }
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
   }
@@ -2291,7 +2341,9 @@ interface RedeemedTicket {
   attempt: FlowAttemptRecord
   /** The attempt's state without anything of the OAuth round trip. */
   state: State
-  provider: OAuthProvider
+  /** The provider that vouched, or the SSO connection (ADR 0067): exactly one of the two. */
+  provider: OAuthProvider | undefined
+  connection: SsoConnectionRecord | undefined
   profile: NonNullable<NonNullable<State['oauth']>['profile']>
   linkUserId: string | undefined
   /** The attempt's new secret: the one it was started with was lost in the navigation. */
@@ -2326,7 +2378,9 @@ async function redeemOAuthTicket(
   const attempt = await deps.flowAttempts.findById(tenant.environmentId, input.attemptId)
   const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
   const state = parsed?.success ? parsed.data : null
-  const oauth = state?.oauth
+  // An SSO round (ADR 0067) ends with the same ticket and binding as a provider's, and is
+  // redeemed here by the same rules; it is always a sign-in.
+  const oauth = state?.oauth ?? (state?.sso && { ...state.sso, intent: 'sign_in' as const })
   // Both compared in constant time, and compared even when there is nothing to compare with.
   const ticketed = timingSafeEqual(sha256Hex(input.ticket), oauth?.ticketHash ?? NO_SECRET_HASH)
   const bound = timingSafeEqual(
@@ -2353,12 +2407,17 @@ async function redeemOAuthTicket(
     throw new AuthError('oauth.different_browser')
   }
   requireAllowedOrigin(state.client, context)
-  // A provider switched off while the user was away must not complete.
-  await OAuth.credentials(deps, tenant, oauth.provider)
+  // A provider switched off, or a connection disabled, while the user was away must not complete.
+  const connection = state.sso
+    ? await Sso.requireActive(deps, tenant, state.sso.connectionId)
+    : undefined
+  if (state.oauth) {
+    await OAuth.credentials(deps, tenant, state.oauth.provider)
+  }
   await chargeEnvironment(deps, tenant, 'verify')
 
   const secret = `${ATTEMPT_SECRET_PREFIX}${randomToken()}`
-  const { oauth: _oauth, oauthPhase: _phase, ...rest } = state
+  const { oauth: _oauth, sso: _sso, oauthPhase: _phase, ...rest } = state
   const spent = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
@@ -2378,9 +2437,10 @@ async function redeemOAuthTicket(
   return {
     attempt,
     state: { ...rest, oauthPhase: 'exchanged' },
-    provider: oauth.provider,
+    provider: state.oauth?.provider,
+    connection,
     profile: oauth.profile,
-    linkUserId: oauth.linkUserId,
+    linkUserId: state.oauth?.linkUserId,
     secret,
   }
 }
@@ -2419,16 +2479,19 @@ export async function exchangeOAuth(
   context: ClientContext
 ): Promise<FlowResult> {
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
-  const result = await completeExternalSignIn(
-    deps,
-    tenant,
-    redeemed.attempt,
-    redeemed.state,
-    redeemed.provider,
-    redeemed.profile,
-    context,
-    'fed'
-  )
+  const { attempt, state, provider, connection, profile } = redeemed
+  const result = connection
+    ? await completeExternalSignIn(deps, tenant, attempt, state, { connection }, profile, context, 'sso')
+    : await completeExternalSignIn(
+        deps,
+        tenant,
+        attempt,
+        state,
+        provider as OAuthProvider,
+        profile,
+        context,
+        'fed'
+      )
   return result.tokens
     ? result
     : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
@@ -2448,10 +2511,10 @@ export async function exchangeOAuth(
  * @param tenant - The environment.
  * @param attempt - The attempt, on `needs_first_factor`.
  * @param state - Its state, with whatever proved the profile already used up.
- * @param provider - The provider that vouched.
+ * @param provider - The provider that vouched, or the SSO connection that did (ADR 0067).
  * @param profile - What it vouched for.
  * @param context - The requesting device.
- * @param method - The `amr` value of the proof (`fed` for a provider); becomes the session's
+ * @param method - The `amr` value of the proof (`fed` for a provider, `sso` for a connection); becomes the session's
  *   `authMethods`.
  * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
  * @throws AuthError as `OAuth.resolveAccount`, or `auth.user_banned`.
@@ -2461,19 +2524,26 @@ export async function completeExternalSignIn(
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
-  provider: OAuthProvider,
+  provider: OAuthProvider | { connection: SsoConnectionRecord },
   profile: OAuthProfile,
   context: ClientContext,
   method: string
 ): Promise<FlowResult> {
-  const { user, created } = await OAuth.resolveAccount(
-    deps,
-    tenant,
-    provider,
-    profile,
-    context,
-    state.client
-  )
+  // Which account is decided by the provider's linking table, or by the connection's
+  // matching table (ADR 0067); everything after that is the same for both.
+  const { user, created } =
+    typeof provider === 'string'
+      ? await OAuth.resolveAccount(deps, tenant, provider, profile, context, state.client)
+      : await Sso.resolveAccount(
+          deps,
+          tenant,
+          provider.connection,
+          profile,
+          context,
+          state.client
+        )
+  const strategy: FirstFactorStrategy =
+    typeof provider === 'string' ? OAuth.strategyOf(provider) : 'sso'
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
@@ -2484,7 +2554,7 @@ export async function completeExternalSignIn(
   const next = nextStatus(
     attempt.kind,
     attempt.status,
-    { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
+    { type: 'first_factor_verified', strategy },
     {
       strategies: state.strategies ?? [],
       // The provider's identity is the proof here, not the inbox: the attempt never detours
@@ -2499,14 +2569,221 @@ export async function completeExternalSignIn(
     tenant,
     attempt,
     {
-      ...firstProven(state, OAuth.strategyOf(provider), method),
+      ...firstProven(state, strategy, method),
       ...(created && { accountCreated: true }),
+      ...(typeof provider !== 'string' && { ssoConnectionId: provider.connection.id }),
     },
     user.id,
     next,
     required,
     context
   )
+}
+
+/**
+ * Start the single-sign-on step of a sign-in attempt (ADR 0067): build the identity provider's
+ * URL for the connection the attempt's address domain is bound to.
+ *
+ * The attempt already exists (`signIn` made it and offered `sso`); this keeps PKCE, `state`
+ * and a nonce on it, as {@link startOAuth} does, and hands back the URL and a one-time binding.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param input - The app's page to return to.
+ * @param context - The requesting device.
+ * @returns The attempt, the provider's URL and the binding.
+ * @throws AuthError `flow.invalid_step`, `auth.method_disabled` when the connection is gone or
+ *   off, `request.redirect_not_allowed`, `sso.provider_error` when the provider's metadata
+ *   cannot be read, `request.origin_not_allowed`.
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function startSso(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  input: SsoStartRequest,
+  context: ClientContext
+): Promise<OAuthStartResult & { client: SessionClient }> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  if (
+    attempt.status !== 'needs_first_factor' ||
+    !(state.strategies ?? []).includes('sso') ||
+    (state.oauthPhase !== undefined && state.oauthPhase !== 'started')
+  ) {
+    throw new AuthError('flow.invalid_step')
+  }
+  const connection = await Sso.offered(deps, tenant, attempt.identifier)
+  if (!connection) {
+    throw new AuthError('auth.method_disabled', { method: 'sso' })
+  }
+  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+    client: state.client,
+  })
+  await chargeEnvironment(deps, tenant, 'oauth')
+
+  const ssoState = `${tenant.environmentId}.${attempt.id}.${randomToken()}`
+  const codeVerifier = randomToken()
+  const nonce = randomToken()
+  const authorizationUrl = await Sso.authorizationUrl(deps, connection, {
+    state: ssoState,
+    nonce,
+    codeVerifier,
+  })
+  const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
+  const started: State = {
+    ...state,
+    oauthPhase: 'started',
+    sso: {
+      connectionId: connection.id,
+      redirectUrl,
+      stateHash: sha256Hex(ssoState),
+      codeVerifier,
+      nonce,
+      bindingHash: sha256Hex(binding),
+    },
+  }
+  const stored = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: started },
+    deps.clock.now()
+  )
+  if (!stored) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, started)),
+    authorizationUrl,
+    binding,
+    client: state.client,
+  }
+}
+
+/**
+ * Take an SSO connection's answer (ADR 0067): the OIDC redirect URI's request, with the code,
+ * `state` and possibly an error. The same rules as {@link oauthCallback}: the attempt is found
+ * by `state` alone (its hash compared in constant time) and must be this connection's; the
+ * state is used up before the code is exchanged, success or not; the answer is a 303 to the
+ * attempt's allow-listed page with a single-use ticket, or a contract code, in the fragment,
+ * or the static page when the state matches nothing. Which account it is, and whether one is
+ * created, is decided only at the exchange, by the browser that holds the binding.
+ *
+ * The connection must still be active and single sign-on still on (`auth.method_disabled`
+ * otherwise). Every failure of the provider (its discovery, the token request, the ID token's
+ * signature, issuer, audience, expiry or nonce) reaches the app as `sso.provider_error`; the
+ * log says which, by a fixed word.
+ *
+ * @param deps - All dependencies.
+ * @param connectionId - The connection named in the callback's path.
+ * @param input - What the provider sent.
+ * @returns Where to send the browser.
+ */
+export async function ssoCallback(
+  deps: Deps,
+  connectionId: string,
+  input: Omit<OAuthCallbackInput, 'user'>
+): Promise<OAuthCallbackResult> {
+  const [environmentId, attemptId, random] = (input.state ?? '').split('.')
+  if (
+    !environmentId ||
+    !attemptId ||
+    !random ||
+    !UUID.test(environmentId) ||
+    !UUID.test(attemptId)
+  ) {
+    return { invalid: true }
+  }
+  const attempt = await deps.flowAttempts.findById(environmentId, attemptId)
+  const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
+  const state = parsed?.success ? parsed.data : null
+  const known = timingSafeEqual(
+    sha256Hex(input.state ?? ''),
+    state?.sso?.stateHash ?? NO_SECRET_HASH
+  )
+  if (!attempt || !state?.sso || !known || state.sso.connectionId !== connectionId) {
+    return { invalid: true }
+  }
+  const { sso } = state
+  const tenant: Tenant = { projectId: attempt.projectId, environmentId, apiKeyId: '' }
+  try {
+    // The URL was allowed when the attempt started; the allow-list may have changed since.
+    await Settings.requireRedirectUrl(deps, tenant, sso.redirectUrl, { client: state.client })
+  } catch {
+    return { invalid: true }
+  }
+  const failed = (code: string): OAuthCallbackResult => ({
+    redirectTo: oauthRedirect(sso.redirectUrl, attempt.id, OAUTH_ERROR_PARAM, code),
+  })
+
+  // The state is used up here, whatever happens next.
+  const consumed = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: { ...state, oauthPhase: 'returned' } },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'started' }
+  )
+  if (!consumed) {
+    return failed('oauth.state_invalid')
+  }
+  if (input.error !== undefined) {
+    return failed(input.error === 'access_denied' ? 'oauth.access_denied' : 'sso.provider_error')
+  }
+  if (!input.code || !sso.codeVerifier || !sso.nonce) {
+    return failed('sso.provider_error')
+  }
+  let profile: Sso.SsoProfile
+  try {
+    await chargeEnvironment(deps, tenant, 'oauth')
+    const connection = await Sso.requireActive(deps, tenant, connectionId)
+    profile = await Sso.exchange(deps, connection, {
+      code: input.code,
+      codeVerifier: sso.codeVerifier,
+      nonce: sso.nonce,
+    })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return failed(error.code)
+    }
+    if (error instanceof RateLimitError) {
+      return failed('rate_limited')
+    }
+    // A JSON error would strand the browser on the API: the app's page shows this one.
+    logger.warn('an SSO callback failed', {
+      environmentId,
+      failure: error instanceof Error ? error.name : 'unknown',
+    })
+    return failed('sso.provider_error')
+  }
+
+  const ticket = `${OAUTH_TICKET_PREFIX}${randomToken()}`
+  // The verifier and the nonce have done their job and are not kept.
+  const { codeVerifier: _verifier, nonce: _nonce, ...kept } = sso
+  const proven: State = {
+    ...state,
+    oauthPhase: 'proven',
+    sso: {
+      ...kept,
+      profile,
+      ticketHash: sha256Hex(ticket),
+      ticketExpiresAt: deps.clock.now().getTime() + durationToMs(OAUTH_TICKET_TTL),
+    },
+  }
+  const stored = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: proven },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'returned' }
+  )
+  if (!stored) {
+    return failed('oauth.state_invalid')
+  }
+  return { redirectTo: oauthRedirect(sso.redirectUrl, attempt.id, OAUTH_TICKET_PARAM, ticket) }
 }
 
 /**
@@ -2746,7 +3023,8 @@ export async function exchangeOAuthLink(
     throw new AuthError('oauth.ticket_invalid')
   }
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'link', context)
-  if (redeemed.linkUserId !== userId) {
+  // An SSO round is always a sign-in, so a link has its provider; checked for the compiler.
+  if (redeemed.linkUserId !== userId || redeemed.provider === undefined) {
     throw new AuthError('oauth.ticket_invalid')
   }
   return OAuth.link(deps, tenant, userId, redeemed.provider, redeemed.profile, actor)

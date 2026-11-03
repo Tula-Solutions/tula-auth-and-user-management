@@ -240,6 +240,9 @@ public enum TulaOperations {
     /// Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). No body. Answers `SmsFactorCode`.
     public static let startSmsFactorEnrolment = TulaOperation(id: "startSmsFactorEnrolment", method: "POST", path: "/v1/client/me/factors/sms", requiresSession: true)
 
+    /// Continue with the identity provider of the address's domain (`POST /v1/client/sign-ins/{attemptId}/sso`). Body: `SsoStartRequest`. Answers `OAuthStart`.
+    public static let startSsoSignIn = TulaOperation(id: "startSsoSignIn", method: "POST", path: "/v1/client/sign-ins/{attemptId}/sso", requiresSession: false)
+
     /// Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). No body. Answers `TotpEnrolment`.
     public static let startTotpEnrolment = TulaOperation(id: "startTotpEnrolment", method: "POST", path: "/v1/client/me/factors/totp", requiresSession: true)
 
@@ -370,6 +373,7 @@ public enum TulaOperations {
         startSignUp,
         startSignUpTotpEnrolment,
         startSmsFactorEnrolment,
+        startSsoSignIn,
         startTotpEnrolment,
         stepUpSession,
         submitPasswordReset,

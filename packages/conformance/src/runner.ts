@@ -109,6 +109,14 @@ export interface Target {
    */
   idToken?: (ask: IdTokenAsk) => Promise<string>
   /**
+   * The issuer of the server's mock enterprise identity provider, as the server itself reaches
+   * it, for `sso` steps. Left out: `<publicUrl>/v1/dev/sso`, the API calling its own address.
+   * An in-process target, which has no address, serves one.
+   *
+   * @returns The issuer, with no trailing slash.
+   */
+  ssoIssuer?: () => Promise<string>
+  /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
    * @param ms - How long.
@@ -542,6 +550,10 @@ async function runStep(
     await runOAuth(target, step, variables)
     return
   }
+  if ('sso' in step) {
+    await runSso(target, step, variables)
+    return
+  }
   if ('passkey' in step) {
     await runPasskey(step, variables)
     return
@@ -564,7 +576,7 @@ async function runStep(
     return
   }
   const request = fill(step.request, variables)
-  const expected = fill(step.expect, variables)
+  const expected = expandJson(fill(step.expect, variables)) as typeof step.expect
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
     const response = await instanceFor(target, request).fetch(
       buildRequest(
@@ -918,6 +930,22 @@ async function runOAuth(
   if (oauth.captureCallback) {
     variables[oauth.captureCallback] = callback
   }
+  await followCallback(target, callback, origin, oauth, variables)
+}
+
+/** Request a provider's callback and read what it sends the app's page. */
+async function followCallback(
+  target: Target,
+  callback: string,
+  origin: string,
+  oauth: {
+    expectRedirectTo?: string
+    captureTicket?: string
+    expectError?: string
+    captureAttempt?: string
+  },
+  variables: Record<string, string>
+): Promise<void> {
   const answered = await hop(target, callback, origin)
   const fragment = answered.location?.split('#')[1]
   if (answered.status !== 303 || fragment === undefined) {
@@ -951,6 +979,41 @@ async function runOAuth(
   if (oauth.captureAttempt) {
     variables[oauth.captureAttempt] = params.get('tula_attempt') ?? ''
   }
+}
+
+/** The mock enterprise identity provider's issuer, as the server reaches it. */
+async function ssoIssuer(target: Target): Promise<string> {
+  return target.ssoIssuer ? target.ssoIssuer() : `${target.publicUrl ?? target.baseUrl}/v1/dev/sso`
+}
+
+/** Learn the mock identity provider's issuer, or sign in at it and follow the callback. */
+async function runSso(
+  target: Target,
+  step: Extract<Step, { sso: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const sso = fill(step.sso, variables)
+  if (sso.captureIssuer !== undefined) {
+    variables[sso.captureIssuer] = await ssoIssuer(target)
+    return
+  }
+  const authorization = new URL(sso.authorizationUrl ?? '')
+  authorization.searchParams.set('login_hint', sso.email ?? '')
+  if (sso.subject !== undefined) {
+    authorization.searchParams.set('subject', sso.subject)
+  }
+  if (sso.unverified) {
+    authorization.searchParams.set('unverified', '1')
+  }
+  const origin = variables.origin ?? ''
+  // The mock is served by the API itself: asked on the target, whatever address it named.
+  const signedIn = await hop(target, pathOf(authorization.toString()), origin)
+  if (signedIn.status !== 303 || !signedIn.location) {
+    throw new Error(
+      `the mock identity provider answered ${signedIn.status} without a redirect (is OAUTH_MOCK_PROVIDER on?)`
+    )
+  }
+  await followCallback(target, pathOf(signedIn.location), origin, sso, variables)
 }
 
 async function linkFor(target: Target, to: string): Promise<string> {

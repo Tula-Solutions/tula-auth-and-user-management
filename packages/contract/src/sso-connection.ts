@@ -68,3 +68,15 @@ export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid() 
 export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionRequestSchema>
 export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionRequestSchema>
 export type SsoConnection = z.infer<typeof SsoConnectionSchema>
+
+/**
+ * Start a single sign-on step of a sign-in attempt: where the app's page is that the browser
+ * returns to. The connection is the one the attempt's email domain is bound to; the client never
+ * names it. The answer is an `OAuthStart` (the provider's URL, the binding, the attempt).
+ */
+export const SsoStartRequestSchema = z
+  .object({ redirectUrl: z.string().max(2048) })
+  .meta({ ref: 'SsoStartRequest' })
+
+/** Single sign-on start request body. */
+export type SsoStartRequest = z.infer<typeof SsoStartRequestSchema>

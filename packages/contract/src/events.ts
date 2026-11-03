@@ -205,6 +205,7 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_linkedin',
       'oauth_x',
       'oauth_facebook',
+      'sso',
     ]),
     /**
      * Whether the account's email address was proven when it was created. `false` also for
@@ -312,6 +313,18 @@ export const EVENT_DATA_SCHEMAS = {
       provider,
       /** `auto`: at a sign-in, by a verified address; `profile`: by the signed-in user. */
       method: z.enum(['auto', 'profile']),
+    }
+  ),
+  'user.sso_linked': data(
+    'UserSsoLinked',
+    'An account was given its identity at a single sign-on connection (ADR 0067).',
+    {
+      connectionId: id(),
+      /**
+       * `email`: an existing account matched by its address on one of the connection's
+       * domains. `provisioned`: an account created just in time by this sign-in.
+       */
+      method: z.enum(['email', 'provisioned']),
     }
   ),
   'user.identity_unlinked': data(

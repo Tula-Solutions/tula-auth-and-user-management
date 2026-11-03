@@ -46,6 +46,9 @@ export const ACTIVITY_TYPES = [
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
+  // An account given its identity at an SSO connection (ADR 0067): `connectionId` says which,
+  // `method` whether it was matched by address or created just in time.
+  'user.sso_linked',
   // An email address stored on a user who had none (ADR 0059); `method` says who did it and
   // `verified` whether its holder proved it. The address itself is never in an event.
   'user.email_added',
@@ -189,6 +192,7 @@ export const EVENT_TARGET_TYPES = {
   'user.identity_linked': 'user',
   'user.email_added': 'user',
   'user.identity_unlinked': 'user',
+  'user.sso_linked': 'user',
   'user.passkey_added': 'user',
   'user.passkey_renamed': 'user',
   'user.passkey_removed': 'user',

@@ -98,6 +98,7 @@ export function describeSessionStore(
         hookClaims: null,
         deviceThumbprint: null,
         activeOrganizationId: null,
+        ssoConnectionId: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -174,6 +175,7 @@ export function describeSessionStore(
         hookClaims: null,
         deviceThumbprint: null,
         activeOrganizationId: null,
+        ssoConnectionId: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -1087,6 +1089,16 @@ export function describeSessionStore(
         )
         const cleared = await ctx.store.setActiveOrganization(env, s.id, null, later(20))
         expect(cleared?.activeOrganizationId).toBeNull()
+      })
+
+      test('a session keeps the SSO connection it was created with, from both reads', async () => {
+        const env = ctx.a.environmentId
+        const connection = Bun.randomUUIDv7()
+        const { session: s, root } = await seed(ctx.a, { ssoConnectionId: connection })
+        expect((await ctx.store.findById(env, s.id))?.ssoConnectionId).toBe(connection)
+        expect((await ctx.store.findToken(env, root.tokenHash))?.session.ssoConnectionId).toBe(
+          connection
+        )
       })
 
       test('a session created with one keeps it, and a refresh, a touch and a step-up leave it', async () => {

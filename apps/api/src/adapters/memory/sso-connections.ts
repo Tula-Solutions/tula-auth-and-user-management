@@ -170,7 +170,8 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   async linkIdentity(
     environmentId: string,
     identity: SsoIdentityRecord,
-    _at: Date
+    _at: Date,
+    recorded: Recorded
   ): Promise<boolean> {
     const taken = [...this.#identities.values()].some(
       (one) =>
@@ -184,6 +185,8 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       ...identity,
       environmentId,
     })
+    const activity = activityOf(recorded)
+    this.#activityLog.record(activity ? [activity] : [])
     return true
   }
 }

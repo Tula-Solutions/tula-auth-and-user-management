@@ -1,0 +1,551 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  type AccessTokenClaims,
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  SSO_CONNECTION_CLAIM,
+} from '@tula-tech/contract'
+import { decodeJwt, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
+import { createApp } from '~/index'
+import * as Audit from '~/modules/audit/service'
+import * as Notices from '~/modules/notice/service'
+import * as Organizations from '~/modules/organization/service'
+import * as Sso from '~/modules/sso/service'
+import * as SsoConnections from '~/modules/sso-connection/service'
+import {
+  createTestDeps,
+  seedApiKey,
+  TEST_ACTOR,
+  TEST_CONFIG,
+  TEST_TENANT,
+  type TestDeps,
+} from '~/testing'
+
+// The OIDC round of an SSO connection (ADR 0067), through the routes, against an identity
+// provider this file runs on loopback (the outbound guard allows loopback `http` in the
+// `local` tier): its discovery document, key set and token endpoint are real HTTP, and its
+// ID tokens are signed here, so that each check of the token is held by a test.
+
+const PK = 'tula_pk_dev_sso0000000000000000000000000000'
+const TENANT = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+const REDIRECT = 'http://localhost:5174/oauth/callback'
+const DOMAIN = 'acme.test'
+const CLIENT_ID = 'tula-client'
+
+interface Grant {
+  nonce: string
+  challenge: string
+}
+
+/** The identity provider: what it answers, and what it was asked. */
+const idp = {
+  base: '',
+  /** The issuer its discovery document names; the base address when `null`. */
+  namedIssuer: null as string | null,
+  keys: [] as { privateKey: CryptoKey; jwk: JWK }[],
+  /** Index of the key that signs. */
+  signer: 0,
+  /** Keys published in the key set, by index. */
+  published: [0],
+  jwksFetches: 0,
+  grants: new Map<string, Grant>(),
+  /** Claims the next token gets on top of the usual ones (`undefined` removes one). */
+  claims: {} as Record<string, unknown>,
+  /** The verifier the token endpoint last received. */
+  lastVerifier: '' as string,
+}
+
+let server: ReturnType<typeof Bun.serve>
+let deps: TestDeps
+let app: ReturnType<typeof createApp>
+let organizationId: string
+let connectionId: string
+
+async function key() {
+  const pair = await generateKeyPair('RS256', { extractable: true })
+  const jwk = { ...(await exportJWK(pair.publicKey)), kid: `k${idp.keys.length}`, alg: 'RS256' }
+  idp.keys.push({ privateKey: pair.privateKey, jwk })
+}
+
+beforeAll(async () => {
+  await key()
+  await key()
+  server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    async fetch(request) {
+      const { pathname } = new URL(request.url)
+      if (pathname === '/.well-known/openid-configuration') {
+        return Response.json({
+          issuer: idp.namedIssuer ?? idp.base,
+          authorization_endpoint: `${idp.base}/authorize`,
+          token_endpoint: `${idp.base}/token`,
+          jwks_uri: `${idp.base}/jwks`,
+        })
+      }
+      if (pathname === '/jwks') {
+        idp.jwksFetches += 1
+        return Response.json({ keys: idp.published.map((index) => idp.keys[index]?.jwk) })
+      }
+      if (pathname === '/token') {
+        const form = new URLSearchParams(await request.text())
+        const grant = idp.grants.get(form.get('code') ?? '')
+        idp.lastVerifier = form.get('code_verifier') ?? ''
+        const challenge = new Bun.CryptoHasher('sha256')
+          .update(idp.lastVerifier)
+          .digest('base64url')
+        if (!grant || grant.challenge !== challenge || form.get('client_secret') !== 'shh') {
+          return Response.json({ error: 'invalid_grant' }, { status: 400 })
+        }
+        const signing = idp.keys[idp.signer] as { privateKey: CryptoKey; jwk: JWK }
+        const now = Math.floor(deps.clock.now().getTime() / 1000)
+        const payload: Record<string, unknown> = {
+          iss: idp.base,
+          aud: CLIENT_ID,
+          sub: 'subject-1',
+          email: `ada@${DOMAIN}`,
+          email_verified: true,
+          nonce: grant.nonce,
+          iat: now,
+          exp: now + 300,
+          ...idp.claims,
+        }
+        for (const [name, value] of Object.entries(payload)) {
+          if (value === undefined) {
+            delete payload[name]
+          }
+        }
+        const token = await new SignJWT(payload)
+          .setProtectedHeader({ alg: 'RS256', kid: signing.jwk.kid as string })
+          .sign(signing.privateKey)
+        return Response.json({ id_token: token, token_type: 'Bearer' })
+      }
+      return new Response(null, { status: 404 })
+    },
+  })
+  idp.base = `http://127.0.0.1:${server.port}`
+})
+
+afterAll(() => {
+  server.stop(true)
+})
+
+/** Verify a domain for the organization straight in the store (its mail round is not the subject). */
+async function verify(domain: string) {
+  const id = Bun.randomUUIDv7()
+  const none = Audit.none('fixture')
+  const now = deps.clock.now()
+  await deps.organizationDomains.claim(
+    {
+      id,
+      ...TENANT,
+      organizationId,
+      domain,
+      mode: 'suggest',
+      codeHash: 'h',
+      codeExpiresAt: new Date(now.getTime() + 60_000),
+      at: now,
+      limit: 10,
+    },
+    none
+  )
+  await deps.organizationDomains.verify(
+    TENANT.environmentId,
+    organizationId,
+    id,
+    'h',
+    now,
+    new Date(now.getTime() + 86_400_000),
+    none
+  )
+}
+
+beforeEach(async () => {
+  Sso.forgetCached()
+  Object.assign(idp, {
+    namedIssuer: null,
+    signer: 0,
+    published: [0],
+    jwksFetches: 0,
+    claims: {},
+    lastVerifier: '',
+  })
+  idp.grants.clear()
+  deps = createTestDeps({ config: { ...TEST_CONFIG, oauthMock: true } })
+  deps.environments.add({
+    id: TEST_TENANT.environmentId,
+    projectId: TEST_TENANT.projectId,
+    kind: 'development',
+    createdAt: deps.clock.now(),
+  })
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: 1,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      sso: { enabled: true },
+    } as never,
+  })
+  await seedApiKey(deps, PK)
+  app = createApp(deps)
+  organizationId = (
+    await Organizations.create(deps, TENANT, { name: 'Acme', slug: 'acme' }, TEST_ACTOR)
+  ).id
+  await verify(DOMAIN)
+  const made = await SsoConnections.create(
+    deps,
+    TENANT,
+    {
+      organizationId,
+      protocol: 'oidc',
+      name: 'Okta',
+      issuer: idp.base,
+      clientId: CLIENT_ID,
+      clientSecret: 'shh',
+      defaultRole: 'member',
+      domains: [DOMAIN],
+    },
+    TEST_ACTOR
+  )
+  connectionId = made.id
+  await setStatus('active')
+})
+
+async function setStatus(status: 'draft' | 'active' | 'disabled') {
+  await SsoConnections.update(deps, TENANT, connectionId, { status }, TEST_ACTOR)
+}
+
+const HEADERS = { 'content-type': 'application/json', 'x-tula-publishable-key': PK }
+
+async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
+  return app.request(path, {
+    method: 'POST',
+    headers: { ...HEADERS, 'x-tula-client': 'ios', ...headers },
+    body: JSON.stringify(body),
+  })
+}
+
+/** Start a sign-in for an address and continue it with single sign-on. */
+async function started(email = `ada@${DOMAIN}`) {
+  const signIn = await post('/v1/client/sign-ins', { identifier: email })
+  const attempt = (await signIn.json()) as { id: string; attemptSecret: string; step: unknown }
+  const sso = await post(
+    `/v1/client/sign-ins/${attempt.id}/sso`,
+    { redirectUrl: REDIRECT },
+    { 'x-tula-attempt': attempt.attemptSecret }
+  )
+  return { attempt, sso }
+}
+
+/** The identity provider signs the user in: the code it hands the browser for this URL. */
+function consent(authorizationUrl: string) {
+  const url = new URL(authorizationUrl)
+  const code = `code-${idp.grants.size}`
+  idp.grants.set(code, {
+    nonce: url.searchParams.get('nonce') ?? '',
+    challenge: url.searchParams.get('code_challenge') ?? '',
+  })
+  return { code, state: url.searchParams.get('state') ?? '' }
+}
+
+/** What the callback sends the app's page: the ticket and attempt, or the error code. */
+async function callback(query: Record<string, string>) {
+  const response = await app.request(
+    `/v1/sso/callback/${connectionId}?${new URLSearchParams(query)}`
+  )
+  const location = response.headers.get('location') ?? ''
+  return {
+    status: response.status,
+    location,
+    fragment: new URLSearchParams(location.split('#')[1] ?? ''),
+  }
+}
+
+/** The whole round: start, the provider, the callback and the exchange. */
+async function signIn(email = `ada@${DOMAIN}`) {
+  const { sso } = await started(email)
+  const begun = (await sso.json()) as { authorizationUrl: string; binding: string }
+  const back = await callback(consent(begun.authorizationUrl))
+  const error = back.fragment.get('tula_error')
+  if (error) {
+    return { error, response: null }
+  }
+  const response = await post('/v1/client/sign-ins/oauth/exchange', {
+    ticket: back.fragment.get('tula_ticket'),
+    attemptId: back.fragment.get('tula_attempt'),
+    binding: begun.binding,
+  })
+  return { error: null, response }
+}
+
+async function signedIn(email?: string) {
+  const { error, response } = await signIn(email)
+  expect(error).toBeNull()
+  expect(response?.status).toBe(200)
+  return (await response?.json()) as {
+    step: { status: string; userId: string; sessionId: string }
+    session: { accessToken: string }
+  }
+}
+
+async function codeOf(email?: string) {
+  const { error, response } = await signIn(email)
+  return error ?? ((await response?.json()) as { code: string }).code
+}
+
+async function seedUser(email: string, verified: boolean) {
+  const id = deps.ids.next()
+  await deps.users.create(
+    {
+      id,
+      ...TENANT,
+      email,
+      emailNormalized: email,
+      emailVerifiedAt: verified ? deps.clock.now() : null,
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
+  return id
+}
+
+const recorded = () => deps.activityLog.entries.map((entry) => entry.type)
+
+describe('home-realm discovery', () => {
+  test('is by domain: a known and an unknown address on the domain get the same step', async () => {
+    await seedUser(`ada@${DOMAIN}`, true)
+    const known = await started(`ada@${DOMAIN}`)
+    const unknown = await started(`nobody@${DOMAIN}`)
+    expect(known.attempt.step).toEqual(unknown.attempt.step)
+    expect(JSON.stringify(known.attempt.step)).toContain('"sso"')
+    expect(known.sso.status).toBe(200)
+    expect(unknown.sso.status).toBe(200)
+  })
+
+  test('a draft, a disabled connection, another domain and SSO off are not offered', async () => {
+    const refused = async () => ((await (await started()).sso.json()) as { code: string }).code
+    await setStatus('disabled')
+    expect(await refused()).toBe('flow.invalid_step')
+    expect(((await (await started('ada@other.test')).sso.json()) as { code: string }).code).toBe(
+      'flow.invalid_step'
+    )
+    await setStatus('active')
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, sso: { enabled: false } } as never,
+    })
+    expect(await refused()).toBe('flow.invalid_step')
+  })
+
+  test('the start sends the browser to the provider with PKCE, state and a nonce', async () => {
+    const { sso } = await started()
+    const url = new URL(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    expect(`${url.origin}${url.pathname}`).toBe(`${idp.base}/authorize`)
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(url.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(url.searchParams.get('nonce')).toBeTruthy()
+    expect(url.searchParams.get('state')).toContain(TEST_TENANT.environmentId)
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      `${TEST_CONFIG.publicUrl}/v1/sso/callback/${connectionId}`
+    )
+  })
+})
+
+describe('a sign-in through the connection', () => {
+  test('creates the user just in time, managed by the connection and a member, with sso in amr and the connection claim', async () => {
+    const result = await signedIn()
+    expect(result.step.status).toBe('complete')
+    const claims = decodeJwt<AccessTokenClaims>(result.session.accessToken)
+    expect(claims.amr).toEqual(['sso'])
+    expect(claims[SSO_CONNECTION_CLAIM]).toBe(connectionId)
+    const user = await deps.users.findById(TENANT.environmentId, result.step.userId)
+    expect(user?.managedByConnectionId).toBe(connectionId)
+    expect(user?.emailVerifiedAt).not.toBeNull()
+    const membership = await deps.organizations.findMembership(
+      TENANT.environmentId,
+      organizationId,
+      result.step.userId
+    )
+    expect(membership?.roleKey).toBe('member')
+    expect(recorded()).toEqual(
+      expect.arrayContaining(['user.created', 'user.sso_linked', 'organization_membership.added'])
+    )
+    // The verifier went to the token endpoint and matched the challenge (it was checked there).
+    expect(idp.lastVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  })
+
+  test('announces the new device and is in the session list', async () => {
+    const result = await signedIn()
+    await Notices.settled()
+    expect(deps.mailer.outbox.some((mail) => mail.to === `ada@${DOMAIN}`)).toBe(true)
+    const list = await app.request('/v1/client/sessions', {
+      headers: { ...HEADERS, authorization: `Bearer ${result.session.accessToken}` },
+    })
+    expect(JSON.stringify(await list.json())).toContain(result.step.sessionId)
+  })
+
+  test('a ticket without the starting browser’s binding completes nothing', async () => {
+    const { sso } = await started()
+    const begun = (await sso.json()) as { authorizationUrl: string }
+    const back = await callback(consent(begun.authorizationUrl))
+    const response = await post('/v1/client/sign-ins/oauth/exchange', {
+      ticket: back.fragment.get('tula_ticket'),
+      attemptId: back.fragment.get('tula_attempt'),
+      binding: 'tula_ob_not-the-binding',
+    })
+    expect(((await response.json()) as { code: string }).code).toBe('oauth.different_browser')
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
+  test('the state works once', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    expect((await callback(query)).fragment.get('tula_ticket')).toBeTruthy()
+    expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
+  })
+
+  test('a state for another connection, or of no attempt, gets the static page', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    const other = await app.request(
+      `/v1/sso/callback/${Bun.randomUUIDv7()}?${new URLSearchParams(query)}`
+    )
+    expect(other.status).toBe(400)
+    expect((await callback({ state: 'nope', code: 'x' })).status).toBe(400)
+  })
+
+  test('a connection disabled while the user is at the provider signs nobody in', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    await setStatus('disabled')
+    expect((await callback(query)).fragment.get('tula_error')).toBe('auth.method_disabled')
+  })
+})
+
+describe('the matching table', () => {
+  test('1. a known identity is its user, whatever address the provider reports now', async () => {
+    const first = await signedIn()
+    idp.claims = { email: `ada.lovelace@${DOMAIN}` }
+    const again = await signedIn(`ada@${DOMAIN}`)
+    expect(again.step.userId).toBe(first.step.userId)
+  })
+
+  test('2. an address outside the connection’s domains is refused, verified or not', async () => {
+    idp.claims = { email: 'ada@elsewhere.test' }
+    expect(await codeOf()).toBe('sso.email_domain_mismatch')
+    idp.claims = { email: 'ada@elsewhere.test', email_verified: false }
+    expect(await codeOf()).toBe('sso.email_domain_mismatch')
+    idp.claims = { email: undefined }
+    expect(await codeOf()).toBe('sso.email_domain_mismatch')
+    expect(recorded()).not.toContain('user.created')
+  })
+
+  test('2. on the domain, the domain vouches: email_verified false still signs in', async () => {
+    idp.claims = { email_verified: false }
+    expect((await signedIn()).step.status).toBe('complete')
+  })
+
+  test('3. a verified account with the address is linked, not duplicated', async () => {
+    const existing = await seedUser(`ada@${DOMAIN}`, true)
+    const result = await signedIn()
+    expect(result.step.userId).toBe(existing)
+    expect(recorded()).toContain('user.sso_linked')
+    expect(recorded()).not.toContain('user.created')
+    expect(
+      await deps.ssoConnections.findIdentity(TENANT.environmentId, connectionId, 'subject-1')
+    ).toMatchObject({ userId: existing })
+  })
+
+  test('4. an unverified account with the address is not linked into', async () => {
+    await seedUser(`ada@${DOMAIN}`, false)
+    expect(await codeOf()).toBe('sso.user_not_provisioned')
+    expect(
+      await deps.ssoConnections.findIdentity(TENANT.environmentId, connectionId, 'subject-1')
+    ).toBeNull()
+  })
+
+  test('5. no account: one is created just in time', async () => {
+    const result = await signedIn()
+    expect(recorded()).toContain('user.created')
+    expect(result.step.userId).toBeTruthy()
+  })
+})
+
+describe('the ID token', () => {
+  test.each([
+    ['a wrong issuer', { iss: 'https://evil.test' }],
+    ['a wrong audience', { aud: 'someone-else' }],
+    ['an azp that is not the client', { azp: 'someone-else' }],
+    ['a nonce that is not the attempt’s', { nonce: 'not-the-nonce' }],
+    ['no nonce', { nonce: undefined }],
+    ['an expired token', { exp: 1 }],
+  ])('%s is refused, and nobody is created', async (_name, claims) => {
+    idp.claims = claims
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
+  test('a discovery document naming another issuer is refused at the start', async () => {
+    idp.namedIssuer = 'https://evil.test'
+    expect(((await (await started()).sso.json()) as { code: string }).code).toBe(
+      'sso.provider_error'
+    )
+  })
+
+  test('a token the provider will not give for a wrong PKCE verifier signs nobody in', async () => {
+    const { sso } = await started()
+    const url = new URL(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    idp.grants.set('bad', { nonce: url.searchParams.get('nonce') ?? '', challenge: 'other' })
+    const back = await callback({ code: 'bad', state: url.searchParams.get('state') ?? '' })
+    expect(back.fragment.get('tula_error')).toBe('sso.provider_error')
+  })
+
+  test('an unknown kid makes the key set be fetched again once, and a rotated key is taken', async () => {
+    await signedIn()
+    expect(idp.jwksFetches).toBe(1)
+    idp.published = [0, 1]
+    idp.signer = 1
+    await signedIn()
+    expect(idp.jwksFetches).toBe(2)
+    // A key the fresh set does not have either: refused, with one more fetch and no more.
+    idp.published = [0]
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(idp.jwksFetches).toBe(3)
+  })
+
+  test('the documents come from cache: one discovery and one key set for two sign-ins', async () => {
+    await signedIn()
+    await signedIn()
+    expect(idp.jwksFetches).toBe(1)
+  })
+})
+
+describe('the outbound guard', () => {
+  test('an issuer whose name now resolves to a private address is not called', async () => {
+    const stored = await deps.ssoConnections.find(TENANT.environmentId, connectionId)
+    const issuer = `http://idp.internal.test:${server.port}`
+    deps.outbound.point('idp.internal.test', '10.0.0.8')
+    await deps.ssoConnections.update(
+      TENANT.environmentId,
+      connectionId,
+      { issuer },
+      deps.clock.now(),
+      Audit.entry(deps, TENANT, {
+        type: 'sso_connection.updated',
+        actor: TEST_ACTOR,
+        target: { type: 'sso_connection', id: connectionId },
+        data: { protocol: 'oidc', changed: ['issuer'], status: stored?.status ?? 'active' },
+      })
+    )
+    const before = idp.jwksFetches
+    expect(((await (await started()).sso.json()) as { code: string }).code).toBe(
+      'sso.provider_error'
+    )
+    expect(idp.jwksFetches).toBe(before)
+    expect(deps.outbound.asked).toContain('idp.internal.test')
+  })
+})

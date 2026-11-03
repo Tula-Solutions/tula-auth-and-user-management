@@ -88,6 +88,7 @@ export class MemorySessionStore implements SessionStore {
       hookClaims: session.hookClaims ? { ...session.hookClaims } : null,
       deviceThumbprint: session.deviceThumbprint ?? null,
       activeOrganizationId: session.activeOrganizationId ?? null,
+      ssoConnectionId: session.ssoConnectionId ?? null,
       revokedAt: null,
       revokeReason: null,
     })

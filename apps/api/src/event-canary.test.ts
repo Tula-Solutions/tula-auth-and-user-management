@@ -204,6 +204,16 @@ function claimsDomain(request: Request): boolean {
   )
 }
 
+/**
+ * The domains an SSO connection's body binds it to (ADR 0067): domains the organization has
+ * already claimed and verified, so public, and held to {@link DOMAIN_FIELDS} like a claim's.
+ */
+function boundDomains(request: Request, json: unknown): unknown[] {
+  const bound = /\/v1\/admin\/sso-connections(?:\/[^/]+)?\/?$/.test(new URL(request.url).pathname)
+  const domains = bound ? (json as { domains?: unknown } | undefined)?.domains : undefined
+  return Array.isArray(domains) ? domains : []
+}
+
 /** Whether a request body names a role by key: a role's definition, or a member's role. */
 function namesRole(request: Request): boolean {
   const { pathname } = new URL(request.url)
@@ -275,12 +285,13 @@ class Tap {
     const json = parseJson(body)
     const role = namesRole(request) && json && typeof json === 'object' ? json : undefined
     const domain = claimsDomain(request) ? (json as { domain?: unknown } | undefined)?.domain : null
+    const bound = boundDomains(request, json)
     for (const value of json === undefined ? parameters(body) : strings(json)) {
       // A role's key may be in the fields of ROLE_KEY_FIELDS, so it is held to that rule
       // there; everything else in the same body is an ordinary input.
       const key = (role as { key?: unknown; role?: unknown } | undefined)?.key
       const named = (role as { role?: unknown } | undefined)?.role
-      if (typeof domain === 'string' && value === domain) {
+      if ((typeof domain === 'string' && value === domain) || bound.includes(value)) {
         this.mayAppear.add(value)
       } else if (value === key || value === named) {
         // A built-in role's key is contract vocabulary and stays out of the set.

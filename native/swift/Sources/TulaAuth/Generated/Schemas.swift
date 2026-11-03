@@ -4776,6 +4776,30 @@ public struct SmsFactorConfirmRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct SsoStartRequest: Codable, Hashable, Sendable {
+    public var redirectUrl: String
+
+    public init(
+        redirectUrl: String
+    ) {
+        self.redirectUrl = redirectUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case redirectUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.redirectUrl = try container.decode(String.self, forKey: .redirectUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.redirectUrl, forKey: .redirectUrl)
+    }
+}
+
 public struct StartOrganizationDomainRequest: Codable, Hashable, Sendable {
     public var domain: OrganizationDomainName
     public var email: String

@@ -91,6 +91,20 @@ export function describeSsoConnectionStore(
     return Audit.entry(deps, scope, { type, actor, target, data: { protocol } })
   }
 
+  /** The entry an identity is linked with: what the SSO sign-in records. */
+  function linked(tenant: SsoSuiteTenant, userId: string, connectionId: string): Activity {
+    return Audit.entry(
+      { ids: { next: () => Bun.randomUUIDv7() }, clock: { now: () => now } },
+      { projectId: tenant.projectId, environmentId: tenant.environmentId },
+      {
+        type: 'user.sso_linked',
+        actor: { type: 'user', id: userId, ipAddress: null, userAgent: null },
+        target: { type: 'user', id: userId },
+        data: { connectionId, method: 'email' },
+      }
+    )
+  }
+
   async function insert(record: SsoConnectionRecord) {
     return ctx.store.insert(record, activity(ctx.a, 'sso_connection.created', record.id))
   }
@@ -230,13 +244,15 @@ export function describeSsoConnectionStore(
         await ctx.store.linkIdentity(
           ctx.a.environmentId,
           { connectionId: record.id, userId, subject: 'sub-1' },
-          now
+          now,
+          linked(ctx.a, userId, record.id)
         )
       ).toBe(true)
+      expect(await ctx.recorded()).toEqual(['sso_connection.created', 'user.sso_linked'])
       const attempt = activity(ctx.a, 'sso_connection.deleted', record.id)
       expect(await ctx.store.delete(ctx.a.environmentId, record.id, attempt)).toBe('in_use')
       expect(await ctx.store.find(ctx.a.environmentId, record.id)).not.toBeNull()
-      expect(await ctx.recorded()).toEqual(['sso_connection.created'])
+      expect(await ctx.recorded()).toEqual(['sso_connection.created', 'user.sso_linked'])
     })
 
     test('an identity is one per subject and one per user at a connection', async () => {
@@ -248,12 +264,15 @@ export function describeSsoConnectionStore(
         ctx.store.linkIdentity(
           ctx.a.environmentId,
           { connectionId: record.id, userId, subject },
-          now
+          now,
+          linked(ctx.a, userId, record.id)
         )
       expect(await link(one, 'sub-1')).toBe(true)
       expect(await link(two, 'sub-1')).toBe(false)
       expect(await link(one, 'sub-2')).toBe(false)
       expect(await link(two, 'sub-2')).toBe(true)
+      // Only the two links that were stored are recorded.
+      expect((await ctx.recorded()).filter((type) => type === 'user.sso_linked')).toHaveLength(2)
       expect(await ctx.store.findIdentity(ctx.a.environmentId, record.id, 'sub-1')).toEqual({
         connectionId: record.id,
         userId: one,
@@ -271,7 +290,8 @@ export function describeSsoConnectionStore(
         await ctx.store.linkIdentity(
           ctx.b.environmentId,
           { connectionId: record.id, userId, subject: 'sub-1' },
-          now
+          now,
+          linked(ctx.b, userId, record.id)
         )
       ).toBe(false)
     })
