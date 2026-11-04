@@ -521,6 +521,50 @@ describe('purge', () => {
     expect(await has(tenant, confirmed)).toBe(true)
   })
 
+  test('a run that removed only a lapsed invitation is logged at info, not debug', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    const debug = spyOn(logger, 'debug').mockImplementation(() => undefined)
+    spies.push(info, debug)
+    const org = await deps.organizations.insert(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        name: 'Acme',
+        slug: 'acme-log',
+        createdBy: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    await deps.organizations.insertInvitation(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        organizationId: org?.id ?? '',
+        email: 'old@example.com',
+        emailNormalized: 'old@example.com',
+        roleKey: 'member',
+        tokenHash: 'hash-log',
+        status: 'pending',
+        invitedBy: null,
+        expiresAt: from(-8 * DAY),
+        resolvedAt: null,
+        resolvedBy: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      new Date(0),
+      Audit.none('fixture')
+    )
+    const report = await Retention.run(deps)
+    expect(report).toMatchObject({ invitations: 1, failed: 0 })
+    expect(info).toHaveBeenCalledTimes(1)
+    expect(debug).not.toHaveBeenCalled()
+  })
+
   test('a run that removed only lapsed enrolments is worth a log line, with the count', async () => {
     const info = spyOn(logger, 'info').mockImplementation(() => undefined)
     spies.push(info)

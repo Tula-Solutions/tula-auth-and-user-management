@@ -231,6 +231,37 @@ describe('useOrganization', () => {
   })
 })
 
+describe('creating while a list is on its way', () => {
+  test('a list asked for before the creation does not leave the new organization out', async () => {
+    const w = inOrganization()
+    let created = false
+    let calls = 0
+    let release: (response: Response) => void = () => undefined
+    w.api.on(LIST, () => {
+      calls += 1
+      if (calls === 1) {
+        // The first fetch is answered with the list as it was before the creation.
+        return new Promise<Response>((resolve) => (release = resolve))
+      }
+      return page(created ? [ACME, GLOBEX] : [ACME], A)
+    })
+    w.api.on(CREATE, () => {
+      created = true
+      return json(201, GLOBEX)
+    })
+    const { seen, Probe } = probe()
+    w.mount(<Probe />)
+    await waitFor(() => expect(seen.list.isLoading).toBe(true))
+    const creating = act(async () => {
+      await seen.list.create({ name: 'Globex', slug: 'globex' })
+    })
+    await waitFor(() => expect(created).toBe(true))
+    await act(async () => release(page([ACME], A)))
+    await creating
+    await waitFor(() => expect(seen.list.organizations).toHaveLength(2))
+  })
+})
+
 describe('reload and server rendering', () => {
   test('reload() of either hook asks the server again', async () => {
     const w = inOrganization()
