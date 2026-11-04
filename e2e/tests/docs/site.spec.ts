@@ -49,6 +49,26 @@ function isOversize(
   )
 }
 
+/** The body of a test, as `test(name, body)` takes it. */
+type TestBody = (args: { page: Page }) => Promise<void> | void
+
+/**
+ * The indexes 0 to `count - 1`, each once, in an order where any run of neighbours is spread over
+ * the whole range: a stride of about `count` over the golden ratio, moved up until it shares no
+ * factor with `count` (so the walk visits every index before it repeats one).
+ *
+ * @param count - How many indexes.
+ * @returns The indexes in the order to register them.
+ */
+function spread(count: number): number[] {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+  let step = Math.max(1, Math.round(count * 0.618))
+  while (gcd(step, count) !== 1) {
+    step += 1
+  }
+  return Array.from({ length: count }, (_, position) => (position * step) % count)
+}
+
 /** A page that fails to load, logs an error or throws fails the test that opened it. */
 function watch(page: Page): string[] {
   const problems: string[] = []
@@ -83,6 +103,16 @@ test.describe('the documentation site', () => {
   // pieces that together cover it, none of it skipped and no rule disabled: the frame (the page
   // without the content past its introduction, so the outline and the page-level rules still
   // see it) and each run of sections, a test of its own per theme, spread over the workers.
+  // Playwright's `--shard=i/n` hands each shard one contiguous block of the registered tests, and
+  // the pieces of one big reference page sit side by side: registered page after page they would
+  // land in one or two shards (the contract page's alone took 13 minutes). So the tests are
+  // collected here and registered in the order of a golden-ratio stride through them (`spread`),
+  // in which every block, wherever Playwright cuts it, holds a sample of all the pages.
+  const registered: Array<[string, TestBody]> = []
+  const add = (name: string, body: TestBody): void => {
+    registered.push([name, body])
+  }
+
   for (const route of pages) {
     const stats = pageStats[route]
     const chunks =
@@ -99,7 +129,7 @@ test.describe('the documentation site', () => {
       }
 
       if (chunks.length === 0) {
-        test(`${route} renders and is accessible in ${scheme}`, async ({ page }) => {
+        add(`${route} renders and is accessible in ${scheme}`, async ({ page }) => {
           const problems = await open(page)
           await expectAccessible(page, `${route} (${scheme})`)
           expect(problems).toEqual([])
@@ -107,7 +137,7 @@ test.describe('the documentation site', () => {
         continue
       }
 
-      test(`${route} renders and its frame is accessible in ${scheme}`, async ({ page }) => {
+      add(`${route} renders and its frame is accessible in ${scheme}`, async ({ page }) => {
         const problems = await open(page)
         await expectAccessible(page, `${route} frame (${scheme})`, {
           exclude: [BEYOND_INTRODUCTION],
@@ -119,44 +149,51 @@ test.describe('the documentation site', () => {
         if (isOversize(stats, chunk)) {
           // One code block bigger than a piece: the block without its lines, then its lines in
           // ranges. A block cannot be split in the page, but axe can be pointed at its parts.
-          test(`${route} section ${section} (the block itself) is accessible in ${scheme}`, async ({
-            page,
-          }) => {
-            await open(page)
-            await expectAccessible(page, `${route} section ${section} block (${scheme})`, {
-              include: selectorsOf(chunk),
-              exclude: [linesOf(section)],
-            })
-          })
+          add(
+            `${route} section ${section} (the block itself) is accessible in ${scheme}`,
+            async ({ page }) => {
+              await open(page)
+              await expectAccessible(page, `${route} section ${section} block (${scheme})`, {
+                include: selectorsOf(chunk),
+                exclude: [linesOf(section)],
+              })
+            }
+          )
           for (const range of lineRangesOf(
             stats?.sections[section] as number,
             stats?.lines[section] as number
           )) {
-            test(`${route} section ${section} lines ${range.from} to ${range.to} are accessible in ${scheme}`, async ({
-              page,
-            }) => {
-              await open(page)
-              await expectAccessible(
-                page,
-                `${route} section ${section} lines ${range.from}-${range.to} (${scheme})`,
-                { include: [lineSelector(section, range)] }
-              )
-            })
+            add(
+              `${route} section ${section} lines ${range.from} to ${range.to} are accessible in ${scheme}`,
+              async ({ page }) => {
+                await open(page)
+                await expectAccessible(
+                  page,
+                  `${route} section ${section} lines ${range.from}-${range.to} (${scheme})`,
+                  { include: [lineSelector(section, range)] }
+                )
+              }
+            )
           }
           continue
         }
-        test(`${route} sections ${chunk.from} to ${chunk.to} are accessible in ${scheme}`, async ({
-          page,
-        }) => {
-          await open(page)
-          await expectAccessible(page, `${route} sections ${chunk.from}-${chunk.to} (${scheme})`, {
-            include: selectorsOf(chunk),
-          })
-        })
+        add(
+          `${route} sections ${chunk.from} to ${chunk.to} are accessible in ${scheme}`,
+          async ({ page }) => {
+            await open(page)
+            await expectAccessible(
+              page,
+              `${route} sections ${chunk.from}-${chunk.to} (${scheme})`,
+              {
+                include: selectorsOf(chunk),
+              }
+            )
+          }
+        )
       }
     }
 
-    test(`${route} has no piece of axe's work bigger than a piece's budget`, () => {
+    add(`${route} has no piece of axe's work bigger than a piece's budget`, () => {
       for (const chunk of chunks) {
         const total = (stats?.sections ?? [])
           .slice(chunk.from, chunk.to + 1)
@@ -171,7 +208,7 @@ test.describe('the documentation site', () => {
 
     // The landing page is not a page of the docs: it has no article.
     const sectioned = route !== '/'
-    test(`${route} is cut into sections that hold all its content`, async ({ page }) => {
+    add(`${route} is cut into sections that hold all its content`, async ({ page }) => {
       test.skip(!sectioned, 'the landing page has no article')
       await page.goto(at(route))
       await expect(page.locator('article.doc'), `${route} has its article`).toHaveCount(1)
@@ -192,7 +229,7 @@ test.describe('the documentation site', () => {
       }
     })
 
-    test(`${route} fits a phone`, async ({ page }) => {
+    add(`${route} fits a phone`, async ({ page }) => {
       const problems = watch(page)
       await page.setViewportSize({ width: 375, height: 800 })
       await page.goto(at(route))
@@ -202,6 +239,11 @@ test.describe('the documentation site', () => {
       expect(overflow, `${route} scrolls sideways at 375px`).toBeLessThanOrEqual(0)
       expect(problems).toEqual([])
     })
+  }
+
+  for (const index of spread(registered.length)) {
+    const [name, body] = registered[index] as (typeof registered)[number]
+    test(name, body)
   }
 
   test('an unknown address answers 404 with the site’s own page', async ({ page }) => {
