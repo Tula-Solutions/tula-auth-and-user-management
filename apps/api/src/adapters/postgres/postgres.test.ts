@@ -160,6 +160,7 @@ describe('PostgresEnvironmentRepository', () => {
       kind: 'development',
     })
     expect(await repo.findById(Bun.randomUUIDv7())).toBeNull()
+    expect((await repo.listAll()).map((env) => env.id)).toContain(tenant.environmentId)
     expect((await repo.listByProject(tenant.projectId)).map((env) => env.id)).toEqual([
       tenant.environmentId,
       prod?.id ?? 'missing',
