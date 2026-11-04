@@ -289,3 +289,43 @@ describe('configuration', () => {
     expect(appOrigin(odd, { appOrigin: null })).toBe('http://localhost:3000')
   })
 })
+
+describe('safeRedirectPath when the URL parser misbehaves', () => {
+  // The guards before the parser leave it nothing to throw on, so the fallback is defence in
+  // depth; the parser is replaced to prove that it holds.
+  const RealURL = globalThis.URL
+  const replaceUrl = (url: unknown) => {
+    globalThis.URL = url as typeof URL
+  }
+
+  test('a parser that throws gives the fallback', () => {
+    try {
+      replaceUrl(
+        class {
+          constructor() {
+            throw new TypeError('Invalid URL')
+          }
+        }
+      )
+      expect(safeRedirectPath('/dashboard', '/home')).toBe('/home')
+    } finally {
+      globalThis.URL = RealURL
+    }
+  })
+
+  test('a path that resolves to another origin gives the fallback', () => {
+    try {
+      replaceUrl(
+        class {
+          origin = 'https://evil.example'
+          pathname = '/dashboard'
+          search = ''
+          hash = ''
+        }
+      )
+      expect(safeRedirectPath('/dashboard', '/home')).toBe('/home')
+    } finally {
+      globalThis.URL = RealURL
+    }
+  })
+})
