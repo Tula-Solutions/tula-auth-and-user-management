@@ -102,6 +102,13 @@ async function clearOrganizations(page: Page): Promise<void> {
 test.beforeEach(async ({ page }) => {
   await useSettings(page.request, ON)
   await signIn(page)
+  // The state the test starts from is read back, not assumed: a test that begins with
+  // organizations off would say "switched off" for the wrong reason.
+  const settings = await read<{ settings: { organizations: { enabled: boolean } } }>(
+    page,
+    '/v1/admin/settings'
+  )
+  expect(settings.settings.organizations.enabled).toBe(true)
   await clearOrganizations(page)
 })
 
@@ -228,14 +235,17 @@ test('an organization from creation to deletion: members, a last manager, invita
   await expect(page.getByText('No organizations yet')).toBeVisible()
 })
 
-test('the list is searched on its page, and the search is in the address', async ({ page }) => {
+test('the list is searched by the server as one types, and the search is in the address', async ({
+  page,
+}) => {
   await makeOrganization(page, 'Acme Corp', 'acme')
   await makeOrganization(page, 'Globex', 'globex')
   await open(page, `${ENVIRONMENT_PATH}/organizations`, 'Organizations')
   await expect(page.getByRole('link', { name: 'Acme Corp' })).toBeVisible()
+  // No click on Search: the pause after typing sends it.
   await page.getByLabel('Search organizations').fill('glob')
-  await page.getByRole('button', { name: 'Search' }).click()
   await expect(page).toHaveURL(/organizations\?q=glob/)
+  await expect(page.getByRole('link', { name: 'Acme Corp' })).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('link', { name: 'Globex' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Acme Corp' })).toHaveCount(0)
@@ -361,6 +371,9 @@ test('organization settings: weakenings are asked about first, the rest saves', 
   )
   expect(after.settings.organizations.allowUserCreated).toBe(true)
 
+  // The first save's toast is still showing: wait it out, so the next assertion matches the toast
+  // of the second save alone.
+  await expect(page.getByText('Settings saved')).toHaveCount(0)
   // Lowering the cap is not a weakening.
   await page.getByLabel('Organizations one user may create').fill('2')
   await page.getByRole('button', { name: 'Save changes' }).click()
@@ -397,9 +410,8 @@ test('domains: claimed with an emailed code, switched to joining automatically a
 }) => {
   const domain = `dom${Date.now()}.example.org`
   const address = `admin@${domain}`
-  await makeOrganization(page, 'Northline Labs', 'northline-labs')
-  const [organization] = (await read<{ data: Row[] }>(page, '/v1/admin/organizations')).data
-  await open(page, `${ENVIRONMENT_PATH}/organizations/${organization?.id}`, 'Northline Labs')
+  const organizationId = await makeOrganization(page, 'Northline Labs', 'northline-labs')
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${organizationId}`, 'Northline Labs')
   await expect(page.getByText('No domains claimed')).toBeVisible()
   await expectScreenAccessible(page, 'an organization, no domains')
 
@@ -452,9 +464,8 @@ test('domains: a verification that has lapsed says so, and a new code makes it h
 }) => {
   const domain = `lapse${Date.now()}.example.org`
   const address = `admin@${domain}`
-  await makeOrganization(page, 'Northline Labs', 'northline-labs')
-  const [organization] = (await read<{ data: Row[] }>(page, '/v1/admin/organizations')).data
-  const path = `${ENVIRONMENT_PATH}/organizations/${organization?.id}`
+  const organizationId = await makeOrganization(page, 'Northline Labs', 'northline-labs')
+  const path = `${ENVIRONMENT_PATH}/organizations/${organizationId}`
   const table = page.getByRole('table', { name: 'Domains of Northline Labs' })
 
   async function claimAndVerify(heading: string) {

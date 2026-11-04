@@ -151,7 +151,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   (`ID_TOKEN_PROVIDERS`); which clients may start is per provider
   (`ID_TOKEN_CLIENT_KINDS`: `ios` and `android` for Google, `ios` alone for Apple; the
   client's own claim: a policy, not a boundary); no redirect URL, ticket or binding. From there it is the browser flow's own code
-  (`completeProviderSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
+  (`completeExternalSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
   never a second path to an account or a session.
   - **A token is verified by the adapter, through the port's optional `verifyIdToken`**:
     the code flow's verifier (signature, `RS256`, issuer, expiry), then

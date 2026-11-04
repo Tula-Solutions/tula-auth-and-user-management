@@ -396,6 +396,60 @@ export function describeOrganizationStore(
       })
     })
 
+    test('searches a name or a slug by prefix, ignoring case, with the total of the match', async () => {
+      const acme = await stored(organization(ctx.a, { name: 'Acme Corp', slug: 'acme' }))
+      const apex = await stored(
+        organization(ctx.a, { name: 'Zeta', slug: 'apex', createdAt: later, updatedAt: later })
+      )
+      await stored(organization(ctx.a, { name: 'Other', slug: 'other' }))
+      await stored(organization(ctx.b, { name: 'Acme Foreign', slug: 'acme' }))
+      const env = ctx.a.environmentId
+      expect(await ctx.store.list(env, { page: 1, size: 10, q: 'ac' })).toEqual({
+        records: [acme],
+        total: 1,
+      })
+      expect(await ctx.store.list(env, { page: 1, size: 10, q: 'ACME C' })).toEqual({
+        records: [acme],
+        total: 1,
+      })
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'a' })).records).toEqual([
+        apex,
+        acme,
+      ])
+      // A prefix, not a substring.
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'cme' })).total).toBe(0)
+      // Paging applies to the match.
+      expect(await ctx.store.list(env, { page: 2, size: 1, q: 'a' })).toEqual({
+        records: [acme],
+        total: 2,
+      })
+    })
+
+    test('a non-ASCII name is found by a prefix in either case', async () => {
+      const unal = await stored(organization(ctx.a, { name: 'Ünal Works', slug: 'unal' }))
+      const env = ctx.a.environmentId
+      for (const q of ['ÜN', 'ün']) {
+        expect(await ctx.store.list(env, { page: 1, size: 10, q })).toEqual({
+          records: [unal],
+          total: 1,
+        })
+      }
+    })
+
+    test('LIKE wildcards in a search term match themselves only', async () => {
+      await stored(organization(ctx.a, { name: 'Acme', slug: 'acme' }))
+      await stored(organization(ctx.a, { name: '100% Real', slug: 'real' }))
+      await stored(organization(ctx.a, { name: 'a_b', slug: 'ab-under' }))
+      const env = ctx.a.environmentId
+      for (const q of ['%', '_', 'a%', '\\', '%cme']) {
+        const found = await ctx.store.list(env, { page: 1, size: 10, q })
+        expect(found.records.map((one) => one.name)).not.toContain('Acme')
+      }
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: '100%' })).total).toBe(1)
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'a_' })).total).toBe(1)
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: '%' })).total).toBe(0)
+    })
+
     test('an organization of another environment is never found, listed, changed or deleted', async () => {
       const theirs = await stored(organization(ctx.b))
       const env = ctx.a.environmentId
@@ -1606,6 +1660,74 @@ export function describeOrganizationStore(
           await ctx.store.findInvitationByTokenHash(ctx.b.environmentId, record.tokenHash)
         ).toBeNull()
         expect(await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, 'nope')).toBeNull()
+      })
+
+      test('finds an invitation by id in its own environment only', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        expect(await ctx.store.findInvitationById(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.store.findInvitationById(ctx.b.environmentId, record.id)).toBeNull()
+        expect(
+          await ctx.store.findInvitationById(ctx.a.environmentId, Bun.randomUUIDv7())
+        ).toBeNull()
+      })
+
+      test('lists the pending, unexpired invitations to one address across organizations', async () => {
+        const { org } = await setup2()
+        const other = await stored(organization(ctx.a, { slug: 'other', name: 'Other Org' }))
+        const first = await invited(ctx.a, org)
+        const second = await invited(ctx.a, other, { createdAt: new Date(now.getTime() + 1000) })
+        // Not listed: another address, a lapsed one, a revoked one, another environment's.
+        await invited(ctx.a, org, { email: 'x@example.com', emailNormalized: 'x@example.com' })
+        const lapsedOrg = await stored(organization(ctx.a, { slug: 'lapsed-org' }))
+        await invited(ctx.a, lapsedOrg, { expiresAt: new Date(now.getTime() + 1000) })
+        const revokedOrg = await stored(organization(ctx.a, { slug: 'revoked-org' }))
+        const revoked = await invited(ctx.a, revokedOrg)
+        await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          revokedOrg.id,
+          revoked.id,
+          now,
+          activity(ctx.a, 'organization_invitation.revoked', revokedOrg.id)
+        )
+        const at = new Date(now.getTime() + 5000)
+        const listed = await ctx.store.listPendingInvitationsForEmail(
+          ctx.a.environmentId,
+          'ada@example.com',
+          at,
+          { page: 1, size: 10 }
+        )
+        expect(listed.total).toBe(2)
+        expect(listed.records.map((row) => row.record.id)).toEqual([second.id, first.id])
+        expect(listed.records.map((row) => row.organizationName)).toEqual(['Other Org', org.name])
+        const paged = await ctx.store.listPendingInvitationsForEmail(
+          ctx.a.environmentId,
+          'ada@example.com',
+          at,
+          { page: 2, size: 1 }
+        )
+        expect(paged.total).toBe(2)
+        expect(paged.records.map((row) => row.record.id)).toEqual([first.id])
+        expect(
+          await ctx.store.listPendingInvitationsForEmail(
+            ctx.b.environmentId,
+            'ada@example.com',
+            at,
+            { page: 1, size: 10 }
+          )
+        ).toEqual({ records: [], total: 0 })
+        // Past the expiry nothing is listed.
+        const later = new Date(inAWeek.getTime() + 1000)
+        expect(
+          (
+            await ctx.store.listPendingInvitationsForEmail(
+              ctx.a.environmentId,
+              'ada@example.com',
+              later,
+              { page: 1, size: 10 }
+            )
+          ).total
+        ).toBe(0)
       })
 
       test('a second pending invitation to the same address is not stored and not recorded', async () => {

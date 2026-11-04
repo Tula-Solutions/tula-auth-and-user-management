@@ -51,6 +51,13 @@ export interface UserRecord {
    * or replacing it with another, clears it in the same write.
    */
   smsFactorEnabledAt: Date | null
+  /**
+   * The SSO connection that provisioned the account (ADR 0067), or `null`/absent for one that
+   * signed up any other way. Set once, at creation; enforcement (TULA-140) reads it.
+   */
+  managedByConnectionId?: string | null
+  /** The organization whose SCIM directory provisioned and manages the account (ADR 0067), or `null`/absent. Set once, at creation. */
+  managedByDirectoryId?: string | null
 }
 
 /**
@@ -165,6 +172,12 @@ export interface NewEmailAddress {
  */
 export type AddEmailRefusal = 'taken' | 'has_email' | 'not_found'
 
+/**
+ * What replacing an address did, when it stored nothing: `taken` (another user of the
+ * environment has it) or `not_found`.
+ */
+export type ReplaceEmailRefusal = 'taken' | 'not_found'
+
 /** How many accounts depend on a provider, as a store counted them. */
 export interface DependentAccounts {
   /** The accounts found that could not sign in without the provider. */
@@ -267,6 +280,15 @@ export interface UserRepository {
    * @returns The user, or `null`.
    */
   findById(environmentId: string, id: string): Promise<UserRecord | null>
+
+  /**
+   * Several users by id in one lookup (a page of a member list, not one query per member).
+   *
+   * @param environmentId - The environment to look in; an id of another environment is skipped.
+   * @param ids - User ids. Duplicates and unknown ids are fine.
+   * @returns The users that exist, once each, in no particular order.
+   */
+  findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]>
 
   /**
    * @param environmentId - The environment to look in.
@@ -519,6 +541,26 @@ export interface UserRepository {
   ): Promise<UserRecord | AddEmailRefusal>
 
   /**
+   * Replace the address of a user who has one (a directory renaming its own account, ADR 0067).
+   * The `email` identity follows the address; nothing else of the user changes and no session
+   * ends.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param address - The new address, proven or not (`verifiedAt`).
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the address was stored.
+   * @returns The user as they now are, or why nothing was written.
+   */
+  replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal>
+
+  /**
    * Count the users who have an account of a provider connected and could not sign in
    * without it (ADR 0059): what an operator is shown before the provider is switched off.
    *
@@ -577,6 +619,24 @@ export interface UserRepository {
     environmentId: string,
     userId: string,
     bannedAt: Date | null,
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | null>
+
+  /**
+   * Set a user's first and last name (a directory's rename, ADR 0067).
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param names - The new names; `null` clears one.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if a name changed.
+   * @returns The user as they now are, or `null` when they do not exist.
+   */
+  setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
     at: Date,
     activity: Recorded
   ): Promise<UserRecord | null>

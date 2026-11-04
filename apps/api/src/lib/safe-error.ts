@@ -108,6 +108,16 @@ export function errorReason(error: unknown): string {
 }
 
 /**
+ * The class name of whatever was thrown, for a log line that must carry no message.
+ *
+ * @param error - Whatever was thrown.
+ * @returns The error's `name`, or `unknown` for a value that is not an `Error`.
+ */
+export function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'unknown'
+}
+
+/**
  * Summarize a failed email send for a log line without its message, which routinely quotes the
  * recipient (`550 <user@example.com>: rejected`). The error's name, its Node or nodemailer code
  * and the SMTP status are enough to diagnose and contain no personal data.

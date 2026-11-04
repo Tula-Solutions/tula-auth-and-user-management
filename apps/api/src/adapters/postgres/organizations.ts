@@ -9,7 +9,20 @@ import {
   users,
   withTenant,
 } from '@tula-tech/db'
-import { and, arrayContains, asc, count, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm'
+import {
+  and,
+  arrayContains,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import {
   isCheckViolation,
@@ -33,6 +46,7 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  PendingInvitationRecord,
   ResolveInvitationOutcome,
   RoleChanges,
   UpdateOrganizationOutcome,
@@ -330,10 +344,22 @@ export class PostgresOrganizationStore implements OrganizationStore {
   /** @inheritdoc */
   async list(
     environmentId: string,
-    { page, size }: PageCriteria
+    { page, size, q }: PageCriteria & { q?: string }
   ): Promise<Page<OrganizationRecord>> {
+    // Escaped so that `%`, `_` and `\` in the term match themselves. Both sides are lower-cased
+    // by the database, so folding is one function's on both sides, and `lower(name) LIKE 'x%'` is what the prefix index
+    // (`organizations_environment_lower_name_idx`) serves, which `ILIKE` could not use.
+    const pattern = q ? `${q.replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null
     return withTenant(this.db, environmentId, async (tx) => {
-      const where = eq(organizations.environmentId, environmentId)
+      const where = and(
+        eq(organizations.environmentId, environmentId),
+        pattern
+          ? or(
+              sql`lower(${organizations.name}) like lower(${pattern})`,
+              sql`${organizations.slug} like lower(${pattern})`
+            )
+          : undefined
+      )
       const [total] = await tx.select({ value: count() }).from(organizations).where(where)
       const records = await tx
         .select(organizationColumns)
@@ -971,6 +997,51 @@ export class PostgresOrganizationStore implements OrganizationStore {
       const [total] = await tx.select({ value: count() }).from(organizationInvitations).where(where)
       return { records: rows.map(invitationOf), total: total?.value ?? 0 }
     })
+  }
+
+  /** @inheritdoc */
+  async listPendingInvitationsForEmail(
+    environmentId: string,
+    emailNormalized: string,
+    now: Date,
+    { page, size }: PageCriteria
+  ): Promise<Page<PendingInvitationRecord>> {
+    const where = and(
+      eq(organizationInvitations.environmentId, environmentId),
+      eq(organizationInvitations.emailNormalized, emailNormalized),
+      invitationFilter('pending', now)
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select({ ...invitationColumns, organizationName: organizations.name })
+        .from(organizationInvitations)
+        .innerJoin(
+          organizations,
+          and(
+            eq(organizations.id, organizationInvitations.organizationId),
+            eq(organizations.environmentId, organizationInvitations.environmentId)
+          )
+        )
+        .where(where)
+        .orderBy(desc(organizationInvitations.createdAt), desc(organizationInvitations.id))
+        .limit(size)
+        .offset((page - 1) * size)
+      const [total] = await tx.select({ value: count() }).from(organizationInvitations).where(where)
+      return {
+        records: rows.map(({ organizationName, ...row }) => ({
+          record: invitationOf(row),
+          organizationName,
+        })),
+        total: total?.value ?? 0,
+      }
+    })
+  }
+
+  /** @inheritdoc */
+  async findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null> {
+    return withTenant(this.db, environmentId, (tx) =>
+      readInvitation(tx, environmentId, eq(organizationInvitations.id, id))
+    )
   }
 
   /** @inheritdoc */

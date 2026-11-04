@@ -1410,17 +1410,18 @@ export interface TulaClient {
   readonly organizations: {
     /**
      * The organizations the user belongs to, with their role and its permission keys in each,
-     * and the session's active organization. Only the first page the API answers: the client
-     * sends no paging query yet.
+     * and the session's active organization, one page at a time (the first, 20 of them, without
+     * a query). `meta.totalPages` says whether there is a next page.
      *
+     * @param query - The page to read (1-based, default 1) and its `size` (1 to 100, default 20).
      * @returns The page; `activeOrganizationId` is `null` for the personal account.
      * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
      * @example
      * ```ts
-     * const { data, activeOrganizationId } = await tula.organizations.list()
+     * const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 2 })
      * ```
      */
-    list(): Promise<UserOrganizationList>
+    list(query?: { page?: number; size?: number }): Promise<UserOrganizationList>
     /**
      * Create an organization the user owns (it holds the environment's `creatorRole`). The
      * session does not switch to it: call `setActive`.
@@ -1674,6 +1675,203 @@ export interface TulaClient {
       remove(organizationId: string, domainId: string): Promise<void>
     }
     /**
+     * An organization's single sign-on (ADR 0067), for a member whose role holds
+     * `org:sys:sso:manage`, which the API reads from the membership on every call. The client
+     * secret is write-only: no answer returns it. Switching enforcement off, trusting the
+     * identity provider for MFA and naming a break-glass role need a recent sign-in
+     * (`auth.step_up_required`: step up, then repeat the call).
+     */
+    readonly sso: {
+      /**
+       * The organization's connections, with the service provider values to give the IdP.
+       *
+       * @param organizationId - The organization.
+       * @returns The connections.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { connections } = await tula.organizations.sso.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationSsoConnectionList>
+      /**
+       * One connection.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * const connection = await tula.organizations.sso.get(org.id, id)
+       * ```
+       */
+      get(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Create a draft connection; a draft signs nobody in.
+       *
+       * @param organizationId - The organization.
+       * @param input - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret })
+       * ```
+       */
+      create(
+        organizationId: string,
+        input: CreateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Change a connection; fields left out are kept.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param input - The fields to change.
+       * @returns The connection as it is now.
+       * @throws TulaError `auth.step_up_required` for a weakening on a stale session.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.update(org.id, id, { status: 'active' })
+       * ```
+       */
+      update(
+        organizationId: string,
+        id: string,
+        input: UpdateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Read a SAML connection's metadata address again (a rotated certificate).
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.refreshMetadata(org.id, id)
+       * ```
+       */
+      refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep their accounts.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.remove(org.id, id)
+       * ```
+       */
+      remove(organizationId: string, id: string): Promise<void>
+      /**
+       * The IdP group to role mapping, in precedence order.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @returns The mapping.
+       * @example
+       * ```ts
+       * const { mappings } = await tula.organizations.sso.groupRoles(org.id, id)
+       * ```
+       */
+      groupRoles(organizationId: string, id: string): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Replace the whole mapping.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param mapping - The new mapping.
+       * @returns The mapping as saved.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role: 'admin' }] })
+       * ```
+       */
+      setGroupRoles(
+        organizationId: string,
+        id: string,
+        mapping: OrganizationSsoGroupRoles
+      ): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Start a test sign-in of a connection. A passing test of its current settings is what
+       * turns it on (`sso.test_required`). Send the browser to `authorizationUrl`; it returns to
+       * `redirectUrl` with `#tula_test=<testId>`.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param redirectUrl - The page to return to; the environment must allow it.
+       * @returns The test's id and where to send the browser.
+       * @throws TulaError `request.redirect_not_allowed`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id, location.href)
+       * ```
+       */
+      startTest(
+        organizationId: string,
+        id: string,
+        redirectUrl: string
+      ): Promise<OrganizationSsoTestStart>
+      /**
+       * Read a test's result: what arrived and how it mapped, or why it failed.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param testId - The id the browser came back with.
+       * @returns The result; `pending` until the browser has come back.
+       * @throws TulaError `sso.test_not_found`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const result = await tula.organizations.sso.testResult(org.id, id, testId)
+       * ```
+       */
+      testResult(
+        organizationId: string,
+        id: string,
+        testId: string
+      ): Promise<OrganizationSsoTestResult>
+      /**
+       * The organization's SSO setup links, newest first; never their tokens. A link lets an
+       * IT administrator without an account set up an OpenID Connect connection (not SAML).
+       *
+       * @param organizationId - The organization.
+       * @returns The links.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { links } = await tula.organizations.sso.setupLinks(org.id)
+       * ```
+       */
+      setupLinks(organizationId: string): Promise<OrganizationSetupLinkList>
+      /**
+       * Make a setup link. The answer holds the link's `url` once; it is not stored.
+       *
+       * @param organizationId - The organization.
+       * @param input - The link's name and life in days.
+       * @returns The link, with its token and address.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * const { url } = await tula.organizations.sso.createSetupLink(org.id, { name: 'Acme IT' })
+       * ```
+       */
+      createSetupLink(
+        organizationId: string,
+        input?: CreateOrganizationSetupLinkInput
+      ): Promise<CreatedOrganizationSetupLink>
+      /**
+       * End a setup link now.
+       *
+       * @param organizationId - The organization.
+       * @param linkId - The link.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.revokeSetupLink(org.id, link.id)
+       * ```
+       */
+      revokeSetupLink(organizationId: string, linkId: string): Promise<void>
+    }
+    /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
      * call. Answering needs the invited account: signed in, with the invited address, verified.
@@ -1773,6 +1971,44 @@ export interface TulaClient {
        * ```
        */
       decline(token: string): Promise<void>
+      /**
+       * The pending invitations addressed to the signed-in user's own verified address, newest
+       * first: an `id`, the organization's name, the role's key and the expiry, never a token.
+       * Only the first page: the client sends no paging query yet. An unverified address
+       * has none.
+       *
+       * @returns The page.
+       * @throws TulaError `organization.disabled`, `auth.unauthenticated`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.mine()
+       * ```
+       */
+      mine(): Promise<MyOrganizationInvitationList>
+      /**
+       * Join the organization of an invitation listed by `mine()`, by its id. The same checks as
+       * `accept`: an id that is not the user's own answers `organization.invitation_not_found`.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError As `accept`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.acceptMine(invitation.id)
+       * ```
+       */
+      acceptMine(invitationId: string): Promise<AcceptedInvitation>
+      /**
+       * Turn down an invitation listed by `mine()`, by its id.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @throws TulaError As `decline`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.declineMine(invitation.id)
+       * ```
+       */
+      declineMine(invitationId: string): Promise<void>
     }
   }
   /** The signed-in user. */

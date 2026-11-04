@@ -81,12 +81,13 @@ export async function createAndSwitch() {
     await tula.organizations.setActive(organization.id)
     // tula.state.organizationId === organization.id
 
-    const { data, activeOrganizationId } = await tula.organizations.list()
+    const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 1 })
     // data[n] has `role` and `permissions`; activeOrganizationId is the one just chosen.
+    // `meta.totalPages` says whether to ask for `{ page: 2 }`.
 
     // `null` is the personal account.
     await tula.organizations.setActive(null)
-    return { data, activeOrganizationId }
+    return { data, meta, activeOrganizationId }
   } catch (error) {
     if (isTulaError(error) && error.code === 'organization.slug_taken') {
       // Ask for another slug.

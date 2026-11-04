@@ -59,7 +59,7 @@ function fromHttpException(err: HTTPException): ServiceException {
  * @param c - The request context.
  * @returns The JSON error response.
  */
-export function onError(err: Error, c: Context<AppEnv>): Response {
+export function onError<E extends AppEnv>(err: Error, c: Context<E>): Response {
   const exception =
     err instanceof ServiceException
       ? err

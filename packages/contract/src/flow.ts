@@ -41,6 +41,7 @@ export const FirstFactorStrategySchema = z
     'oauth_linkedin',
     'oauth_x',
     'oauth_facebook',
+    'sso',
   ])
   .meta({ ref: 'FirstFactorStrategy' })
 

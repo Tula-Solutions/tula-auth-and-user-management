@@ -48,6 +48,7 @@ import {
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
+  SsoStartRequestSchema,
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
   VerifyEmailRequestSchema,
@@ -760,6 +761,50 @@ router.post(
       c.get('tenant'),
       c.req.valid('json'),
       context
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json(OAuthStartSchema.parse(started))
+  }
+)
+
+router.post(
+  '/sign-ins/:attemptId/sso',
+  describeRoute({
+    operationId: 'startSsoSignIn',
+    tags: ['Flows'],
+    summary: 'Continue with the identity provider of the address’s domain',
+    description:
+      'For an attempt on `needs_first_factor` offering `sso`: the address’s domain is bound to ' +
+      'an active single-sign-on connection of the environment. `redirectUrl` must be exactly ' +
+      'one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries ' +
+      '`authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab.' +
+      BOUND,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: {
+        description: 'The attempt, the identity provider’s URL and the binding.',
+        content: { 'application/json': { schema: resolver(OAuthStartSchema) } },
+      },
+      400: openapi.responses[400],
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_oauth'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', SsoStartRequestSchema, validationHook),
+  async (c) => {
+    const { client: _client, ...started } = await Flows.startSso(
+      c.get('deps'),
+      c.get('tenant'),
+      { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
+      c.req.valid('json'),
+      await clientContext(c)
     )
     c.header('Cache-Control', 'no-store')
     return c.json(OAuthStartSchema.parse(started))

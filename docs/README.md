@@ -30,6 +30,10 @@ by error code. Their code samples are copied from files of this repository by
 | [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
 | [Texted code](methods/sms-code.md) | A 6-digit code by SMS, to a number the account has proven. Sign-in only; off by default. |
 | [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md), [Facebook](providers/facebook.md). |
+| [Enterprise single sign-on](methods/sso.md) | OIDC and SAML connections per organization, discovery by domain, the protocol checks and error codes. |
+| [Enterprise SSO: the guide](enterprise-sso.md) | Connections, verified domains, the test sign-in, enforcement and break-glass (password only), trusting the provider's MFA, the setup portal, organization admins managing their own SSO. |
+| [Identity provider pages](sso-providers/okta.md) | The exact values to paste, per provider: [Okta](sso-providers/okta.md), [Microsoft Entra ID](sso-providers/entra.md), [Google Workspace](sso-providers/google-workspace.md), [JumpCloud](sso-providers/jumpcloud.md), [OneLogin](sso-providers/onelogin.md), [Ping Identity](sso-providers/ping.md). |
+| [SCIM provisioning](scim.md) | Let an organization's identity provider create, update, deactivate and delete its users and push groups mapped to roles: SCIM tokens, attribute mapping, the supported routes and whose account SCIM may touch. |
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
@@ -45,6 +49,7 @@ by error code. Their code samples are copied from files of this repository by
 | | |
 | --- | --- |
 | [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt, argon2, PBKDF2 or Firebase scrypt password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Exporting the audit log](audit-export.md) | `POST /v1/admin/audit-logs/export` and `tula audit export`: NDJSON or CSV, streamed, resumable, with the CSV formula escape and the `audit.exported` entry; and the single sign-on and provisioning events. |
 | [Migrating from Clerk](migrate-from-clerk.md) | `tula import --from clerk`: the dashboard's CSV or the Backend API's JSON with `password_digest`, and Clerk's organizations and memberships. |
 | [Migrating from Auth0](migrate-from-auth0.md) | `tula import --from auth0`: the bulk user export and the bcrypt hashes Auth0 support sends separately. |
 | [Migrating from Firebase](migrate-from-firebase.md) | `tula import --from firebase`: `firebase auth:export` and the project's scrypt parameters, kept out of the command line. |
@@ -61,10 +66,12 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and what is coming (invitations, verified domains). |
+| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and where invitations and verified domains fit. |
 | [OrganizationSwitcher](organization-switcher.md) | The prebuilt control that shows the active organization and switches it: the user's organizations, the personal account, suggestions from their email domain, an invitation they opened, and the way to create or manage an organization. |
 | [CreateOrganization](create-organization.md) | The prebuilt form that makes an organization and makes it the active one, with every state it can be in. |
 | [OrganizationProfile](organization-profile.md) | The prebuilt page for one organization: General (rename, leave, delete), Members, Invitations and Domains, each drawn only where the user's role permits. |
+| [Invitations](invitations.md) | Inviting an address to an organization from the admin API or the client: the emailed link and its `#tula_invitation=` fragment, accepting and declining, the seven-day expiry, the error codes, the limits and what happens when the role was deleted. |
+| [Verified domains](verified-domains.md) | Claiming an email domain with an emailed code, `suggest` and `auto_join` (at sign-up only), the deny list of public mail domains, the one-year lifetime and its reminders, re-verifying, the error codes and the limits. |
 | [Roles and permissions](roles-and-permissions.md) | The built-in `admin` and `member`, custom roles, the `org:<feature>:<action>` grammar and the system permissions, why `has()` is exact, and what weakens security. |
 
 ## Claims for your backend

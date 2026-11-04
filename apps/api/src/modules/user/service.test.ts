@@ -479,6 +479,68 @@ describe('changePassword on an account with no password', () => {
   })
 })
 
+describe('changePassword on a managed account (decision 11)', () => {
+  async function setup(managed: { managedByConnectionId?: string; managedByDirectoryId?: string }) {
+    const user = await create()
+    const current = await signIn(user.id)
+    const found = await deps.users.findById(tenant.environmentId, user.id)
+    const find = spyOn(deps.users, 'findById').mockResolvedValue(found && { ...found, ...managed })
+    const change = () =>
+      Users.changePassword(
+        deps,
+        tenant,
+        { userId: user.id, sessionId: current.sessionId },
+        { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }
+      )
+    return { find, change }
+  }
+
+  test('a live connection manages the account: user.managed, password untouched', async () => {
+    const { find, change } = await setup({ managedByConnectionId: 'c1' })
+    const connection = spyOn(deps.ssoConnections, 'find').mockResolvedValue({} as never)
+    try {
+      expect((await rejection(change())).toJSON()).toMatchObject({
+        status: 403,
+        code: 'user.managed',
+      })
+      expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
+    } finally {
+      find.mockRestore()
+      connection.mockRestore()
+    }
+  })
+
+  test('a deleted connection manages no one', async () => {
+    const { find, change } = await setup({ managedByConnectionId: 'c1' })
+    const connection = spyOn(deps.ssoConnections, 'find').mockResolvedValue(null)
+    try {
+      await change()
+    } finally {
+      find.mockRestore()
+      connection.mockRestore()
+    }
+    expect(await Passwords.verify(await storedPassword(), NEW_PASSWORD)).toBe(true)
+  })
+
+  test.each([
+    ['a directory with a live token', null, 403],
+    ['a directory whose tokens are all revoked', new Date(0), 200],
+  ])('%s', async (_name, revokedAt, status) => {
+    const { find, change } = await setup({ managedByDirectoryId: 'o1' })
+    const tokens = spyOn(deps.scim, 'listTokens').mockResolvedValue([{ revokedAt }] as never)
+    try {
+      if (status === 403) {
+        expect((await rejection(change())).code).toBe('user.managed')
+      } else {
+        await change()
+      }
+    } finally {
+      find.mockRestore()
+      tokens.mockRestore()
+    }
+  })
+})
+
 describe('changePassword (own)', () => {
   async function setup() {
     const user = await create()

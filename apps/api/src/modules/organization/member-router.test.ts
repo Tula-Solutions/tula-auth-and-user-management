@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   type AssignableRoleList,
   type CurrentUser,
@@ -336,6 +336,74 @@ describe('general', () => {
     expect(await roleOf(org, ada.userId)).toBeUndefined()
     const deleted = deps.activityLog.entries.findLast((e) => e.type === 'organization.deleted')
     expect(deleted?.data).toEqual({ memberships: 2 })
+  })
+})
+
+describe('deleting needs a recent authentication', () => {
+  /** The session's access token after the sign-in has aged past the step-up window. */
+  async function aged(session: SessionTokens): Promise<string> {
+    deps.clock.advance('11m')
+    const refreshed = await client('POST', '/sessions/refresh', {
+      refreshToken: session.refreshToken,
+    })
+    expect(refreshed.status).toBe(200)
+    return (await json<{ accessToken: string }>(refreshed)).accessToken
+  }
+
+  test('a stale session is refused with auth.step_up_required and nothing is deleted', async () => {
+    const { maya, org } = await world()
+    const token = await aged(maya)
+    const before = deps.activityLog.entries.length
+    const res = await client('DELETE', base(org), undefined, { token })
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('auth.step_up_required')
+    expect(await deps.organizations.find(TEST_TENANT.environmentId, org.id)).not.toBeNull()
+    expect(deps.activityLog.entries).toHaveLength(before)
+  })
+
+  test('the stale refusal comes before the permission check: a member learns nothing from it', async () => {
+    const { ada, org } = await world()
+    const token = await aged(ada)
+    const res = await client('DELETE', base(org), undefined, { token })
+    expect(await codeOf(res)).toBe('auth.step_up_required')
+  })
+
+  test('after a step-up the same call deletes', async () => {
+    const { maya, org } = await world()
+    const stale = await aged(maya)
+    expect((await client('DELETE', base(org), undefined, { token: stale })).status).toBe(403)
+    const stepped = await client(
+      'POST',
+      '/sessions/step-up',
+      { method: 'password', password: PASSWORD },
+      { token: stale }
+    )
+    expect(stepped.status).toBe(200)
+    const fresh = (await json<{ accessToken: string }>(stepped)).accessToken
+    expect((await client('DELETE', base(org), undefined, { token: fresh })).status).toBe(204)
+    expect(await deps.organizations.find(TEST_TENANT.environmentId, org.id)).toBeNull()
+  })
+
+  test('the other member routes do not ask for it', async () => {
+    const { maya, org } = await world()
+    const token = await aged(maya)
+    expect((await client('GET', `${base(org)}/members`, undefined, { token })).status).toBe(200)
+    expect((await client('PATCH', base(org), { name: 'Renamed' }, { token })).status).toBe(200)
+  })
+})
+
+describe('the member list', () => {
+  test('looks every member up in one call, not one per member', async () => {
+    const { maya, org } = await world()
+    const one = spyOn(deps.users, 'findById')
+    const many = spyOn(deps.users, 'findByIds')
+    const res = await client('GET', `${base(org)}/members`, undefined, as(maya))
+    expect(res.status).toBe(200)
+    expect((await json<OrganizationMemberList>(res)).data).toHaveLength(2)
+    expect(many).toHaveBeenCalledTimes(1)
+    expect(one).not.toHaveBeenCalled()
+    one.mockRestore()
+    many.mockRestore()
   })
 })
 

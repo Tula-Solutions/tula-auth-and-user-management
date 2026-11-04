@@ -49,6 +49,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -76,6 +77,8 @@ const columns = {
   phoneNumber: users.phoneNumber,
   phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
   smsFactorEnabledAt: users.smsFactorEnabledAt,
+  managedByConnectionId: users.managedByConnectionId,
+  managedByDirectoryId: users.managedByDirectoryId,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */
@@ -117,6 +120,20 @@ export class PostgresUserRepository implements UserRepository {
         .limit(1)
     )
     return row ?? null
+  }
+
+  /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const wanted = [...new Set(ids)]
+    if (wanted.length === 0) {
+      return []
+    }
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(inArray(users.id, wanted), eq(users.environmentId, environmentId)))
+    )
   }
 
   /** @inheritdoc */
@@ -754,6 +771,40 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so only a real change writes and is recorded.
+      const [changed] = await tx
+        .update(users)
+        .set({ firstName: names.firstName, lastName: names.lastName, updatedAt: at })
+        .where(
+          and(
+            isUser,
+            or(
+              sql`${users.firstName} is distinct from ${names.firstName}`,
+              sql`${users.lastName} is distinct from ${names.lastName}`
+            )
+          )
+        )
+        .returning(columns)
+      if (changed) {
+        await recordActivity(tx, activity ? [activity] : [])
+        return changed
+      }
+      const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
+      return unchanged ?? null
+    })
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,
@@ -1006,6 +1057,50 @@ export class PostgresUserRepository implements UserRepository {
     } catch (error) {
       // users_environment_email_key, or the email identity's twin: another user has the
       // address. The transaction wrote nothing.
+      if (isUniqueViolation(error)) {
+        return 'taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const [changed] = await tx
+          .update(users)
+          .set({
+            email: address.email,
+            emailNormalized: address.normalized,
+            emailVerifiedAt: address.verifiedAt,
+            updatedAt: at,
+          })
+          .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+          .returning(columns)
+        if (!changed) {
+          return 'not_found'
+        }
+        await tx
+          .update(identities)
+          .set({ providerSubject: address.normalized, updatedAt: at })
+          .where(
+            and(
+              eq(identities.userId, userId),
+              eq(identities.environmentId, environmentId),
+              eq(identities.provider, 'email')
+            )
+          )
+        await recordActivity(tx, recordedOf([recorded]))
+        return changed
+      })
+    } catch (error) {
       if (isUniqueViolation(error)) {
         return 'taken'
       }

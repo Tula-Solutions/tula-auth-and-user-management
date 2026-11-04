@@ -298,6 +298,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_BASE_URL=${at('two-ports', 'API_PORT')}`,
         `CONFORMANCE_SECOND_BASE_URL=${at('two-ports', 'API_2_PORT')}`,
         'CONFORMANCE_SETTLE_MS=0',
+        'CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso',
         `CONFORMANCE_SMS_INBOX_URLS=${at('two-ports', 'API_PORT')},${at('two-ports', 'API_2_PORT')}`,
         `CONFORMANCE_MAILPIT_URL=${at('two-ports', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY"',
@@ -310,6 +311,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_BASE_URL=${at('one-address', 'LB_PORT')}`,
         'CONFORMANCE_SECOND_BASE_URL=',
         'CONFORMANCE_SETTLE_MS=6000',
+        'CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso',
         // Each instance keeps its own inbox, and through the one address a request may reach
         // either: the runner asks both, on their own ports.
         `CONFORMANCE_SMS_INBOX_URLS=${at('one-address', 'API_PORT')},${at('one-address', 'API_2_PORT')}`,

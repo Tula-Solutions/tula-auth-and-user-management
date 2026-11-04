@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, setDefaultTimeout, setSystemTime, test } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  setSystemTime,
+  test,
+} from 'bun:test'
 import {
   appleNonce,
   type ClientBehaviour,
@@ -2438,6 +2446,24 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
         expect(decodeJwt((await tula.session.getToken()) ?? '').org_id).toBeUndefined()
 
+        // More organizations than one page: the client asks for each page by number.
+        const extraId = await created('Second Membership', `second-${userId}`)
+        expect(
+          (
+            await s.admin('POST', `/v1/admin/organizations/${extraId}/memberships`, {
+              userId,
+              role: 'member',
+            })
+          ).status
+        ).toBe(201)
+        const first = await tula.organizations.list({ page: 1, size: 1 })
+        const second = await tula.organizations.list({ page: 2, size: 1 })
+        expect(first.meta).toEqual({ totalCount: 2, totalPages: 2, page: 1, perPage: 1 })
+        expect(second.meta).toMatchObject({ totalCount: 2, page: 2 })
+        expect([...first.data, ...second.data].map((org) => org.id).sort()).toEqual(
+          [orgId, extraId].sort()
+        )
+
         // One that is not theirs, and one that does not exist, are refused alike.
         const refused = await caught(tula.organizations.setActive(otherId))
         expect(refused).toMatchObject({ code: 'organization.not_a_member', status: 403 })
@@ -2756,6 +2782,103 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         expect((await caught(ada.tula.organizations.members.list(org.id))).code).toBe(
           'organization.not_a_member'
         )
+      }
+    )
+
+    journey(
+      'my pending organization invitations',
+      'my invitations: the invited user lists the invitations sent to their verified address, with no token, and accepts or declines one by its id; another account is told it does not exist; a withdrawn one is refused',
+      async () => {
+        const s = await server()
+        const JOIN = `${APP_ORIGIN}/join`
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            urls: { ...settings.urls, allowedRedirectUrls: [JOIN] },
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const stranger = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const invitations = owner.tula.organizations.invitations
+
+        // Nothing yet. Then an invitation: the invited user lists it, and nobody else does.
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        const sent = await invitations.invite(org.id, {
+          email: ada.email,
+          role: 'admin',
+          redirectUrl: JOIN,
+        })
+        const link = /#tula_invitation=(\S+)/.exec(
+          s.deps.mailer.outbox.findLast((message) => /invited/.test(message.subject))?.text ?? ''
+        )?.[1]
+        const mine = await ada.tula.organizations.invitations.mine()
+        expect(mine.data).toEqual([
+          {
+            id: sent.id,
+            organizationName: 'Acme',
+            role: 'admin',
+            expiresAt: sent.expiresAt,
+          },
+        ])
+        // Four fields: not the token, the address, the inviter or the organization's id.
+        expect(JSON.stringify(mine)).not.toContain(link ?? 'no link was sent')
+        expect(JSON.stringify(mine)).not.toContain(ada.email)
+        expect(JSON.stringify(mine)).not.toContain(org.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+
+        // Another account, and an id nothing was issued for, look alike.
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+        expect(
+          (await caught(stranger.tula.organizations.invitations.declineMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+
+        // Accepting by id joins with the invitation's role, and uses it up.
+        expect(await ada.tula.organizations.invitations.acceptMine(sent.id)).toMatchObject({
+          id: org.id,
+          role: 'admin',
+        })
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        expect((await caught(ada.tula.organizations.invitations.acceptMine(sent.id))).code).toBe(
+          'organization.invitation_used'
+        )
+
+        // Declining by id uses one up with no membership; a withdrawn one is refused.
+        const second = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await stranger.tula.organizations.invitations.declineMine(second.id)
+        expect((await stranger.tula.organizations.list()).data).toEqual([])
+        const third = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await invitations.revoke(org.id, third.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(third.id))).code
+        ).toBe('organization.invitation_revoked')
       }
     )
 
@@ -3140,6 +3263,619 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       // What only a page has: a tab's storage, an address, a cookie. An app's suite has its
       // own journeys of the same scenarios, and for it these are not declared at all.
       const page: typeof journey = app ? () => {} : journey
+
+      // Enterprise single sign-on (ADR 0067) through the mock OIDC identity provider. The
+      // server fetches the provider through the outbound guard, which needs an address: a
+      // listener on loopback that hands each request to the API.
+      const proxies: { stop(force?: boolean): void }[] = []
+      afterAll(() => {
+        for (const proxy of proxies) {
+          proxy.stop(true)
+        }
+      })
+
+      journey(
+        "organization admin manages the organization's single sign-on",
+        "org SSO: the holder of the permission lists, creates, starts a test of and tries to turn on a connection; a member without it is refused, and a connection that is not the organization's is not found",
+        async () => {
+          const s = await oauthServer()
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated: true,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+              sso: { enabled: true },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+
+          const owner = await signUp(s)
+          const ada = await signUp(s)
+          const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+          await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+            userId: (await ada.tula.user.get()).id,
+            role: 'member',
+          })
+
+          expect((await caught(ada.tula.organizations.sso.list(org.id))).code).toBe(
+            'organization.permission_required'
+          )
+          expect((await owner.tula.organizations.sso.list(org.id)).connections).toEqual([])
+
+          const metadataXml = await (await s.navigate('/v1/dev/sso/saml/metadata')).text()
+          const made = await owner.tula.organizations.sso.create(org.id, {
+            protocol: 'saml',
+            name: 'Mock SAML IdP',
+            saml: { metadataXml },
+          })
+          expect(made).toMatchObject({ status: 'draft', tested: false })
+          expect((await caught(ada.tula.organizations.sso.get(org.id, made.id))).code).toBe(
+            'organization.permission_required'
+          )
+          expect(
+            (
+              await caught(
+                owner.tula.organizations.sso.update(org.id, made.id, { status: 'active' })
+              )
+            ).code
+          ).toBe('sso.domain_not_verified')
+          expect(
+            (
+              await caught(
+                owner.tula.organizations.sso.testResult(org.id, made.id, Bun.randomUUIDv7())
+              )
+            ).code
+          ).toBe('sso.test_not_found')
+        }
+      )
+
+      journey(
+        'single sign-on client routes refuse a member without the permission',
+        'org SSO: a member without org:sys:sso:manage is refused at create, change, test and delete, the permission read from the membership on every call',
+        async () => {
+          const s = await oauthServer()
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated: true,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+              sso: { enabled: true },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+
+          const owner = await signUp(s)
+          const ada = await signUp(s)
+          const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+          await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+            userId: (await ada.tula.user.get()).id,
+            role: 'member',
+          })
+          const metadataXml = await (await s.navigate('/v1/dev/sso/saml/metadata')).text()
+          const made = await owner.tula.organizations.sso.create(org.id, {
+            protocol: 'saml',
+            name: 'Mock SAML IdP',
+            saml: { metadataXml },
+          })
+          const sso = ada.tula.organizations.sso
+          for (const refused of [
+            () => sso.create(org.id, { protocol: 'saml', name: 'x', saml: { metadataXml } }),
+            () => sso.update(org.id, made.id, { name: 'x' }),
+            () => sso.startTest(org.id, made.id, 'http://localhost/cb'),
+            () => sso.remove(org.id, made.id),
+          ]) {
+            expect((await caught(refused())).code).toBe('organization.permission_required')
+          }
+          expect((await owner.tula.organizations.sso.list(org.id)).connections).toHaveLength(1)
+        }
+      )
+
+      /** A server with an active OIDC connection bound to a verified domain of an organization. */
+      async function ssoServer(
+        protocol: 'oidc' | 'saml' = 'oidc',
+        options: { mfaRequired?: boolean } = {}
+      ): Promise<
+        Server & {
+          domain: string
+          orgId: string
+          connectionId: string
+          patch(body: object): Promise<void>
+        }
+      > {
+        const s = await oauthServer()
+        const proxy = Bun.serve({
+          hostname: '127.0.0.1',
+          port: 0,
+          fetch: (request) => s.navigate(pathOf(request.url), request),
+        })
+        proxies.push(proxy)
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: false,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+            sso: { enabled: true },
+            ...(options.mfaRequired && { mfa: { ...settings.mfa, policy: 'required' } }),
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+        const org = (await (
+          await s.admin('POST', '/v1/admin/organizations', { name: 'SSO Org', slug: 'sso-org' })
+        ).json()) as { id: string }
+        const domain = `sso-${org.id.slice(-8)}.example`
+        const base = `/v1/admin/organizations/${org.id}/domains`
+        const claimed = await s.admin('POST', base, {
+          domain,
+          email: `it@${domain}`,
+          mode: 'suggest',
+        })
+        expect(claimed.status).toBe(201)
+        const { id: domainId } = (await claimed.json()) as { id: string }
+        expect(
+          (await s.admin('POST', `${base}/${domainId}/verify`, { code: s.code(`it@${domain}`) }))
+            .status
+        ).toBe(200)
+        const metadataXml =
+          protocol === 'saml' ? await (await s.navigate('/v1/dev/sso/saml/metadata')).text() : ''
+        const created = await s.admin(
+          'POST',
+          '/v1/admin/sso-connections',
+          protocol === 'saml'
+            ? {
+                organizationId: org.id,
+                protocol: 'saml',
+                name: 'Mock SAML IdP',
+                saml: { metadataXml },
+                domains: [domain],
+              }
+            : {
+                organizationId: org.id,
+                name: 'Mock IdP',
+                issuer: `http://127.0.0.1:${proxy.port}/v1/dev/sso`,
+                clientId: 'journey-sso',
+                clientSecret: 'journey-sso-secret',
+                domains: [domain],
+              }
+        )
+        expect(created.status).toBe(201)
+        const { id } = (await created.json()) as { id: string }
+        // Activation needs a passing test sign-in of these settings (TULA-145).
+        const test = await s.admin('POST', `/v1/admin/sso-connections/${id}/tests`, {
+          redirectUrl: SIGN_IN_PAGE,
+        })
+        expect(test.status).toBe(201)
+        const started = (await test.json()) as { testId: string; authorizationUrl: string }
+        const tester = `tester@${domain}`
+        if (protocol === 'saml') {
+          await atSamlIdp(s, started.authorizationUrl, tester)
+        } else {
+          await atIdp(s, started.authorizationUrl, tester)
+        }
+        const tested = await s.admin(
+          'GET',
+          `/v1/admin/sso-connections/${id}/tests/${started.testId}`
+        )
+        expect(((await tested.json()) as { status: string }).status).toBe('passed')
+        const active = await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, {
+          status: 'active',
+        })
+        expect(active.status).toBe(200)
+        const patch = async (body: object) => {
+          expect((await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, body)).status).toBe(200)
+        }
+        return Object.assign(s, { domain, orgId: org.id, connectionId: id, patch })
+      }
+
+      /** Play the user at the identity provider; returns where the API's callback sent the browser. */
+      async function atIdp(
+        s: Server,
+        authorizationUrl: string,
+        email: string,
+        groups?: string
+      ): Promise<string> {
+        const url = new URL(authorizationUrl)
+        url.searchParams.set('login_hint', email)
+        if (groups !== undefined) {
+          url.searchParams.set('groups', groups)
+        }
+        const signedIn = await s.navigate(pathOf(url.toString()))
+        expect(signedIn.status).toBe(303)
+        const callback = await s.navigate(pathOf(signedIn.headers.get('location') ?? ''))
+        expect(callback.status).toBe(303)
+        return callback.headers.get('location') ?? ''
+      }
+
+      function postForm(s: Server, path: string, form: URLSearchParams): Promise<Response> {
+        return s.navigate(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: form.toString(),
+        })
+      }
+
+      /**
+       * Play the user at the mock SAML identity provider: load its page, post the form it holds to
+       * the assertion consumer service. Returns the form and the redirect the service answered.
+       */
+      async function atSamlIdp(
+        s: Server,
+        authorizationUrl: string,
+        email: string
+      ): Promise<{ acs: string; form: URLSearchParams; landing: string }> {
+        const url = new URL(authorizationUrl)
+        url.searchParams.set('login_hint', email)
+        const shown = await s.navigate(pathOf(url.toString()))
+        expect(shown.status).toBe(200)
+        const html = await shown.text()
+        const action = /<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? ''
+        expect(action).not.toBe('')
+        const form = new URLSearchParams()
+        for (const input of html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)) {
+          form.set(
+            input[1] ?? '',
+            (input[2] ?? '').replaceAll('&amp;', '&').replaceAll('&#39;', "'")
+          )
+        }
+        const acs = pathOf(action.replaceAll('&amp;', '&'))
+        const posted = await postForm(s, acs, form)
+        expect(posted.status).toBe(303)
+        return { acs, form, landing: posted.headers.get('location') ?? '' }
+      }
+
+      page(
+        'sso saml sign-in',
+        'SSO: a SAML connection signs a user in through the assertion consumer service and the same ticket exchange as any provider',
+        async () => {
+          const s = await ssoServer('saml')
+          const email = `ada@${s.domain}`
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: email })
+          expect(flow.step).toMatchObject({ status: 'needs_first_factor' })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          const kept = [...browserTab.entries.values()].join()
+          expect(kept).toContain('tula_ob_')
+          expect(kept).not.toContain('tula_at_')
+          const { landing: landingUrl } = await atSamlIdp(s, url, email)
+          expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+          browserTab.open(landingUrl)
+          const landing = s.client('web', { cookies: start.cookies })
+          expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+          expect(landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+          expect(browserTab.entries.size).toBe(0)
+        }
+      )
+
+      page(
+        'sso saml replay refused',
+        'SSO: a SAML response is accepted once; posted again it is refused and gives no ticket',
+        async () => {
+          const s = await ssoServer('saml')
+          const email = `ada@${s.domain}`
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: email })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          const { acs, form, landing: landingUrl } = await atSamlIdp(s, url, email)
+          expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+          const again = await postForm(s, acs, form)
+          expect(again.headers.get('location') ?? '').not.toContain('tula_ticket')
+          expect(again.status === 400 || again.status === 303).toBe(true)
+          browserTab.open(landingUrl)
+          const landing = s.client('web', { cookies: start.cookies })
+          expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+        }
+      )
+
+      page(
+        'sso oidc sign-in',
+        'SSO: an address on a bound domain continues with single sign-on, comes back through the callback and is signed in, the same user the next time',
+        async () => {
+          const s = await ssoServer()
+          const email = `ada@${s.domain}`
+          const signInOnce = async () => {
+            const browserTab = tab()
+            browserTab.open(SIGN_IN_PAGE)
+            const start = s.client('web')
+            const flow = await start.tula.signIn.start({ identifier: email })
+            expect(flow.step).toMatchObject({ status: 'needs_first_factor' })
+            const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+            expect(browserTab.visited.at(-1)).toBe(url)
+            // The tab keeps the binding and nothing else: no attempt secret, no token.
+            const kept = [...browserTab.entries.values()].join()
+            expect(kept).toContain('tula_ob_')
+            expect(kept).not.toContain('tula_at_')
+            const landingUrl = await atIdp(s, url, email)
+            expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+            const location = browserTab.open(landingUrl)
+            const landing = s.client('web', { cookies: start.cookies })
+            const outcome = await landing.tula.signIn.handleOAuthCallback()
+            expect(outcome.status).toBe('complete')
+            expect(location.href).toBe(CALLBACK_PAGE)
+            expect(browserTab.entries.size).toBe(0)
+            return landing
+          }
+          const first = await signInOnce()
+          expect(first.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+          const userId =
+            first.tula.state.status === 'signed-in' ? (first.tula.state.user?.id ?? '') : ''
+          await first.tula.session.signOut()
+          const again = await signInOnce()
+          expect(again.tula.state).toMatchObject({ status: 'signed-in', user: { id: userId } })
+        }
+      )
+
+      /** One single-sign-on round at the mock IdP with `groups`; the user id it signed in. */
+      async function ssoWithGroups(
+        s: Server & { domain: string },
+        email: string,
+        groups: string
+      ): Promise<string> {
+        const browserTab = tab()
+        browserTab.open(SIGN_IN_PAGE)
+        const start = s.client('web')
+        const flow = await start.tula.signIn.start({ identifier: email })
+        const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+        const landingUrl = await atIdp(s, url, email, groups)
+        browserTab.open(landingUrl)
+        const landing = s.client('web', { cookies: start.cookies })
+        expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+        const state = landing.tula.state
+        return state.status === 'signed-in' ? (state.user?.id ?? '') : ''
+      }
+
+      async function roleOfMember(
+        s: Server & { orgId: string },
+        userId: string
+      ): Promise<string | undefined> {
+        const list = await s.admin('GET', `/v1/admin/organizations/${s.orgId}/memberships`)
+        const { data } = (await list.json()) as { data: { userId: string; role: string }[] }
+        return data.find((one) => one.userId === userId)?.role
+      }
+
+      page(
+        'sso group roles follow the identity provider',
+        'SSO: the saved order of the group mapping is the precedence, and the role follows the group across two sign-ins',
+        async () => {
+          const s = await ssoServer()
+          const saved = await s.admin(
+            'PUT',
+            `/v1/admin/sso-connections/${s.connectionId}/group-roles`,
+            {
+              mappings: [
+                { group: 'ops', role: 'admin' },
+                { group: 'staff', role: 'member' },
+              ],
+            }
+          )
+          expect(saved.status).toBe(200)
+          // A second admin, so that the first can be demoted.
+          await ssoWithGroups(s, `bob@${s.domain}`, 'ops')
+          const ada = await ssoWithGroups(s, `ada@${s.domain}`, 'staff,ops')
+          expect(await roleOfMember(s, ada)).toBe('admin')
+          expect(await ssoWithGroups(s, `ada@${s.domain}`, 'staff')).toBe(ada)
+          expect(await roleOfMember(s, ada)).toBe('member')
+        }
+      )
+
+      page(
+        'sso group roles keep the last manager',
+        'SSO: a mapping to a role that does not exist is refused, and the only manager keeps the role while the sign-in succeeds',
+        async () => {
+          const s = await ssoServer()
+          const path = `/v1/admin/sso-connections/${s.connectionId}/group-roles`
+          const refused = await s.admin('PUT', path, {
+            mappings: [{ group: 'ops', role: 'nobody' }],
+          })
+          expect(refused.status).toBe(422)
+          expect(
+            (await s.admin('PUT', path, { mappings: [{ group: 'ops', role: 'admin' }] })).status
+          ).toBe(200)
+          const ada = await ssoWithGroups(s, `ada@${s.domain}`, 'ops')
+          expect(await roleOfMember(s, ada)).toBe('admin')
+          expect(await ssoWithGroups(s, `ada@${s.domain}`, 'other')).toBe(ada)
+          expect(await roleOfMember(s, ada)).toBe('admin')
+        }
+      )
+
+      page(
+        'sso home-realm discovery is by domain',
+        'SSO: an address with no account and a known one on a bound domain are offered the same strategies; another domain is not offered it; an address outside the domains signs nobody in',
+        async () => {
+          const s = await ssoServer()
+          const strategiesOf = async (identifier: string) => {
+            const flow = await s.client('web').tula.signIn.start({ identifier })
+            return { flow, step: flow.step }
+          }
+          const unknown = await strategiesOf(`nobody@${s.domain}`)
+          // Make the second address a known account on the same domain.
+          const known = await signUp(s, 'web', `known@${s.domain}`)
+          await known.tula.session.signOut()
+          const knownStart = await strategiesOf(`known@${s.domain}`)
+          for (const { step } of [unknown, knownStart]) {
+            expect(step).toMatchObject({ status: 'needs_first_factor' })
+            expect(step.status === 'needs_first_factor' ? step.strategies : []).toContain('sso')
+          }
+          expect(knownStart.step).toEqual(unknown.step)
+
+          tab().open(SIGN_IN_PAGE)
+          const other = await strategiesOf('someone@elsewhere.example')
+          expect(
+            other.step.status === 'needs_first_factor' ? other.step.strategies : []
+          ).not.toContain('sso')
+          expect((await caught(other.flow.startSso({ redirectUrl: CALLBACK_PAGE }))).code).toBe(
+            'flow.invalid_step'
+          )
+
+          // The provider names an address outside the connection's domains.
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: `mallory@${s.domain}` })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          browserTab.open(await atIdp(s, url, 'mallory@elsewhere.example'))
+          const landing = s.client('web', { cookies: start.cookies })
+          expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+            status: 'error',
+            code: 'sso.email_domain_mismatch',
+          })
+          expect(landing.tula.state.status).not.toBe('signed-in')
+        }
+      )
+
+      /** One round at the identity provider for `email`; the callback's outcome. */
+      async function ssoRound(s: Server, email: string) {
+        const browserTab = tab()
+        browserTab.open(SIGN_IN_PAGE)
+        const start = s.client('web')
+        const flow = await start.tula.signIn.start({ identifier: email })
+        const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+        browserTab.open(await atIdp(s, url, email))
+        const landing = s.client('web', { cookies: start.cookies })
+        return { landing, outcome: await landing.tula.signIn.handleOAuthCallback() }
+      }
+
+      page(
+        'sso enforcement removes the other first factors of a domain',
+        'SSO enforcement: an enforced domain offers single sign-on alone, the same for a known and an unknown address, and its password step answers both with the generic failure',
+        async () => {
+          const s = await ssoServer()
+          const known = await signUp(s, 'web', `known@${s.domain}`)
+          await known.tula.session.signOut()
+          await s.patch({ enforced: true })
+          const steps = []
+          for (const who of ['known', 'nobody']) {
+            const flow = await s
+              .client('web')
+              .tula.signIn.start({ identifier: `${who}@${s.domain}` })
+            steps.push(flow.step)
+            expect(flow.step).toMatchObject({ status: 'needs_first_factor', strategies: ['sso'] })
+            expect((await caught(flow.submitPassword({ password: PASSWORD }))).code).toBe(
+              'auth.invalid_credentials'
+            )
+          }
+          expect(steps[0]).toEqual(steps[1])
+        }
+      )
+
+      page(
+        'sso enforcement closes sign-up and password reset to the domain',
+        'SSO enforcement: an enforced domain refuses a password sign-up, a reset sends no code to a member who is not break-glass and completes nothing, and a break-glass member is emailed one',
+        async () => {
+          const s = await ssoServer()
+          const ada = `ada@${s.domain}`
+          expect((await ssoRound(s, ada)).outcome.status).toBe('complete')
+          await s.patch({ enforced: true })
+          for (const email of [`newbie@${s.domain}`, ada]) {
+            const refused = await caught(
+              s.client('web').tula.signUp.start({ email, password: PASSWORD })
+            )
+            expect(refused.code).toBe('auth.method_disabled')
+          }
+          const nobody = await s
+            .client('web')
+            .tula.resetPassword.start({ email: `nobody@${s.domain}` })
+          const member = await s.client('web').tula.resetPassword.start({ email: ada })
+          expect(member.step.status).toBe(nobody.step.status)
+          expect(
+            (await caught(member.submit({ code: '000000', password: NEW_PASSWORD }))).code
+          ).toBe('verification.invalid_code')
+          await s.patch({ breakGlassRole: 'member' })
+          s.advance(61_000)
+          const glass = await s.client('web').tula.resetPassword.start({ email: ada })
+          expect(glass.step.status).toBe(nobody.step.status)
+          const done = await glass.submit({ code: s.code(ada), password: NEW_PASSWORD })
+          expect(done.status).toBe('complete')
+        }
+      )
+
+      page(
+        'sso managed account cannot change its password from the client',
+        'SSO managed account: a user the connection created is refused a password change from the client with `user.managed`',
+        async () => {
+          const s = await ssoServer()
+          const { landing } = await ssoRound(s, `ada@${s.domain}`)
+          const refused = await caught(
+            landing.tula.user.changePassword({
+              currentPassword: PASSWORD,
+              newPassword: NEW_PASSWORD,
+            })
+          )
+          expect(refused.code).toBe('user.managed')
+        }
+      )
+
+      page(
+        'sso a used connection is deleted once disabled and its users sign in another way',
+        'SSO delete: an active connection cannot be deleted; once disabled a used one can, and its users are no longer managed and reset a password',
+        async () => {
+          const s = await ssoServer()
+          const ada = `ada@${s.domain}`
+          expect((await ssoRound(s, ada)).outcome.status).toBe('complete')
+          const path = `/v1/admin/sso-connections/${s.connectionId}`
+          const active = await s.admin('DELETE', path)
+          expect(active.status).toBe(409)
+          expect(((await active.json()) as { code: string }).code).toBe('sso.connection_in_use')
+          await s.patch({ status: 'disabled' })
+          expect((await s.admin('DELETE', path)).status).toBe(204)
+          s.advance(61_000)
+          const flow = await s.client('web').tula.resetPassword.start({ email: ada })
+          const done = await flow.submit({ code: s.code(ada), password: NEW_PASSWORD })
+          expect(done.status).toBe('complete')
+        }
+      )
+
+      page(
+        'sso trust in the provider for two-step verification',
+        'SSO MFA trust: under a required second step a single sign-on sign-in stops at enrolment, and completes once the connection trusts the identity provider',
+        async () => {
+          const s = await ssoServer('oidc', { mfaRequired: true })
+          const off = await ssoRound(s, `ada@${s.domain}`)
+          expect(off.outcome.status).toBe('needs_step')
+          expect(off.outcome.status === 'needs_step' ? off.outcome.flow.step.status : '').toBe(
+            'needs_factor_enrolment'
+          )
+          expect(off.landing.tula.state.status).not.toBe('signed-in')
+          await s.patch({ trustIdpMfa: true })
+          const on = await ssoRound(s, `grace@${s.domain}`)
+          expect(on.outcome.status).toBe('complete')
+        }
+      )
 
       page(
         'OAuth sign-up and sign-in',

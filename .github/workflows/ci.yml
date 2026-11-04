@@ -625,6 +625,7 @@ jobs:
             CONFORMANCE_BASE_URL=http://localhost:3005 \
             CONFORMANCE_SECOND_BASE_URL= \
             CONFORMANCE_SETTLE_MS=6000 \
+            CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso \
             CONFORMANCE_SMS_INBOX_URLS=http://localhost:3003,http://localhost:3004 \
             CONFORMANCE_MAILPIT_URL=http://localhost:8025 \
             CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY" \
@@ -635,6 +636,7 @@ jobs:
             CONFORMANCE_BASE_URL=http://localhost:3013 \
             CONFORMANCE_SECOND_BASE_URL=http://localhost:3014 \
             CONFORMANCE_SETTLE_MS=0 \
+            CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso \
             CONFORMANCE_SMS_INBOX_URLS=http://localhost:3013,http://localhost:3014 \
             CONFORMANCE_MAILPIT_URL=http://localhost:8026 \
             CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY" \

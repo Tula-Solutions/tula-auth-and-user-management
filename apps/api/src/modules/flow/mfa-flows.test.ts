@@ -1320,6 +1320,42 @@ describe('enrolment inside an attempt, where the environment requires a second f
     expect(deps.activityLog.ofType('user.mfa_enabled')).toHaveLength(1)
   })
 
+  test("a confirmation that read the pending factor and lost never ends the winner's session (TULA-155)", async () => {
+    const { attempt, userId } = await LAST_PROOF.sign_in()
+    const enrolment = await startEnrolment(attempt)
+    const code = codeFor(enrolment.secret)
+    const original = deps.factors.findTotp.bind(deps.factors)
+    let calls = 0
+    let winner: Promise<unknown> = Promise.resolve()
+    const real = deps.sessions.revokeByUser.bind(deps.sessions)
+    let sweeps = 0
+    const unrestricted = spyOn(deps.sessions, 'revokeByUser').mockImplementation((...args) => {
+      sweeps += args[4].onlyIds ? 0 : 1
+      return real(...args)
+    })
+    // The second reader sees the factor still pending, then is held until the first request has
+    // completed, so that its sweep of the user's sessions comes after the winner's session exists.
+    const spy = spyOn(deps.factors, 'findTotp').mockImplementation(async (...args) => {
+      const read = await original(...args)
+      if (++calls === 2) {
+        await winner.catch(() => undefined)
+      }
+      return read
+    })
+    try {
+      winner = confirmEnrolment(attempt, code)
+      const loser = rejection(confirmEnrolment(attempt, code))
+      expect(await ((await winner) as Flows.FlowResult).attempt.step.status).toBe('complete')
+      await loser
+    } finally {
+      spy.mockRestore()
+      unrestricted.mockRestore()
+    }
+    // The loser threw at its confirm and never reached the unrestricted sweep.
+    expect(await liveSessions(userId)).toHaveLength(1)
+    expect(sweeps).toBe(1)
+  })
+
   test('wrong confirmation codes lock the user out, even for the right code', async () => {
     const { attempt, userId } = await LAST_PROOF.sign_in()
     const enrolment = await startEnrolment(attempt)

@@ -2,6 +2,7 @@ import type { EnvironmentSettings, OAuthProvider } from '@tula-tech/contract'
 import type { Deps } from '~/dependencies'
 import { isLoopbackUrl } from '~/env'
 import * as logger from '~/lib/logger'
+import { publicBase } from '~/lib/public-base'
 import { errorReason } from '~/lib/safe-error'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
@@ -13,6 +14,7 @@ import { WEBHOOK_WAITING_TOO_LONG_MS } from './constants'
 import { attempt, plural } from './helpers'
 import * as Native from './native'
 import type { DiagnosticCheck, InstanceDiagnostics } from './schema'
+import * as Sso from './sso'
 
 /** How long one check may take before it counts as failed. */
 export const CHECK_TIMEOUT_MS = 5_000
@@ -51,6 +53,9 @@ type DiagnosticsDeps = Pick<
   | 'sms'
   | 'smsInbox'
   | 'nativeApps'
+  | 'ssoConnections'
+  | 'organizationDomains'
+  | 'outbound'
 >
 
 /** The database's answer, with the API's own clock at the moment it arrived. */
@@ -106,6 +111,8 @@ interface Stored {
    * follows the scan, which files to ask for); `null` when the apps could not be read.
    */
   native: Native.NativeFindings | null
+  /** What the environments checked have of active SSO connections, as counts; `null` when they could not be read. */
+  sso: Sso.SsoFindings | null
 }
 
 function databaseCheck(database: { value: DatabaseDiagnosis } | null): DiagnosticCheck {
@@ -209,6 +216,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     keyRequired: 0,
     keyRequiredWhenAsked: 0,
     native: Native.noFindings(),
+    sso: Sso.noFindings(),
   }
   for (const environment of environments) {
     signal.throwIfAborted()
@@ -274,6 +282,17 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     if (stored.native !== null) {
       signal.throwIfAborted()
       stored.native = await Native.read(deps, environment.id, stored.native, settings)
+    }
+    if (stored.sso !== null) {
+      // A failure here is the connections', not the secrets': logged, and the check says it could not look.
+      stored.sso = await Sso.read(deps, environment.id, stored.sso, signal).catch((error) => {
+        signal.throwIfAborted()
+        logger.warn('diagnostic check failed', {
+          check: 'sso_connections',
+          reason: errorReason(error),
+        })
+        return null
+      })
     }
   }
   return stored
@@ -788,7 +807,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
   const { config } = deps
   const probes = deps.diagnostics
   const loopback = isLoopbackUrl(config.publicUrl)
-  const statusUrl = `${config.publicUrl.replace(/\/+$/, '')}/v1/status`
+  const statusUrl = `${publicBase(config)}/v1/status`
   const redisProbe = probes.redis
   const scan = attempt('stored_secrets', (signal) => scanStored(deps, signal), timeoutMs)
   // Only ever under the deployment's own PUBLIC_URL, and never a loopback one: what the
@@ -838,6 +857,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       Native.identitiesCheck(stored),
       Native.filesCheck(stored, loopback, fetched),
       Native.passkeysCheck(stored, deps.config.tier),
+      Sso.check(stored),
     ],
   }
 }

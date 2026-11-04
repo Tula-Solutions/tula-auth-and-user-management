@@ -46,11 +46,16 @@ export function byIp(c: Context<AppEnv>): string {
  * Bucket by the resolved environment (mount after a key middleware).
  *
  * @param c - The request context.
- * @returns `env:<id>`, or `null` when no tenant is resolved.
+ * @returns `env:<id>`.
+ * @throws Error when no tenant is resolved: the limiter was mounted before the key middleware,
+ *   which would skip the count on every request. A bug in the route, so it fails loudly.
  */
-export function byEnvironment(c: Context<AppEnv>): string | null {
+export function byEnvironment(c: Context<AppEnv>): string {
   const { tenant } = c.var as Partial<TenantVariables>
-  return tenant ? `env:${tenant.environmentId}` : null
+  if (!tenant) {
+    throw new Error('byEnvironment used before a middleware that resolves the tenant')
+  }
+  return `env:${tenant.environmentId}`
 }
 
 /** Count the request; `null` when the limiter is unavailable and the rule lets requests through. */

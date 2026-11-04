@@ -193,6 +193,23 @@ const ORGANIZATION_ROLE = S.object({
   updatedAt: S.string(40),
 })
 
+// A connection's identity provider addresses, issuer, client id and certificate fingerprints are
+// left out on purpose: the tools say whether a connection works, not where it points (ADR 0067).
+const SSO_CONNECTION = S.object({
+  id: S.string(64),
+  organizationId: S.string(64),
+  protocol: S.string(20),
+  name: S.string(100),
+  status: S.string(20),
+  defaultRole: S.string(40),
+  domains: S.array(S.string(255), 20),
+  saml: S.object({
+    certificates: S.array(S.object({ notAfter: S.string(40), expired: S.boolean }), 4),
+  }),
+  createdAt: S.string(40),
+  updatedAt: S.string(40),
+})
+
 const SIGN_IN_METHODS = S.object({
   hasPassword: S.boolean,
   emailVerified: S.boolean,
@@ -386,6 +403,14 @@ const organizationMembersInput = z.strictObject({
   organizationId: id.describe('The organization’s id, as list_organizations returns it.'),
   page,
   size: z.number().int().min(1).max(100).default(50).describe('Members per page, at most 100.'),
+})
+const listSsoConnectionsInput = z.strictObject({
+  organizationId: id
+    .optional()
+    .describe('Only this organization’s connections; left out, the whole environment’s.'),
+})
+const ssoConnectionInput = z.strictObject({
+  connectionId: id.describe('The connection’s id, as list_sso_connections returns it.'),
 })
 const noInput = z.strictObject({})
 const detectInput = z.strictObject({
@@ -774,6 +799,32 @@ export const TOOLS: readonly ToolDefinition[] = [
       shaped(
         await reads().read('listOrganizationRoles'),
         S.object({ data: S.array(ORGANIZATION_ROLE, 100) })
+      ),
+  },
+  {
+    name: 'list_sso_connections',
+    title: 'List SSO connections',
+    group: 'read',
+    description: `The environment’s enterprise single sign-on connections (at most 100), or one organization’s: id, name, protocol, status, bound domains, the default role and, for a SAML connection, each signing certificate’s expiry. It never returns an address, issuer, client id, secret or fingerprint of the identity provider.${UNTRUSTED}`,
+    input: listSsoConnectionsInput,
+    run: async ({ reads }, input: z.infer<typeof listSsoConnectionsInput>) =>
+      shaped(
+        await reads().read('listSsoConnections', {
+          query: given({ organizationId: input.organizationId }),
+        }),
+        S.object({ connections: S.array(SSO_CONNECTION, 100) })
+      ),
+  },
+  {
+    name: 'get_sso_connection',
+    title: 'Get an SSO connection',
+    group: 'read',
+    description: `One enterprise single sign-on connection by id, with the same fields as list_sso_connections.${UNTRUSTED}`,
+    input: ssoConnectionInput,
+    run: async ({ reads }, input: z.infer<typeof ssoConnectionInput>) =>
+      shaped(
+        await reads().read('getSsoConnection', { params: { id: input.connectionId } }),
+        SSO_CONNECTION
       ),
   },
   {

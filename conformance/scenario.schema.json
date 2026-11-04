@@ -484,6 +484,67 @@
                 "type": "string",
                 "minLength": 1
               },
+              "sso": {
+                "type": "object",
+                "properties": {
+                  "captureIssuer": {
+                    "type": "string"
+                  },
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "groups": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "captureTest": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureSamlMetadata": {
+                    "type": "string"
+                  },
+                  "failure": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "enum": ["a", "b", "c"]
+                  },
+                  "expectReplayRefused": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "sso"],
+            "additionalProperties": false,
+            "ref": "ConformanceSsoStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "idToken": {
                 "type": "object",
                 "properties": {
@@ -1217,6 +1278,67 @@
             "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sso": {
+                "type": "object",
+                "properties": {
+                  "captureIssuer": {
+                    "type": "string"
+                  },
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "groups": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "captureTest": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureSamlMetadata": {
+                    "type": "string"
+                  },
+                  "failure": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "enum": ["a", "b", "c"]
+                  },
+                  "expectReplayRefused": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "sso"],
+            "additionalProperties": false,
+            "ref": "ConformanceSsoStep"
           },
           {
             "type": "object",

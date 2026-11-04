@@ -178,6 +178,14 @@ this file under "Area rules" and does not repeat it.
 - **No invited address, name or token in events, audit entries or logs.** The organization's
   name reaches an email only through the built-in wording (`displayName` + `escapeHtml`); the
   template has no placeholder for it.
+- **The invitee's own list and answers by id** (TULA-131, `listMine`, `acceptById`,
+  `declineById`). Only a **verified** address is listed (an unproven one gets an empty page).
+  An entry is `id`, organization name, role key and expiry; never the token, the address, the
+  inviter or the organization id. An answer by id decides **whose** the invitation is before
+  **what state** it is in, and an id that is not the caller's answers
+  `organization.invitation_not_found` (never `wrong_account`, `used` or `revoked`): the route
+  must not reveal that someone else was invited. Token and id paths share `acceptRecord` and
+  `declineRecord`; a new rule goes there.
 - Test: every refusal code, the disabled state, an agent key on each write, a lapsed
   invitation replaced, two answers at once making one membership, a send that fails revoking
   the row, the purge in both adapters, and the canary on the four events.
@@ -196,6 +204,13 @@ this file under "Area rules" and does not repeat it.
   or a user change is dropped. Words come from the localization groups, never from server text.
 - Test: each tab per role, every refusal above, the unknown section, the switch and create
   failures, and axe in both colour schemes (`e2e/tests/organization-components.spec.ts`).
+- **Deleting an organization from the client is behind `requireRecentAuth()`** (TULA-131),
+  after `sessionAuth()` and before the permission is read: a stale session answers
+  `auth.step_up_required` and nothing else. `GeneralSection` runs the call through
+  `useStepUp()` and says nothing when the user closes the step-up dialog. A new destructive
+  organization route gets the same middleware.
+- **A page of members is looked up with `UserRepository.findByIds`**, never one `findById`
+  per member.
 - **A manager acts only on members within their own permissions** (`requireOutranks` in
   `member-service.ts`): changing the role of, or removing, a member who holds a permission the
   caller lacks is refused; leaving is exempt.

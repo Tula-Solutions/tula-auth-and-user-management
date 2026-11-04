@@ -17,6 +17,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -54,6 +55,20 @@ export class MemoryUserRepository implements UserRepository {
   #passkeyCount: (environmentId: string, userId: string) => number
   #confirmedTotp: ((environmentId: string, userId: string) => boolean) | null
   #passkeysReported: boolean
+
+  /**
+   * Forget which connection managed its users, as deleting the connection does (decision 13).
+   *
+   * @param environmentId - The environment.
+   * @param connectionId - The deleted connection.
+   */
+  clearManagedByConnection(environmentId: string, connectionId: string): void {
+    for (const user of this.#users.values()) {
+      if (user.environmentId === environmentId && user.managedByConnectionId === connectionId) {
+        user.managedByConnectionId = null
+      }
+    }
+  }
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -119,6 +134,18 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const found: UserRecord[] = []
+    for (const id of new Set(ids)) {
+      const user = this.#users.get(id)
+      if (user?.environmentId === environmentId) {
+        found.push({ ...user })
+      }
+    }
+    return found
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const user = this.#byEmail(environmentId, emailNormalized)
     return user ? { ...user } : null
@@ -177,6 +204,8 @@ export class MemoryUserRepository implements UserRepository {
     }
     this.#users.set(user.id, {
       ...record,
+      managedByConnectionId: record.managedByConnectionId ?? null,
+      managedByDirectoryId: record.managedByDirectoryId ?? null,
       bannedAt: null,
       lastSignInAt: null,
       phoneNumber: null,
@@ -473,6 +502,27 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    if (user.firstName !== names.firstName || user.lastName !== names.lastName) {
+      user.firstName = names.firstName
+      user.lastName = names.lastName
+      this.#activityLog.record(activity ? [activity] : [])
+    }
+    return { ...user }
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,
@@ -624,6 +674,30 @@ export class MemoryUserRepository implements UserRepository {
       return 'has_email'
     }
     if (this.#byEmail(environmentId, address.normalized)) {
+      return 'taken'
+    }
+    user.email = address.email
+    user.emailNormalized = address.normalized
+    user.emailVerifiedAt = address.verifiedAt === null ? null : new Date(address.verifiedAt)
+    const activity = activityOf(recorded)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return 'not_found'
+    }
+    const holder = this.#byEmail(environmentId, address.normalized)
+    if (holder && holder.id !== userId) {
       return 'taken'
     }
     user.email = address.email

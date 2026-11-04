@@ -17,6 +17,7 @@ import {
   OrganizationMembershipSchema,
   OrganizationPageQuerySchema,
   OrganizationSchema,
+  OrganizationSearchQuerySchema,
   UpdateOrganizationMemberRequestSchema,
   UpdateOrganizationRequestSchema,
 } from './schema'
@@ -43,7 +44,10 @@ router.get(
     operationId: 'listOrganizations',
     tags: ['Organizations'],
     summary: 'List organizations',
-    description: `Organizations of the secret key’s environment, newest first, one page at a time. ${disabled}`,
+    description:
+      'Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps ' +
+      'the organizations whose name or slug starts with it (ignoring case), counted and paged as ' +
+      `a match. ${disabled}`,
     security: openapi.security.admin,
     responses: {
       200: { description: 'One page of organizations.', content: json(OrganizationListSchema) },
@@ -54,7 +58,7 @@ router.get(
   }),
   adminRateLimit(),
   secretKey(),
-  validator('query', OrganizationPageQuerySchema, validationHook),
+  validator('query', OrganizationSearchQuerySchema, validationHook),
   async (c) =>
     c.json(
       OrganizationListSchema.parse(

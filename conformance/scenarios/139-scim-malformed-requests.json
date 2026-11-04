@@ -1,0 +1,244 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim: malformed requests and unknown users",
+  "description": "Errors on the SCIM group are SCIM envelopes (ADR 0067): a body that is not a user and an unknown user each get the status and scimType the RFC names.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "an empty object is not a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "400",
+          "scimType": "invalidValue"
+        }
+      }
+    },
+    {
+      "name": "an unknown user is a 404",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Users/00000000-0000-7000-8000-00000000dead",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "404"
+        }
+      }
+    },
+    {
+      "name": "an unknown user cannot be patched",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Users/00000000-0000-7000-8000-00000000dead",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "replace",
+              "path": "active",
+              "value": false
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "404"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

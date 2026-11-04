@@ -173,6 +173,29 @@ describe('createAdminClient', () => {
   })
 })
 
+describe('stream', () => {
+  test('hands back the raw response of a streamed operation, and a refusal as an error', async () => {
+    const { fetch, seen } = fakeFetch((request) =>
+      request.body?.includes('nope')
+        ? json({ status: 422, code: 'validation.failed', detail: 'bad' }, { status: 422 })
+        : new Response('{"id":"1"}\n', { headers: { 'content-type': 'application/x-ndjson' } })
+    )
+    const admin = createAdminClient({
+      baseUrl: 'https://auth.example.com',
+      secretKey: SECRET_KEY,
+      fetch,
+    })
+    const response = await admin.stream('exportAuditLogs', { body: { format: 'ndjson' } })
+    expect(await response.text()).toBe('{"id":"1"}\n')
+    expect(seen[0]?.method).toBe('POST')
+    expect(seen[0]?.url).toBe('https://auth.example.com/v1/admin/audit-logs/export')
+    const refused = await admin
+      .stream('exportAuditLogs', { body: { after: 'nope' } as never })
+      .catch((error: unknown) => error)
+    expect(isTulaAdminError(refused)).toBe(true)
+  })
+})
+
 describe('call', () => {
   test('sends the method, path, query, headers and body of the operation', async () => {
     const { fetch, seen } = fakeFetch(() =>

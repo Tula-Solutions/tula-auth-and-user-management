@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "admin organizations and memberships",
-  "description": "An administrator switches organizations on for the environment (they are off by default, and while they are off every organization route answers organization.disabled, a read as well as a write), creates an organization with a slug of the documented grammar and adds two existing users with the built-in roles admin and member. A slug another organization has, a user who is a member already and a role that does not exist are refused with their codes, and a publishable key cannot reach the routes. The only member who holds org:sys:memberships:manage cannot be demoted or removed (organization.last_manager), and the user who is that member cannot be deleted (user.last_organization_manager, naming the organization); with a second admin the first can be demoted and removed, and the users keep their accounts. A rename is recorded by the name of the field, and the audit log holds no organization name and no address. Deleting the organization takes its memberships with it. The original settings are put back afterwards, even when a step fails.",
+  "description": "An administrator switches organizations on for the environment (they are off by default, and while they are off every organization route answers organization.disabled, a read as well as a write), creates an organization with a slug of the documented grammar and adds two existing users with the built-in roles admin and member. A slug another organization has, a user who is a member already and a role that does not exist are refused with their codes, and a publishable key cannot reach the routes. The only member who holds org:sys:memberships:manage cannot be demoted or removed (organization.last_manager), and the user who is that member cannot be deleted (user.last_organization_manager, naming the organization); with a second admin the first can be demoted and removed, and the users keep their accounts. A search (`q`) lists the organizations whose name or slug starts with it, ignoring case, and treats `%` as itself. A rename is recorded by the name of the field, and the audit log holds no organization name and no address. Deleting the organization takes its memberships with it. The original settings are put back afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "ownerEmail": {
@@ -263,6 +263,65 @@
         "body": {
           "id": "{{orgId}}",
           "slug": "conformance-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "a search by the start of the slug finds it, ignoring case",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations?q=CONFORMANCE-{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "id": "{{orgId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a search by the start of the slug finds it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations?q=conformance-{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "id": "{{orgId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a search is a prefix, and a LIKE wildcard matches itself only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations?q=%25",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          },
+          "data": []
         }
       }
     },

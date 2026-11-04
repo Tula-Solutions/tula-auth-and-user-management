@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { deferred } from '../../../core/src/testing/fakes'
-import { expectAbsent, expectFocus, failure, json, world } from '../testing/harness'
+import { accessToken, deferred } from '../../../core/src/testing/fakes'
+import {
+  expectAbsent,
+  expectFocus,
+  failure,
+  json,
+  openDialogs,
+  sessionTokens,
+  world,
+} from '../testing/harness'
 import {
   A,
   ACME,
@@ -429,6 +437,59 @@ describe('<OrganizationProfile>: General', () => {
     await w.user.click(confirm)
     expect(await screen.findByText('Acme was deleted.')).toBeTruthy()
     expect(onGone).toHaveBeenCalledWith('deleted', A)
+    expect(w.api.calls(`DELETE /v1/client/me/organizations/${A}`)).toHaveLength(1)
+  })
+
+  test('a delete the server asks a step-up for makes the step-up and then deletes', async () => {
+    const w = adminWorld()
+    const onGone = mock()
+    let stepped = false
+    w.api.on(`DELETE /v1/client/me/organizations/${A}`, () => {
+      if (!stepped) {
+        return failure(403, 'auth.step_up_required', { params: { methods: 'password' } })
+      }
+      // Deleted for real only now: the list the page reads next no longer holds it.
+      w.organizations = [GLOBEX]
+      return new Response(null, { status: 204 })
+    })
+    w.api.on('POST /v1/client/sessions/step-up', () => {
+      stepped = true
+      // The fresh token still carries the organization the session acts in.
+      return json(
+        200,
+        sessionTokens('stepped_up', { accessToken: accessToken('stepped_up', 60, { org_id: A }) })
+      )
+    })
+    w.mount(<OrganizationProfile onGone={onGone} />)
+    await w.user.click(await screen.findByRole('button', { name: 'Delete organization' }))
+    const question = await screen.findByRole('group', { name: 'Type Acme to confirm' })
+    await w.user.type(within(question).getByLabelText('Name'), 'Acme')
+    await w.user.click(within(question).getByRole('button', { name: 'Delete this organization' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
+    expect(onGone).not.toHaveBeenCalled()
+    await w.user.type(within(dialog).getByLabelText('Password'), 'sturdy-Otter-plays-42-chess')
+    await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByText('Acme was deleted.')).toBeTruthy()
+    expect(onGone).toHaveBeenCalledWith('deleted', A)
+    expect(w.api.calls(`DELETE /v1/client/me/organizations/${A}`)).toHaveLength(2)
+  })
+
+  test('a step-up the user cancels deletes nothing and shows no error', async () => {
+    const w = adminWorld()
+    const onGone = mock()
+    w.api.on(`DELETE /v1/client/me/organizations/${A}`, () =>
+      failure(403, 'auth.step_up_required', { params: { methods: 'password' } })
+    )
+    w.mount(<OrganizationProfile onGone={onGone} />)
+    await w.user.click(await screen.findByRole('button', { name: 'Delete organization' }))
+    const question = await screen.findByRole('group', { name: 'Type Acme to confirm' })
+    await w.user.type(within(question).getByLabelText('Name'), 'Acme')
+    await w.user.click(within(question).getByRole('button', { name: 'Delete this organization' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
+    await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectAbsent(screen.queryByRole('alert'))
+    expect(onGone).not.toHaveBeenCalled()
     expect(w.api.calls(`DELETE /v1/client/me/organizations/${A}`)).toHaveLength(1)
   })
 

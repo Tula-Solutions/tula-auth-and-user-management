@@ -1,9 +1,12 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { messageFor } from '~/api/errors'
 import {
   ActivityType,
+  type AuditExportRequestFormat,
   type AuditLog,
   InstanceActivityType,
   ListAuditLogsActorType,
+  useExportAuditLogs,
   useListAuditLogs,
   useListInstanceAuditLogs,
 } from '~/api/generated/api.gen'
@@ -196,6 +199,75 @@ function useEntries(scope: 'environment' | 'instance', filters: AuditFilters) {
   return scope === 'environment' ? environment : instance
 }
 
+/**
+ * Download the entries the filters in the address select, as NDJSON or CSV.
+ *
+ * The export route takes an action and a time range only, so the actor and target filters
+ * are not applied; the hint says so. The file is read whole into a blob: the server caps one
+ * export at 100,000 entries, and the CLI is the way to resume a longer one.
+ *
+ * @param props - `filters`: the committed filters (what the list shows, not the draft form).
+ * @returns The two export buttons and their error, if any.
+ */
+function ExportButtons({ filters }: { filters: AuditFilters }) {
+  const request = useEnvironmentRequest({ raw: true })
+  const exporting = useExportAuditLogs({ request, mutation: { networkMode: 'always' } })
+  const query = auditQuery(filters)
+
+  function download(format: AuditExportRequestFormat) {
+    exporting.mutate(
+      {
+        data: {
+          format,
+          ...(isOneOf(ActivityType, filters.action) ? { action: filters.action } : {}),
+          ...(query.from ? { from: query.from } : {}),
+          ...(query.to ? { to: query.to } : {}),
+        },
+      },
+      {
+        onSuccess: async (response) => {
+          const url = URL.createObjectURL(await response.blob())
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `audit-log.${format}`
+          link.click()
+          URL.revokeObjectURL(url)
+        },
+      }
+    )
+  }
+
+  return (
+    <div className='flex flex-col gap-2'>
+      <div className='flex flex-wrap items-center gap-2'>
+        <ActionButton
+          variant='outline'
+          pending={exporting.isPending}
+          onClick={() => download('csv')}
+        >
+          Export CSV
+        </ActionButton>
+        <ActionButton
+          variant='outline'
+          pending={exporting.isPending}
+          onClick={() => download('ndjson')}
+        >
+          Export NDJSON
+        </ActionButton>
+      </div>
+      <p className='text-sm text-muted-foreground'>
+        Exports the action and the days chosen above, oldest first, up to 100,000 entries. The actor
+        and target filters are not applied. The export is itself recorded in the log.
+      </p>
+      {exporting.isError ? (
+        <p role='alert' className='text-sm text-destructive'>
+          {messageFor(exporting.error)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 /** Props of {@link AuditLogScreen}. */
 export interface AuditLogScreenProps {
   /** Which log: one environment's, or the instance's own. */
@@ -283,6 +355,7 @@ export function AuditLogScreen({ scope, filters, onFilters }: AuditLogScreenProp
           ) : null}
         </div>
       </form>
+      {scope === 'environment' ? <ExportButtons filters={filters} /> : null}
       <QueryState query={entries} label='Loading the audit log'>
         {(list) =>
           list.data.length === 0 ? (

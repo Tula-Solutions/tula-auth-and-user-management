@@ -2258,6 +2258,22 @@ describe('the active organization (ADR 0065)', () => {
     expect(tula.state).toMatchObject({ organizationId: null })
   })
 
+  test('list sends the paging query and returns the meta of the page it asked for', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const second = {
+      activeOrganizationId: null,
+      meta: { totalCount: 3, totalPages: 3, page: 2, perPage: 1 },
+      data: [],
+    }
+    w.api.on(`${LIST}?page=2&size=1`, () => json(200, second))
+    expect(await tula.organizations.list({ page: 2, size: 1 })).toEqual(second)
+    // Without a query the API's defaults apply: the address carries none.
+    w.api.on(LIST, () => json(200, { ...second, meta: { ...second.meta, page: 1 } }))
+    expect((await tula.organizations.list()).meta.page).toBe(1)
+    expect(w.api.calls(LIST)).toHaveLength(1)
+  })
+
   test('another tab learns the organization from the announced session', async () => {
     const w = world()
     const locks = fakeLocks()
@@ -2347,6 +2363,63 @@ describe('organization invitations (ADR 0065, Orgs 04)', () => {
       expect(request.path).not.toContain('the-token')
     }
     expect(bearer(w, ACCEPT)).toEqual([`Bearer ${accessToken('access_1')}`])
+  })
+
+  test('mine lists the invitations addressed to the user, and answering one is by id, never a token', async () => {
+    const MINE = 'GET /v1/client/me/organization-invitations'
+    const ACCEPT_MINE = `POST /v1/client/me/organization-invitations/${INVITATION}/accept`
+    const DECLINE_MINE = `POST /v1/client/me/organization-invitations/${INVITATION}/decline`
+    const w = world()
+    const page = {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: INVITATION,
+          organizationName: 'Acme',
+          role: 'member',
+          expiresAt: invitation.expiresAt,
+        },
+      ],
+    }
+    const joined = {
+      id: ORG,
+      name: 'Acme',
+      slug: 'acme',
+      role: 'member',
+      permissions: [],
+      createdAt: '2030-01-01T00:00:00.000Z',
+    }
+    w.api.on(MINE, () => json(200, page))
+    w.api.on(ACCEPT_MINE, () => json(200, joined))
+    w.api.on(DECLINE_MINE, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.invitations.mine()).toEqual(page)
+    expect(await tula.organizations.invitations.acceptMine(INVITATION)).toEqual(joined)
+    expect(await tula.organizations.invitations.declineMine(INVITATION)).toBeUndefined()
+    expect(w.api.calls(ACCEPT_MINE)[0]?.body).toBeUndefined()
+    for (const key of [MINE, ACCEPT_MINE, DECLINE_MINE]) {
+      expect(bearer(w, key)).toEqual([`Bearer ${accessToken('access_1')}`])
+    }
+  })
+
+  test('mine, acceptMine and declineMine refuse as a TulaError and the session lives on', async () => {
+    const w = world()
+    w.api.on('GET /v1/client/me/organization-invitations', () =>
+      failure(403, 'organization.disabled')
+    )
+    w.api.on(`POST /v1/client/me/organization-invitations/${INVITATION}/accept`, () =>
+      failure(404, 'organization.invitation_not_found')
+    )
+    const { tula } = await signedIn(w)
+    expect(await caught(tula.organizations.invitations.mine())).toMatchObject({
+      code: 'organization.disabled',
+      status: 403,
+    })
+    expect(await caught(tula.organizations.invitations.acceptMine(INVITATION))).toMatchObject({
+      code: 'organization.invitation_not_found',
+      status: 404,
+    })
+    expect(tula.state.status).toBe('signed-in')
   })
 
   test('preview needs no session: signed out, it sends no Authorization header', async () => {
@@ -2505,6 +2578,54 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
       status: 409,
     })
     expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('sso calls address the organization and the connection and send the bodies as given', async () => {
+    const w = world()
+    const C = '01980000-0000-7000-8000-000000000099'
+    const SSO = `${BASE}/sso-connections`
+    const connection = { id: C, organizationId: ORG, name: 'Okta', status: 'draft' }
+    w.api.on(`GET ${SSO}`, () => json(200, { connections: [connection] }))
+    w.api.on(`POST ${SSO}`, () => json(201, connection))
+    w.api.on(`GET ${SSO}/${C}`, () => json(200, connection))
+    w.api.on(`PATCH ${SSO}/${C}`, () => json(200, { ...connection, status: 'active' }))
+    w.api.on(`POST ${SSO}/${C}/refresh-metadata`, () => json(200, connection))
+    w.api.on(`DELETE ${SSO}/${C}`, () => new Response(null, { status: 204 }))
+    w.api.on(`GET ${SSO}/${C}/group-roles`, () => json(200, { mappings: [] }))
+    w.api.on(`PUT ${SSO}/${C}/group-roles`, (_req) => json(200, { mappings: [] }))
+    const T = '01980000-0000-7000-8000-0000000000aa'
+    w.api.on(`POST ${SSO}/${C}/tests`, () =>
+      json(201, { testId: T, authorizationUrl: 'https://idp.test/a' })
+    )
+    w.api.on(`GET ${SSO}/${C}/tests/${T}`, () => json(200, { testId: T, status: 'pending' }))
+    const { tula } = await signedIn(w)
+    const sso = tula.organizations.sso
+    expect(await sso.list(ORG)).toEqual({ connections: [connection] } as never)
+    const input = { name: 'Okta', protocol: 'oidc' } as never
+    expect(await sso.create(ORG, input)).toEqual(connection as never)
+    expect(w.api.calls(`POST ${SSO}`)[0]?.body).toEqual(input)
+    expect(await sso.get(ORG, C)).toEqual(connection as never)
+    expect(await sso.update(ORG, C, { status: 'active' })).toMatchObject({ status: 'active' })
+    expect(w.api.calls(`PATCH ${SSO}/${C}`)[0]?.body).toEqual({ status: 'active' })
+    expect(await sso.refreshMetadata(ORG, C)).toEqual(connection as never)
+    expect(await sso.remove(ORG, C)).toBeUndefined()
+    expect(await sso.groupRoles(ORG, C)).toEqual({ mappings: [] })
+    const mapping = { mappings: [{ group: 'eng', role: 'admin' }] }
+    await sso.setGroupRoles(ORG, C, mapping)
+    expect(w.api.calls(`PUT ${SSO}/${C}/group-roles`)[0]?.body).toEqual(mapping)
+    expect((await sso.startTest(ORG, C, 'https://app.test/s')).testId).toBe(T)
+    expect(w.api.calls(`POST ${SSO}/${C}/tests`)[0]?.body).toEqual({
+      redirectUrl: 'https://app.test/s',
+    })
+    expect((await sso.testResult(ORG, C, T)).status).toBe('pending')
+    const LINKS = `/v1/client/me/organizations/${ORG}/setup-links`
+    w.api.on(`GET ${LINKS}`, () => json(200, { links: [] }))
+    w.api.on(`POST ${LINKS}`, () => json(201, { id: 'l1', token: 't', url: 'https://x/#t' }))
+    w.api.on(`DELETE ${LINKS}/l1`, () => json(204, undefined))
+    expect(await sso.setupLinks(ORG)).toEqual({ links: [] })
+    expect((await sso.createSetupLink(ORG, { name: 'IT' })).url).toBe('https://x/#t')
+    expect(w.api.calls(`POST ${LINKS}`)[0]?.body).toEqual({ name: 'IT' })
+    expect(await sso.revokeSetupLink(ORG, 'l1')).toBeUndefined()
   })
 
   test('domains list, start, verify, change the mode and remove', async () => {

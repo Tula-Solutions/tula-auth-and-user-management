@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { ACTIVITY_TYPES, ActivityTypeSchema, AuditLogListSchema, AuditLogSchema } from './audit'
+import {
+  ACTIVITY_TYPES,
+  ActivityTypeSchema,
+  AuditExportCursorSchema,
+  AuditLogListSchema,
+  AuditLogSchema,
+  auditExportCursor,
+  parseAuditExportCursor,
+} from './audit'
 
 const entry = {
   id: 'a_1',
@@ -77,5 +85,28 @@ describe('ActivityType', () => {
     for (const type of ['user.mfa_started', 'user.mfa_failed', 'user.totp_used']) {
       expect(ActivityTypeSchema.safeParse(type).success).toBe(false)
     }
+  })
+})
+
+describe('audit export cursor', () => {
+  const position = {
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    id: '0190f4a2-7b3c-7d4e-8f5a-123456789abc',
+  }
+
+  test('a cursor round-trips and satisfies its schema', () => {
+    const cursor = auditExportCursor(position)
+    expect(AuditExportCursorSchema.safeParse(cursor).success).toBe(true)
+    expect(parseAuditExportCursor(cursor)).toEqual(position)
+  })
+
+  test.each([
+    '',
+    'nope',
+    '2026-01-01T00:00:00.000Z~x',
+    '2026-01-01~0190f4a2-7b3c-7d4e-8f5a-123456789abc',
+  ])('malformed cursor %j is refused', (bad) => {
+    expect(AuditExportCursorSchema.safeParse(bad).success).toBe(false)
+    expect(parseAuditExportCursor(bad)).toBeNull()
   })
 })

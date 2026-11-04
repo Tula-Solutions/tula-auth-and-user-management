@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AUDIT_ACTOR_TYPES, type AuditActorType } from './audit'
+import { AUDIT_ACTOR_TYPES, AUDIT_EXPORT_FORMATS, type AuditActorType } from './audit'
 import { CONFIG_TOOL_PATTERN } from './environment-settings'
 import {
   ACTIVITY_TYPES,
@@ -34,6 +34,12 @@ import {
   ProposalApproverSchema,
 } from './proposal'
 import { SessionClientSchema } from './session'
+import {
+  MAX_SSO_CONNECTION_DOMAINS,
+  SSO_CONNECTION_FIELDS,
+  SSO_CONNECTION_STATUSES,
+  SSO_PROTOCOLS,
+} from './sso'
 import { SIGN_IN_TEST_CLEANUPS, SIGN_IN_TEST_OUTCOMES } from './test-address'
 import { AUTHENTICATION_METHODS } from './tokens'
 
@@ -199,6 +205,8 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_linkedin',
       'oauth_x',
       'oauth_facebook',
+      'sso',
+      'scim',
     ]),
     /**
      * Whether the account's email address was proven when it was created. `false` also for
@@ -306,6 +314,18 @@ export const EVENT_DATA_SCHEMAS = {
       provider,
       /** `auto`: at a sign-in, by a verified address; `profile`: by the signed-in user. */
       method: z.enum(['auto', 'profile']),
+    }
+  ),
+  'user.sso_linked': data(
+    'UserSsoLinked',
+    'An account was given its identity at a single sign-on connection (ADR 0067).',
+    {
+      connectionId: id(),
+      /**
+       * `email`: an existing account matched by its address on one of the connection's
+       * domains. `provisioned`: an account created just in time by this sign-in.
+       */
+      method: z.enum(['email', 'provisioned']),
     }
   ),
   'user.identity_unlinked': data(
@@ -697,6 +717,88 @@ export const EVENT_DATA_SCHEMAS = {
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
   ),
+  // Enterprise single sign-on (ADR 0067): protocol, status, counts and field names.
+  'sso_connection.created': data(
+    'SsoConnectionCreated',
+    'A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** How many domains it was bound to. A count, never a domain. */
+      domains: z.number().int().min(0).max(MAX_SSO_CONNECTION_DOMAINS),
+    }
+  ),
+  'sso_connection.updated': data(
+    'SsoConnectionUpdated',
+    'A single sign-on connection was changed.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      /** Which fields changed. Names only, never a value. */
+      changed: z.array(z.enum(SSO_CONNECTION_FIELDS)).min(1).max(SSO_CONNECTION_FIELDS.length),
+      /** The connection's status after the change. */
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** `true` when the change stopped the connection signing users in: it was disabled. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'sso_connection.deleted': data(
+    'SsoConnectionDeleted',
+    'A single sign-on connection was removed.',
+    { protocol: z.enum(SSO_PROTOCOLS) }
+  ),
+  // SCIM (ADR 0067): ids and enums only.
+  'scim_token.created': data(
+    'ScimTokenCreated',
+    "A SCIM token was created for an organization's directory. The token is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_token.revoked': data(
+    'ScimTokenRevoked',
+    'A SCIM token was revoked: the directory it belonged to can no longer provision with it.',
+    { organizationId: id() }
+  ),
+  'setup_link.created': data(
+    'SetupLinkCreated',
+    'A setup link was created for an organization (ADR 0067). The token is not in the event.',
+    { organizationId: id() }
+  ),
+  'setup_link.revoked': data(
+    'SetupLinkRevoked',
+    'A setup link was revoked: the portal it opened refuses it from the next request.',
+    { organizationId: id() }
+  ),
+  'user.scim_provisioned': data(
+    'UserScimProvisioned',
+    "An organization's directory created an account or took over an existing one (ADR 0067).",
+    {
+      organizationId: id(),
+      /** `created`: a new account managed by the directory. `linked`: an account that existed, matched on a verified domain. */
+      method: z.enum(['created', 'linked']),
+    }
+  ),
+  'user.scim_updated': data(
+    'UserScimUpdated',
+    "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.",
+    { organizationId: id(), changed: z.array(z.enum(['name', 'email'])) }
+  ),
+  'scim_group.created': data(
+    'ScimGroupCreated',
+    "An organization's directory pushed a new group. The group's name is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_group.updated': data(
+    'ScimGroupUpdated',
+    "A group of an organization's directory changed. Which fields, never their values.",
+    {
+      organizationId: id(),
+      changed: z.array(z.enum(['displayName', 'externalId', 'members'])),
+    }
+  ),
+  'scim_group.deleted': data(
+    'ScimGroupDeleted',
+    "A group of an organization's directory was removed.",
+    { organizationId: id() }
+  ),
   // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
   // member's address and name are operator or user text, and never in an event.
   'organization.created': data(
@@ -860,6 +962,26 @@ export const EVENT_DATA_SCHEMAS = {
       approvedBy: ProposalApproverSchema,
       /** Why, in one of the server’s fixed words. */
       reason: z.enum(PROPOSAL_FAILURE_REASONS),
+    }
+  ),
+  // An export of the audit log (TULA-137). Ids, enums, instants and a count: the filters the
+  // export was asked with, never a value of the entries it holds.
+  'audit.exported': data(
+    'AuditExported',
+    'An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.',
+    {
+      /** `started` is written before the stream (no rows yet); `finished` when it ends. */
+      phase: z.enum(['started', 'finished']).optional(),
+      format: z.enum(AUDIT_EXPORT_FORMATS),
+      rowCount: z.number().int().min(0),
+      resumed: z.boolean(),
+      action: z.enum(ACTIVITY_TYPES).optional(),
+      actorId: id().optional(),
+      actorType: z.enum(AUDIT_ACTOR_TYPES).optional(),
+      targetId: id().optional(),
+      organizationId: id().optional(),
+      from: z.iso.datetime({ offset: true }).optional(),
+      to: z.iso.datetime({ offset: true }).optional(),
     }
   ),
   // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator

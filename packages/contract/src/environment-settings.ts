@@ -272,6 +272,15 @@ const Agents = z.object({
   testSignIn: z.boolean().nullable().default(null),
 })
 
+const Sso = z.object({
+  /**
+   * Whether the environment has enterprise single sign-on (ADR 0067). **Off by default**. Off,
+   * the admin routes for connections answer `sso.disabled`, no identifier is offered the `sso`
+   * first factor and a connection's callback signs nobody in; nothing stored is deleted.
+   */
+  enabled: z.boolean().default(false),
+})
+
 /** Most organizations one user may create unless the environment sets another cap. */
 export const DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER = 5
 
@@ -601,6 +610,7 @@ export const EnvironmentSettingsSchema = z
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
     organizations: Organizations.strict().prefault({}),
+    sso: Sso.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -655,6 +665,7 @@ export const EnvironmentSettingsInputSchema = z
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
     organizations: Organizations.strict().prefault({}),
+    sso: Sso.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -701,6 +712,7 @@ const Stored = z.object({
   audit: Audit.prefault({}),
   agents: Agents.prefault({}),
   organizations: Organizations.prefault({}),
+  sso: Sso.prefault({}),
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),

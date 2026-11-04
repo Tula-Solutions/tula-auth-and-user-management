@@ -4,6 +4,7 @@ import {
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  SSO_CONNECTION_CLAIM,
 } from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */
@@ -24,6 +25,14 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
  * proposal; every route that changes anything refuses it.
  */
 export const AGENT_KEY_PREFIX = 'tula_ak_'
+
+/**
+ * Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
+ * (ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+ * `/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+ * answer it like a wrong key.
+ */
+export const SCIM_TOKEN_PREFIX = 'tula_scim_'
 
 /**
  * What `amr` (RFC 8176, "authentication methods references") can hold in a Tula access token:
@@ -144,6 +153,8 @@ export const AccessTokenClaimsSchema = z
      * `readOrganizationClaims`, which treats any other combination as no organization.
      */
     [ORGANIZATION_ID_CLAIM]: z.string().optional(),
+    /** The SSO connection the session was signed in through (ADR 0067); absent for any other sign-in. */
+    [SSO_CONNECTION_CLAIM]: z.string().optional(),
     /** The key of the user's role in the active organization (`admin`, `member`, …). */
     [ORGANIZATION_ROLE_CLAIM]: z.string().optional(),
     /**
@@ -191,3 +202,11 @@ export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>
 export type Jwk = z.infer<typeof JwkSchema>
 /** JWK set. */
 export type Jwks = z.infer<typeof JwksSchema>
+
+/**
+ * Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
+ * `_` (ADR 0067, "Setup links"): the credential of the self-serve SSO setup portal, sent in
+ * `x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
+ * answers it like a wrong key, and the setup routes answer every other credential so.
+ */
+export const SETUP_LINK_TOKEN_PREFIX = 'tula_setup_'

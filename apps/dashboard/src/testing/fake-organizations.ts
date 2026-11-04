@@ -395,6 +395,7 @@ const PageQuery = z.object({
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
   size: z.coerce.number().int().min(1).max(100).default(20),
 })
+const SearchQuery = PageQuery.extend({ q: z.string().trim().max(100).optional() })
 const InvitationQuery = PageQuery.extend({ status: z.enum(INVITATION_STATUSES).default('pending') })
 
 const KEY = /^[a-z][a-z0-9_]{0,31}$/
@@ -533,12 +534,17 @@ export function organizationRoutes(
         if (!context.enabled()) {
           return off()
         }
-        const query = PageQuery.safeParse(Object.fromEntries(call.search))
+        const query = SearchQuery.safeParse(Object.fromEntries(call.search))
         if (!query.success) {
           return invalid(query.error)
         }
+        // The API's search: the start of the name or of the slug, ignoring case.
+        const needle = query.data.q?.toLowerCase() ?? ''
         const mine = state.organizations
           .filter((entry) => entry.environmentId === environmentOf(call))
+          .filter(
+            (entry) => entry.name.toLowerCase().startsWith(needle) || entry.slug.startsWith(needle)
+          )
           .reverse()
         return paged(mine.map(organizationView), call)
       },

@@ -80,6 +80,10 @@ export interface TulaLocalization {
     emailResent: string
     /** The button that asks for a texted code, and the title before one was asked for. */
     smsCode: string
+    /** The button that starts single sign-on, and the title of its screen. */
+    sso: string
+    /** The line under that title. */
+    ssoPrompt: string
     /** Before a code was asked for. */
     smsCodePrompt: string
     /** The title once a code was asked for. */
@@ -480,6 +484,14 @@ export interface TulaLocalization {
     invitationAccept: string
     invitationDecline: string
     invitationDeclined: string
+    /** The heading over the invitations addressed to the user's verified address. */
+    pendingInvitationsTitle: string
+    /** `{organization}`, `{role}`. One invitation in that list. */
+    pendingInvitationText: string
+    /** `{name}`. The accessible name of "Accept" in that list. */
+    pendingInvitationAcceptLabel: string
+    /** `{name}`. The accessible name of "Decline" in that list. */
+    pendingInvitationDeclineLabel: string
     create: string
     manage: string
     close: string
@@ -504,6 +516,7 @@ export interface TulaLocalization {
     tabMembers: string
     tabInvitations: string
     tabDomains: string
+    tabSso: string
     /** A section this version of the components does not know. */
     unsupportedTitle: string
     unsupportedMessage: string
@@ -612,6 +625,54 @@ export interface TulaLocalization {
     domainRemoved: string
     /** `{domain}`. */
     domainModeChanged: string
+    ssoTitle: string
+    ssoIntro: string
+    setupLinkTitle: string
+    setupLinkIntro: string
+    setupLinkNameLabel: string
+    setupLinkCreate: string
+    setupLinkShownOnce: string
+    setupLinkAddressLabel: string
+    setupLinkDone: string
+    setupLinkExpires: string
+    setupLinkRevokedState: string
+    setupLinkRevoke: string
+    setupLinkRevokeConfirm: string
+    setupLinkRevokeConfirmButton: string
+    setupLinkRevoked: string
+    ssoLoading: string
+    ssoEmpty: string
+    ssoNameLabel: string
+    ssoIssuerLabel: string
+    ssoClientIdLabel: string
+    ssoClientSecretLabel: string
+    ssoFieldRequired: string
+    ssoAdd: string
+    /** `{name}`. */
+    ssoAdded: string
+    /** `{name}`. */
+    ssoUpdated: string
+    /** `{name}`. */
+    ssoDeleted: string
+    ssoStatusDraft: string
+    ssoStatusActive: string
+    ssoStatusDisabled: string
+    ssoEnforcedBadge: string
+    ssoSecretSet: string
+    ssoNoSecret: string
+    /** `{name}`. */
+    ssoTurnOn: string
+    /** `{name}`. */
+    ssoTurnOff: string
+    /** `{name}`. */
+    ssoEnforce: string
+    /** `{name}`. */
+    ssoUnenforce: string
+    /** `{name}`. */
+    ssoDelete: string
+    /** `{name}`. */
+    ssoDeleteConfirm: string
+    ssoDeleteConfirmButton: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -790,6 +851,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailResendIn: 'Send a new email in {time}',
     emailResent: 'A new email is on its way.',
     smsCode: 'Text me a code',
+    sso: 'Continue with SSO',
+    ssoPrompt: 'Your organization signs you in through its identity provider.',
     smsCodePrompt: 'We will text a 6-digit code to this number, if you can sign in with it.',
     smsTitle: 'Check your phone',
     smsCodeSubtitle:
@@ -1093,6 +1156,10 @@ export const EN_LOCALIZATION: TulaLocalization = {
     invitationAccept: 'Accept',
     invitationDecline: 'Decline',
     invitationDeclined: 'Invitation declined.',
+    pendingInvitationsTitle: 'Invitations for you',
+    pendingInvitationText: '{organization}, as {role}',
+    pendingInvitationAcceptLabel: 'Accept invitation to {name}',
+    pendingInvitationDeclineLabel: 'Decline invitation to {name}',
     create: 'Create organization',
     manage: 'Manage organization',
     close: 'Close',
@@ -1113,6 +1180,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     tabMembers: 'Members',
     tabInvitations: 'Invitations',
     tabDomains: 'Domains',
+    tabSso: 'Single sign-on',
     unsupportedTitle: 'This section is not supported',
     unsupportedMessage:
       'This version of the app cannot show that part of the organization. Update the app, or go back to the general settings.',
@@ -1197,6 +1265,49 @@ export const EN_LOCALIZATION: TulaLocalization = {
     domainRemoveConfirmButton: 'Yes, remove',
     domainRemoved: '{domain} was removed.',
     domainModeChanged: '{domain} was updated.',
+    ssoTitle: 'Single sign-on',
+    ssoIntro:
+      'Let people sign in with your identity provider. A new connection is a draft and signs nobody in until you turn it on. The client secret is never shown again once saved.',
+    setupLinkTitle: 'Setup links',
+    setupLinkIntro:
+      'Send an address to the person who runs your identity provider so they can set up a connection without an account here. Setup links are OpenID Connect only: add a SAML connection yourself or in the dashboard.',
+    setupLinkNameLabel: 'Link name',
+    setupLinkCreate: 'Create setup link',
+    setupLinkShownOnce:
+      'Copy this address now. It is shown once and cannot be read again; anyone who has it can set up a connection until it ends.',
+    setupLinkAddressLabel: 'Setup link address',
+    setupLinkDone: 'Done',
+    setupLinkExpires: 'Ends on {date}',
+    setupLinkRevokedState: 'Revoked',
+    setupLinkRevoke: 'Revoke {name}',
+    setupLinkRevokeConfirm: 'Revoke {name}? The address stops working at once.',
+    setupLinkRevokeConfirmButton: 'Yes, revoke',
+    setupLinkRevoked: '{name} was revoked.',
+    ssoLoading: 'Loading connections…',
+    ssoEmpty: 'No connections yet.',
+    ssoNameLabel: 'Name',
+    ssoIssuerLabel: 'Issuer',
+    ssoClientIdLabel: 'Client ID',
+    ssoClientSecretLabel: 'Client secret',
+    ssoFieldRequired: 'Fill in this field.',
+    ssoAdd: 'Add connection',
+    ssoAdded: '{name} was added as a draft.',
+    ssoUpdated: '{name} was updated.',
+    ssoDeleted: '{name} was deleted.',
+    ssoStatusDraft: 'Draft',
+    ssoStatusActive: 'On',
+    ssoStatusDisabled: 'Off',
+    ssoEnforcedBadge: 'Required',
+    ssoSecretSet: 'A client secret is saved.',
+    ssoNoSecret: 'No client secret is saved.',
+    ssoTurnOn: 'Turn on {name}',
+    ssoTurnOff: 'Turn off {name}',
+    ssoEnforce: 'Require {name}',
+    ssoUnenforce: 'Stop requiring {name}',
+    ssoDelete: 'Delete {name}',
+    ssoDeleteConfirm:
+      'Delete {name}? A connection that someone has signed in through cannot be deleted: turn it off instead.',
+    ssoDeleteConfirmButton: 'Yes, delete',
   },
   stepUp: {
     title: 'Confirm it is you',

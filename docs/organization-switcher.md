@@ -1,6 +1,6 @@
 # OrganizationSwitcher
 
-`<OrganizationSwitcher>` is the prebuilt control that shows which organization the signed-in user is acting in and lets them change it. It lists the organizations they belong to, the personal account where the environment allows one, the organizations their email domain offers, an invitation they opened, and the way to create or manage an organization. It is in `@tula-tech/react` and, with the same props, in `@tula-tech/nextjs`.
+`<OrganizationSwitcher>` is the prebuilt control that shows which organization the signed-in user is acting in and lets them change it. It lists the organizations they belong to, the personal account where the environment allows one, the organizations their email domain offers, the invitations sent to their address, an invitation they opened, and the way to create or manage an organization. It is in `@tula-tech/react` and, with the same props, in `@tula-tech/nextjs`.
 
 Read [Organizations](organizations.md) first for what an active organization is. The other two pieces are [`<CreateOrganization>`](create-organization.md) and [`<OrganizationProfile>`](organization-profile.md).
 
@@ -65,6 +65,8 @@ function Organizations() {
 }
 ```
 
+The panel also lists, when it opens, the pending invitations sent to the signed-in user's own verified address, with "Accept" and "Decline" on each: they are answered by the invitation's id, so no token is needed. An unverified address sees none.
+
 The server decides again: only the account the invitation was sent to, with its email address verified, can answer it. Another account gets the message "This invitation was sent to another email address." An expired, revoked or used invitation says which.
 
 ## What it shows
@@ -74,7 +76,7 @@ The server decides again: only the account the invitation was sent to, with its 
 | Signed out, or organizations off in the environment | Nothing. |
 | Loading | The button says "Loading your organizations…". |
 | The list could not be read | The reason, and "Try again". |
-| Open | The user's organizations (the current one marked), "Personal account" where the environment has one, "You can join" suggestions, "Manage organization" where the role holds a permission to manage, and "Create organization" where users may create them. |
+| Open | The user's organizations (the current one marked), "Personal account" where the environment has one, "Invitations for you" (each with "Accept" and "Decline"), "You can join" suggestions, "Manage organization" where the role holds a permission to manage, and "Create organization" where users may create them. |
 | An invitation was handed over | An "Invitation" card with the organization, the role, "Accept" and "Decline". |
 | A switch failed | The error in the open panel; the current organization stays. |
 

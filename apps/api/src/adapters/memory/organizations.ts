@@ -22,6 +22,7 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  PendingInvitationRecord,
   ResolveInvitationOutcome,
   RoleChanges,
   UpdateOrganizationOutcome,
@@ -166,9 +167,17 @@ export class MemoryOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
-  async list(environmentId: string, page: PageCriteria): Promise<Page<OrganizationRecord>> {
+  async list(
+    environmentId: string,
+    page: PageCriteria & { q?: string }
+  ): Promise<Page<OrganizationRecord>> {
+    const q = page.q?.toLowerCase()
     const rows = [...this.#organizations.values()]
       .filter((record) => record.environmentId === environmentId)
+      .filter(
+        (record) =>
+          q === undefined || record.name.toLowerCase().startsWith(q) || record.slug.startsWith(q)
+      )
       // Newest first; the id breaks ties between organizations of the same instant.
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
     return paged(rows, page)
@@ -665,6 +674,43 @@ export class MemoryOrganizationStore implements OrganizationStore {
       // Newest first; the id breaks ties between invitations of the same instant.
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
     return paged(rows, page)
+  }
+
+  /** @inheritdoc */
+  async listPendingInvitationsForEmail(
+    environmentId: string,
+    emailNormalized: string,
+    now: Date,
+    page: PageCriteria
+  ): Promise<Page<PendingInvitationRecord>> {
+    const rows: PendingInvitationRecord[] = []
+    for (const one of this.#invitations.values()) {
+      if (
+        one.environmentId !== environmentId ||
+        one.emailNormalized !== emailNormalized ||
+        one.status !== 'pending' ||
+        one.expiresAt.getTime() <= now.getTime()
+      ) {
+        continue
+      }
+      const organization = this.#own(environmentId, one.organizationId)
+      if (organization) {
+        rows.push({ record: structuredClone(one), organizationName: organization.name })
+      }
+    }
+    // Newest first; the id breaks ties between invitations of the same instant.
+    rows.sort(
+      (a, b) =>
+        b.record.createdAt.getTime() - a.record.createdAt.getTime() ||
+        (a.record.id < b.record.id ? 1 : -1)
+    )
+    return paged(rows, page)
+  }
+
+  /** @inheritdoc */
+  async findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null> {
+    const found = this.#invitation(environmentId, id)
+    return found ? structuredClone(found) : null
   }
 
   /** @inheritdoc */

@@ -20,13 +20,14 @@ export interface Schemas {
       jkt: string
     }
     org_id?: string
+    sso_conn?: string
     org_role?: string
     org_perms?: string[]
     ext?: {
       [key: string]: string | number | boolean
     }
   }
-  ActivityType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
+  ActivityType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'scim_token.created' | 'scim_token.revoked' | 'setup_link.created' | 'setup_link.revoked' | 'user.scim_provisioned' | 'user.scim_updated' | 'scim_group.created' | 'scim_group.updated' | 'scim_group.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished'
   AddOrganizationMemberRequest: {
     userId: string
     role: Schemas['OrganizationRoleKey']
@@ -44,6 +45,9 @@ export interface Schemas {
     deviceBound: boolean
     userId: string
     active: boolean
+  }
+  AdminSsoTestStartRequest: {
+    redirectUrl?: string
   }
   AndroidApp: {
     id: string
@@ -108,6 +112,43 @@ export interface Schemas {
     operation: Schemas['ProposalOperation']
     target: Schemas['ProposalTarget']
   }
+  AuditExportRequest: {
+    action?: Schemas['ActivityType']
+    actorId?: string
+    targetId?: string
+    actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin' | 'directory' | 'setup_link'
+    from?: string
+    to?: string
+    organizationId?: string
+    format?: 'ndjson' | 'csv'
+    after?: string
+  }
+  AuditExportedEvent: {
+    id: string
+    type: 'audit.exported'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['AuditExportedEventData']
+    test?: true
+  }
+  AuditExportedEventData: {
+    phase?: 'started' | 'finished'
+    format: 'ndjson' | 'csv'
+    rowCount: number
+    resumed: boolean
+    action?: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'scim_token.created' | 'scim_token.revoked' | 'setup_link.created' | 'setup_link.revoked' | 'user.scim_provisioned' | 'user.scim_updated' | 'scim_group.created' | 'scim_group.updated' | 'scim_group.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished'
+    actorId?: string
+    actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin' | 'directory' | 'setup_link'
+    targetId?: string
+    organizationId?: string
+    from?: string
+    to?: string
+  }
   AuditLog: {
     id: string
     action: string
@@ -167,6 +208,27 @@ export interface Schemas {
     operation: Schemas['ProposalOperation']
     target: Schemas['ProposalTarget']
   }
+  CreateScimTokenRequest: {
+    organizationId: string
+    name: string
+  }
+  CreateSetupLinkRequest: {
+    organizationId: string
+    name?: string
+    expiresInDays?: number
+  }
+  CreateSsoConnectionRequest: {
+    organizationId: string
+    protocol?: 'oidc' | 'saml'
+    name: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    domains?: Schemas['OrganizationDomainName'][]
+  }
   CreateUserRequest: {
     email: string
     password?: string
@@ -176,7 +238,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
+    eventTypes: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'scim_token.created' | 'scim_token.revoked' | 'setup_link.created' | 'setup_link.revoked' | 'user.scim_provisioned' | 'user.scim_updated' | 'scim_group.created' | 'scim_group.updated' | 'scim_group.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -212,6 +274,35 @@ export interface Schemas {
   CreatedProject: {
     project: Schemas['Project']
     environments: Schemas['Environment'][]
+  }
+  CreatedScimToken: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell tokens apart in a list. */
+    prefix: string
+    lastUsedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+    /** The bearer token. Shown once; only its hash is stored. */
+    token: string
+    /** The base URL to give the identity provider. */
+    scimBaseUrl: string
+  }
+  CreatedSetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+    /** The setup token. Shown once; only its hash is stored. */
+    token: string
+    /** The address to send to the IT administrator. The token is in its fragment. */
+    url: string
   }
   CreatedWebhookEndpoint: {
     id: string
@@ -335,6 +426,9 @@ export interface Schemas {
       defaultRole?: Schemas['OrganizationRoleKey']
       personalAccount?: boolean
     }
+    sso?: {
+      enabled?: boolean
+    }
     notifications?: {
       passwordChanged?: boolean
       newSignIn?: boolean
@@ -409,6 +503,9 @@ export interface Schemas {
         defaultRole?: Schemas['OrganizationRoleKey']
         personalAccount?: boolean
       }
+      sso?: {
+        enabled?: boolean
+      }
       notifications?: {
         passwordChanged?: boolean
         newSignIn?: boolean
@@ -455,7 +552,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'user.managed' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.url_not_https' | 'sso.test_required' | 'sso.test_not_found' | 'sso.role_not_allowed' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -467,7 +564,7 @@ export interface Schemas {
     [key: string]: string | number | boolean
   }
   EventActor: {
-    type: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin'
+    type: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin' | 'directory' | 'setup_link'
     id: string | null
   }
   FieldError: {
@@ -518,7 +615,7 @@ export interface Schemas {
   }
   HookBeforeSignUpData: {
     email: string | null
-    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
+    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook' | 'sso'
     client: Schemas['SessionClient']
     ipAddress: string | null
   }
@@ -1402,8 +1499,122 @@ export interface Schemas {
     /** The new signing secret. Store it now: it is shown only once. */
     secret: string
   }
+  SamlConnection: {
+    idpEntityId: string
+    ssoUrl: string
+    metadataUrl: string | null
+    certificates: {
+      fingerprint: string
+      notAfter: string
+      expired: boolean
+    }[]
+    spEntityId: string
+    acsUrl: string
+    spMetadataUrl: string
+  }
+  SamlSettingsInput: {
+    metadataXml?: string
+    metadataUrl?: string
+    idpEntityId?: string
+    ssoUrl?: string
+    certificates?: string[]
+  }
+  ScimGroupCreatedEvent: {
+    id: string
+    type: 'scim_group.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'scim_group'
+      id: string
+    }
+    data: Schemas['ScimGroupCreatedEventData']
+    test?: true
+  }
+  ScimGroupCreatedEventData: {
+    organizationId: string
+  }
+  ScimGroupDeletedEvent: {
+    id: string
+    type: 'scim_group.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'scim_group'
+      id: string
+    }
+    data: Schemas['ScimGroupDeletedEventData']
+    test?: true
+  }
+  ScimGroupDeletedEventData: {
+    organizationId: string
+  }
+  ScimGroupUpdatedEvent: {
+    id: string
+    type: 'scim_group.updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'scim_group'
+      id: string
+    }
+    data: Schemas['ScimGroupUpdatedEventData']
+    test?: true
+  }
+  ScimGroupUpdatedEventData: {
+    organizationId: string
+    changed: ('displayName' | 'externalId' | 'members')[]
+  }
+  ScimToken: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell tokens apart in a list. */
+    prefix: string
+    lastUsedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+  }
+  ScimTokenCreatedEvent: {
+    id: string
+    type: 'scim_token.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'scim_token'
+      id: string
+    }
+    data: Schemas['ScimTokenCreatedEventData']
+    test?: true
+  }
+  ScimTokenCreatedEventData: {
+    organizationId: string
+  }
+  ScimTokenList: {
+    tokens: Schemas['ScimToken'][]
+  }
+  ScimTokenRevokedEvent: {
+    id: string
+    type: 'scim_token.revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'scim_token'
+      id: string
+    }
+    data: Schemas['ScimTokenRevokedEventData']
+    test?: true
+  }
+  ScimTokenRevokedEventData: {
+    organizationId: string
+  }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
+    eventType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'scim_token.created' | 'scim_token.revoked' | 'setup_link.created' | 'setup_link.revoked' | 'user.scim_provisioned' | 'user.scim_updated' | 'scim_group.created' | 'scim_group.updated' | 'scim_group.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished'
   }
   Session: {
     id: string
@@ -1553,6 +1764,52 @@ export interface Schemas {
     revision: number
     drifted: boolean
   }
+  SetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+  }
+  SetupLinkCreatedEvent: {
+    id: string
+    type: 'setup_link.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'setup_link'
+      id: string
+    }
+    data: Schemas['SetupLinkCreatedEventData']
+    test?: true
+  }
+  SetupLinkCreatedEventData: {
+    organizationId: string
+  }
+  SetupLinkList: {
+    links: Schemas['SetupLink'][]
+  }
+  SetupLinkRevokedEvent: {
+    id: string
+    type: 'setup_link.revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'setup_link'
+      id: string
+    }
+    data: Schemas['SetupLinkRevokedEventData']
+    test?: true
+  }
+  SetupLinkRevokedEventData: {
+    organizationId: string
+  }
   SignInTestFinishedEvent: {
     id: string
     type: 'sign_in_test.finished'
@@ -1651,12 +1908,123 @@ export interface Schemas {
     prefixes: Schemas['SmsPrefixUsage'][]
     truncated: boolean
   }
+  SsoAttributeMapping: {
+    idp?: 'okta' | 'entra' | 'google_workspace' | 'jumpcloud' | 'onelogin' | 'ping' | 'generic'
+    email?: string
+    firstName?: string
+    lastName?: string
+    groups?: string
+  }
+  SsoConnection: {
+    id: string
+    organizationId: string
+    protocol: 'oidc' | 'saml'
+    name: string
+    status: 'draft' | 'active' | 'disabled'
+    issuer: string
+    clientId: string
+    clientSecretSet: boolean
+    saml: Schemas['SamlConnection'] | null
+    redirectUri: string | null
+    attributeMapping: Schemas['SsoAttributeMapping'] | null
+    defaultRole: string
+    enforced: boolean
+    breakGlassRole: string | null
+    trustIdpMfa: boolean
+    domains: string[]
+    tested: boolean
+    createdAt: string
+    updatedAt: string
+  }
+  SsoConnectionCreatedEvent: {
+    id: string
+    type: 'sso_connection.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'sso_connection'
+      id: string
+    }
+    data: Schemas['SsoConnectionCreatedEventData']
+    test?: true
+  }
+  SsoConnectionCreatedEventData: {
+    protocol: 'oidc' | 'saml'
+    status: 'draft' | 'active' | 'disabled'
+    domains: number
+  }
+  SsoConnectionDeletedEvent: {
+    id: string
+    type: 'sso_connection.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'sso_connection'
+      id: string
+    }
+    data: Schemas['SsoConnectionDeletedEventData']
+    test?: true
+  }
+  SsoConnectionDeletedEventData: {
+    protocol: 'oidc' | 'saml'
+  }
+  SsoConnectionList: {
+    connections: Schemas['SsoConnection'][]
+  }
+  SsoConnectionUpdatedEvent: {
+    id: string
+    type: 'sso_connection.updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'sso_connection'
+      id: string
+    }
+    data: Schemas['SsoConnectionUpdatedEventData']
+    test?: true
+  }
+  SsoConnectionUpdatedEventData: {
+    protocol: 'oidc' | 'saml'
+    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa' | 'domains' | 'status' | 'attributeMapping' | 'groupRoles' | 'test')[]
+    status: 'draft' | 'active' | 'disabled'
+    weakened?: boolean
+  }
+  SsoGroupRoles: {
+    mappings: {
+      group: string
+      role: Schemas['OrganizationRoleKey']
+    }[]
+  }
+  SsoTestResult: {
+    testId: string
+    status: 'pending' | 'passed' | 'failed'
+    reason: 'wrong_audience' | 'wrong_issuer' | 'wrong_recipient' | 'unsigned_assertion' | 'signature_invalid' | 'signature_algorithm' | 'certificate_not_trusted' | 'certificate_expired' | 'assertion_expired' | 'clock_skew' | 'response_not_to_this_request' | 'replayed' | 'idp_refused' | 'encrypted_assertion' | 'malformed_response' | 'discovery_failed' | 'token_exchange_failed' | 'no_id_token' | 'id_token_invalid' | 'email_missing' | 'email_outside_domains' | null
+    message: string | null
+    attributes: {
+      name: string
+      values: string[]
+    }[]
+    groups: string[]
+    mapped: {
+      email: string | null
+      givenName: string | null
+      familyName: string | null
+      emailOnVerifiedDomain: boolean
+    } | null
+  }
+  SsoTestStart: {
+    testId: string
+    authorizationUrl: string
+  }
   StartOrganizationDomainRequest: {
     domain: Schemas['OrganizationDomainName']
     email: string
     mode: Schemas['OrganizationDomainMode']
   }
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserImportedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserEmailAddedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['OrganizationCreatedEvent'] | Schemas['OrganizationUpdatedEvent'] | Schemas['OrganizationDeletedEvent'] | Schemas['OrganizationMembershipAddedEvent'] | Schemas['OrganizationMembershipRoleChangedEvent'] | Schemas['OrganizationMembershipRemovedEvent'] | Schemas['OrganizationRoleCreatedEvent'] | Schemas['OrganizationRoleUpdatedEvent'] | Schemas['OrganizationRoleDeletedEvent'] | Schemas['OrganizationDomainClaimedEvent'] | Schemas['OrganizationDomainVerifiedEvent'] | Schemas['OrganizationDomainUpdatedEvent'] | Schemas['OrganizationDomainRemovedEvent'] | Schemas['OrganizationInvitationCreatedEvent'] | Schemas['OrganizationInvitationAcceptedEvent'] | Schemas['OrganizationInvitationDeclinedEvent'] | Schemas['OrganizationInvitationRevokedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent'] | Schemas['SignInTestStartedEvent'] | Schemas['SignInTestFinishedEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserImportedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserSsoLinkedEvent'] | Schemas['UserEmailAddedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['SsoConnectionCreatedEvent'] | Schemas['SsoConnectionUpdatedEvent'] | Schemas['SsoConnectionDeletedEvent'] | Schemas['ScimTokenCreatedEvent'] | Schemas['ScimTokenRevokedEvent'] | Schemas['SetupLinkCreatedEvent'] | Schemas['SetupLinkRevokedEvent'] | Schemas['UserScimProvisionedEvent'] | Schemas['UserScimUpdatedEvent'] | Schemas['ScimGroupCreatedEvent'] | Schemas['ScimGroupUpdatedEvent'] | Schemas['ScimGroupDeletedEvent'] | Schemas['OrganizationCreatedEvent'] | Schemas['OrganizationUpdatedEvent'] | Schemas['OrganizationDeletedEvent'] | Schemas['OrganizationMembershipAddedEvent'] | Schemas['OrganizationMembershipRoleChangedEvent'] | Schemas['OrganizationMembershipRemovedEvent'] | Schemas['OrganizationRoleCreatedEvent'] | Schemas['OrganizationRoleUpdatedEvent'] | Schemas['OrganizationRoleDeletedEvent'] | Schemas['OrganizationDomainClaimedEvent'] | Schemas['OrganizationDomainVerifiedEvent'] | Schemas['OrganizationDomainUpdatedEvent'] | Schemas['OrganizationDomainRemovedEvent'] | Schemas['OrganizationInvitationCreatedEvent'] | Schemas['OrganizationInvitationAcceptedEvent'] | Schemas['OrganizationInvitationDeclinedEvent'] | Schemas['OrganizationInvitationRevokedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent'] | Schemas['AuditExportedEvent'] | Schemas['SignInTestStartedEvent'] | Schemas['SignInTestFinishedEvent']
   UpdateHookRequest: {
     url?: string
     enabled?: boolean
@@ -1685,9 +2053,23 @@ export interface Schemas {
   UpdateProjectRequest: {
     name: string
   }
+  UpdateSsoConnectionRequest: {
+    name?: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    enforced?: boolean
+    breakGlassRole?: Schemas['OrganizationRoleKey'] | null
+    trustIdpMfa?: boolean
+    domains?: Schemas['OrganizationDomainName'][]
+    status?: 'draft' | 'active' | 'disabled'
+  }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
+    eventTypes?: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'scim_token.created' | 'scim_token.revoked' | 'setup_link.created' | 'setup_link.revoked' | 'user.scim_provisioned' | 'user.scim_updated' | 'scim_group.created' | 'scim_group.updated' | 'scim_group.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   User: {
@@ -1776,7 +2158,7 @@ export interface Schemas {
     test?: true
   }
   UserCreatedEventData: {
-    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
+    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook' | 'sso' | 'scim'
     emailVerified: boolean
     passwordless?: boolean
     hookBypassed?: boolean
@@ -2038,6 +2420,40 @@ export interface Schemas {
     test?: true
   }
   UserPhoneNumberRemovedEventData: Record<string, never>
+  UserScimProvisionedEvent: {
+    id: string
+    type: 'user.scim_provisioned'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserScimProvisionedEventData']
+    test?: true
+  }
+  UserScimProvisionedEventData: {
+    organizationId: string
+    method: 'created' | 'linked'
+  }
+  UserScimUpdatedEvent: {
+    id: string
+    type: 'user.scim_updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserScimUpdatedEventData']
+    test?: true
+  }
+  UserScimUpdatedEventData: {
+    organizationId: string
+    changed: ('name' | 'email')[]
+  }
   UserSmsFactorEnabledEvent: {
     id: string
     type: 'user.sms_factor_enabled'
@@ -2069,6 +2485,23 @@ export interface Schemas {
     method: 'self' | 'admin_reset' | 'phone_number_removed' | 'phone_number_changed'
   }
   UserSort: 'createdAt' | '-createdAt' | 'email' | '-email' | 'lastSignInAt' | '-lastSignInAt'
+  UserSsoLinkedEvent: {
+    id: string
+    type: 'user.sso_linked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserSsoLinkedEventData']
+    test?: true
+  }
+  UserSsoLinkedEventData: {
+    connectionId: string
+    method: 'email' | 'provisioned'
+  }
   UserUnbannedEvent: {
     id: string
     type: 'user.unbanned'
@@ -2297,6 +2730,12 @@ export interface Operations {
   createOrganizationRole: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateOrganizationRoleRequest']; response: Schemas['OrganizationRole'] }
   /** Propose a change (`POST /v1/agent/proposals`). */
   createProposal: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateProposalRequest']; response: Schemas['Proposal'] }
+  /** Create a SCIM token (`POST /v1/admin/scim-tokens`). */
+  createScimToken: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateScimTokenRequest']; response: Schemas['CreatedScimToken'] }
+  /** Create an SSO setup link (`POST /v1/admin/setup-links`). */
+  createSetupLink: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateSetupLinkRequest']; response: Schemas['CreatedSetupLink'] }
+  /** Create an SSO connection (`POST /v1/admin/sso-connections`). */
+  createSsoConnection: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateSsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Create a user (`POST /v1/admin/users`). */
   createUser: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateUserRequest']; response: Schemas['User'] }
   /** Register a webhook endpoint (`POST /v1/admin/webhook-endpoints`). */
@@ -2311,10 +2750,14 @@ export interface Operations {
   deleteOrganization: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Delete a custom role (`DELETE /v1/admin/organization-roles/{key}`). */
   deleteOrganizationRole: { params: { key: string }; query: Record<string, never>; headers: { 'If-Match'?: string }; body: undefined; response: undefined }
+  /** Delete an SSO connection (`DELETE /v1/admin/sso-connections/{id}`). */
+  deleteSsoConnection: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Delete a user (`DELETE /v1/admin/users/{userId}`). */
   deleteUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a webhook endpoint (`DELETE /v1/admin/webhook-endpoints/{id}`). */
   deleteWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
+  /** Export the audit log (`POST /v1/admin/audit-logs/export`). */
+  exportAuditLogs: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['AuditExportRequest']; response: undefined }
   /** Read the environment’s settings (`GET /v1/admin/settings`). */
   getEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentSettingsState'] }
   /** Get a hook (`GET /v1/admin/hooks/{id}`). */
@@ -2333,6 +2776,12 @@ export interface Operations {
   getSession: { params: { sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['AdminSession'] }
   /** Codes texted and used, by destination prefix (`GET /v1/admin/sms/usage`). */
   getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
+  /** Get an SSO connection (`GET /v1/admin/sso-connections/{id}`). */
+  getSsoConnection: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnection'] }
+  /** Read the result of a test sign-in (`GET /v1/admin/sso-connections/{id}/tests/{testId}`). */
+  getSsoConnectionTest: { params: { id: string; testId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoTestResult'] }
+  /** Get an organization's IdP group to role mapping (`GET /v1/admin/sso-connections/{id}/group-roles`). */
+  getSsoGroupRoles: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoGroupRoles'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
@@ -2348,7 +2797,7 @@ export interface Operations {
   /** List API keys (`GET /v1/admin/api-keys`). */
   listApiKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKeyList'] }
   /** List the audit log (`GET /v1/admin/audit-logs`). */
-  listAuditLogs: { params: Record<string, never>; query: { action?: Schemas['ActivityType']; actorId?: string; targetId?: string; actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin'; from?: string; to?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['AuditLogList'] }
+  listAuditLogs: { params: Record<string, never>; query: { action?: Schemas['ActivityType']; actorId?: string; targetId?: string; actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin' | 'directory' | 'setup_link'; from?: string; to?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['AuditLogList'] }
   /** List environments (`GET /v1/admin/environments`). */
   listEnvironments: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentList'] }
   /** List hooks (`GET /v1/admin/hooks`). */
@@ -2366,11 +2815,17 @@ export interface Operations {
   /** List organization roles (`GET /v1/admin/organization-roles`). */
   listOrganizationRoles: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleList'] }
   /** List organizations (`GET /v1/admin/organizations`). */
-  listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
+  listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number; q?: string }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
   /** List proposals (`GET /v1/admin/proposals`). */
   listProposals: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ProposalList'] }
+  /** List an organization’s SCIM tokens (`GET /v1/admin/scim-tokens`). */
+  listScimTokens: { params: Record<string, never>; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: Schemas['ScimTokenList'] }
+  /** List an organization’s SSO setup links (`GET /v1/admin/setup-links`). */
+  listSetupLinks: { params: Record<string, never>; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: Schemas['SetupLinkList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
+  /** List an organization’s SSO connections (`GET /v1/admin/sso-connections`). */
+  listSsoConnections: { params: Record<string, never>; query: { organizationId?: string }; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnectionList'] }
   /** List the organizations a user belongs to (`GET /v1/admin/users/{userId}/organizations`). */
   listUserOrganizations: { params: { userId: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['UserMembershipList'] }
   /** List users (`GET /v1/admin/users`). */
@@ -2385,12 +2840,16 @@ export interface Operations {
   previewMessage: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['MessagePreviewRequest']; response: Schemas['MessagePreview'] }
   /** Send a delivery again (`POST /v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver`). */
   redeliverWebhook: { params: { id: string; deliveryId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookSendResult'] }
+  /** Read a SAML connection’s metadata address again (`POST /v1/admin/sso-connections/{id}/refresh-metadata`). */
+  refreshSsoConnectionMetadata: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnection'] }
   /** Remove a domain (`DELETE /v1/admin/organizations/{id}/domains/{domainId}`). */
   removeOrganizationDomain: { params: { id: string; domainId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a member from an organization (`DELETE /v1/admin/organizations/{id}/memberships/{userId}`). */
   removeOrganizationMember: { params: { id: string; userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Replace the environment’s settings (`PUT /v1/admin/settings`). */
   replaceEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: { 'If-Match': string; 'x-tula-managed-by'?: string; 'x-tula-config-hash'?: string }; body: Schemas['EnvironmentSettingsInput']; response: Schemas['EnvironmentSettingsState'] }
+  /** Replace an organization's IdP group to role mapping (`PUT /v1/admin/sso-connections/{id}/group-roles`). */
+  replaceSsoGroupRoles: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SsoGroupRoles']; response: Schemas['SsoGroupRoles'] }
   /** Reset a user’s two-step verification (`DELETE /v1/admin/users/{userId}/factors`). */
   resetUserFactors: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Revoke an API key (`DELETE /v1/admin/api-keys/{id}`). */
@@ -2399,6 +2858,10 @@ export interface Operations {
   revokeOrganizationInvitation: { params: { id: string; invitationId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** End a secret rotation’s overlap now (`DELETE /v1/admin/webhook-endpoints/{id}/secret/previous`). */
   revokePreviousWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
+  /** Revoke a SCIM token (`DELETE /v1/admin/scim-tokens/{id}`). */
+  revokeScimToken: { params: { id: string }; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: undefined }
+  /** Revoke an SSO setup link (`DELETE /v1/admin/setup-links/{id}`). */
+  revokeSetupLink: { params: { id: string }; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: undefined }
   /** End one of a user’s sessions (`DELETE /v1/admin/users/{userId}/sessions/{sessionId}`). */
   revokeUserSession: { params: { userId: string; sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Sign a user out everywhere (`DELETE /v1/admin/users/{userId}/sessions`). */
@@ -2419,6 +2882,8 @@ export interface Operations {
   setUserPassword: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SetPasswordRequest']; response: undefined }
   /** Claim a domain for an organization (`POST /v1/admin/organizations/{id}/domains`). */
   startOrganizationDomain: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['StartOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
+  /** Start a test sign-in of an SSO connection (`POST /v1/admin/sso-connections/{id}/tests`). */
+  startSsoConnectionTest: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['AdminSsoTestStartRequest']; response: Schemas['SsoTestStart'] }
   /** Unban a user (`POST /v1/admin/users/{userId}/unban`). */
   unbanUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Change a hook (`PATCH /v1/admin/hooks/{id}`). */
@@ -2435,6 +2900,8 @@ export interface Operations {
   updateOrganizationMember: { params: { id: string; userId: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateOrganizationMemberRequest']; response: Schemas['OrganizationMembership'] }
   /** Change a custom role (`PATCH /v1/admin/organization-roles/{key}`). */
   updateOrganizationRole: { params: { key: string }; query: Record<string, never>; headers: { 'If-Match': string }; body: Schemas['UpdateOrganizationRoleRequest']; response: Schemas['OrganizationRole'] }
+  /** Change an SSO connection (`PATCH /v1/admin/sso-connections/{id}`). */
+  updateSsoConnection: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateSsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Change a webhook endpoint (`PATCH /v1/admin/webhook-endpoints/{id}`). */
   updateWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateWebhookEndpointRequest']; response: Schemas['WebhookEndpoint'] }
   /** Verify a claimed domain (`POST /v1/admin/organizations/{id}/domains/{domainId}/verify`). */
@@ -2462,6 +2929,9 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   createOrganization: { method: 'POST', path: '/v1/admin/organizations' },
   createOrganizationRole: { method: 'POST', path: '/v1/admin/organization-roles' },
   createProposal: { method: 'POST', path: '/v1/agent/proposals' },
+  createScimToken: { method: 'POST', path: '/v1/admin/scim-tokens' },
+  createSetupLink: { method: 'POST', path: '/v1/admin/setup-links' },
+  createSsoConnection: { method: 'POST', path: '/v1/admin/sso-connections' },
   createUser: { method: 'POST', path: '/v1/admin/users' },
   createWebhookEndpoint: { method: 'POST', path: '/v1/admin/webhook-endpoints' },
   deleteHook: { method: 'DELETE', path: '/v1/admin/hooks/{id}' },
@@ -2469,8 +2939,10 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   deleteOAuthProvider: { method: 'DELETE', path: '/v1/admin/oauth-providers/{provider}' },
   deleteOrganization: { method: 'DELETE', path: '/v1/admin/organizations/{id}' },
   deleteOrganizationRole: { method: 'DELETE', path: '/v1/admin/organization-roles/{key}' },
+  deleteSsoConnection: { method: 'DELETE', path: '/v1/admin/sso-connections/{id}' },
   deleteUser: { method: 'DELETE', path: '/v1/admin/users/{userId}' },
   deleteWebhookEndpoint: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}' },
+  exportAuditLogs: { method: 'POST', path: '/v1/admin/audit-logs/export' },
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getHook: { method: 'GET', path: '/v1/admin/hooks/{id}' },
   getNativeApp: { method: 'GET', path: '/v1/admin/native-apps/{id}' },
@@ -2480,6 +2952,9 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getProposal: { method: 'GET', path: '/v1/admin/proposals/{id}' },
   getSession: { method: 'GET', path: '/v1/admin/sessions/{sessionId}' },
   getSmsUsage: { method: 'GET', path: '/v1/admin/sms/usage' },
+  getSsoConnection: { method: 'GET', path: '/v1/admin/sso-connections/{id}' },
+  getSsoConnectionTest: { method: 'GET', path: '/v1/admin/sso-connections/{id}/tests/{testId}' },
+  getSsoGroupRoles: { method: 'GET', path: '/v1/admin/sso-connections/{id}/group-roles' },
   getUser: { method: 'GET', path: '/v1/admin/users/{userId}' },
   getUserAuthentication: { method: 'GET', path: '/v1/admin/users/{userId}/authentication' },
   getWebhookDelivery: { method: 'GET', path: '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}' },
@@ -2498,7 +2973,10 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOrganizationRoles: { method: 'GET', path: '/v1/admin/organization-roles' },
   listOrganizations: { method: 'GET', path: '/v1/admin/organizations' },
   listProposals: { method: 'GET', path: '/v1/admin/proposals' },
+  listScimTokens: { method: 'GET', path: '/v1/admin/scim-tokens' },
+  listSetupLinks: { method: 'GET', path: '/v1/admin/setup-links' },
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
+  listSsoConnections: { method: 'GET', path: '/v1/admin/sso-connections' },
   listUserOrganizations: { method: 'GET', path: '/v1/admin/users/{userId}/organizations' },
   listUsers: { method: 'GET', path: '/v1/admin/users' },
   listUserSessions: { method: 'GET', path: '/v1/admin/users/{userId}/sessions' },
@@ -2506,13 +2984,17 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listWebhookEndpoints: { method: 'GET', path: '/v1/admin/webhook-endpoints' },
   previewMessage: { method: 'POST', path: '/v1/admin/message-preview' },
   redeliverWebhook: { method: 'POST', path: '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver' },
+  refreshSsoConnectionMetadata: { method: 'POST', path: '/v1/admin/sso-connections/{id}/refresh-metadata' },
   removeOrganizationDomain: { method: 'DELETE', path: '/v1/admin/organizations/{id}/domains/{domainId}' },
   removeOrganizationMember: { method: 'DELETE', path: '/v1/admin/organizations/{id}/memberships/{userId}' },
   replaceEnvironmentSettings: { method: 'PUT', path: '/v1/admin/settings' },
+  replaceSsoGroupRoles: { method: 'PUT', path: '/v1/admin/sso-connections/{id}/group-roles' },
   resetUserFactors: { method: 'DELETE', path: '/v1/admin/users/{userId}/factors' },
   revokeApiKey: { method: 'DELETE', path: '/v1/admin/api-keys/{id}' },
   revokeOrganizationInvitation: { method: 'DELETE', path: '/v1/admin/organizations/{id}/invitations/{invitationId}' },
   revokePreviousWebhookSecret: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}/secret/previous' },
+  revokeScimToken: { method: 'DELETE', path: '/v1/admin/scim-tokens/{id}' },
+  revokeSetupLink: { method: 'DELETE', path: '/v1/admin/setup-links/{id}' },
   revokeUserSession: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions/{sessionId}' },
   revokeUserSessions: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions' },
   rotateSigningKeys: { method: 'POST', path: '/v1/admin/signing-keys/rotate' },
@@ -2523,6 +3005,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   setUserEmail: { method: 'PUT', path: '/v1/admin/users/{userId}/email' },
   setUserPassword: { method: 'PUT', path: '/v1/admin/users/{userId}/password' },
   startOrganizationDomain: { method: 'POST', path: '/v1/admin/organizations/{id}/domains' },
+  startSsoConnectionTest: { method: 'POST', path: '/v1/admin/sso-connections/{id}/tests' },
   unbanUser: { method: 'POST', path: '/v1/admin/users/{userId}/unban' },
   updateHook: { method: 'PATCH', path: '/v1/admin/hooks/{id}' },
   updateNativeApp: { method: 'PATCH', path: '/v1/admin/native-apps/{id}' },
@@ -2531,6 +3014,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   updateOrganizationDomain: { method: 'PATCH', path: '/v1/admin/organizations/{id}/domains/{domainId}' },
   updateOrganizationMember: { method: 'PATCH', path: '/v1/admin/organizations/{id}/memberships/{userId}' },
   updateOrganizationRole: { method: 'PATCH', path: '/v1/admin/organization-roles/{key}' },
+  updateSsoConnection: { method: 'PATCH', path: '/v1/admin/sso-connections/{id}' },
   updateWebhookEndpoint: { method: 'PATCH', path: '/v1/admin/webhook-endpoints/{id}' },
   verifyOrganizationDomain: { method: 'POST', path: '/v1/admin/organizations/{id}/domains/{domainId}/verify' },
   verifySession: { method: 'POST', path: '/v1/admin/sessions/verify' },

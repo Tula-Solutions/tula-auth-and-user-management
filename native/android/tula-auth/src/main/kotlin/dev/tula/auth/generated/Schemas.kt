@@ -113,6 +113,34 @@ data class ClientConfigSignUp(
 )
 
 @Serializable
+data class CreateMySetupLinkRequest(
+    val name: String? = null,
+    val expiresInDays: Long? = null,
+)
+
+@Serializable
+data class CreateMySsoConnectionRequest(
+    val protocol: CreateMySsoConnectionRequestProtocol? = null,
+    val name: String,
+    /** Format: `uri`. */
+    val issuer: String? = null,
+    val clientId: String? = null,
+    val clientSecret: String? = null,
+    val saml: SamlSettingsInput? = null,
+    val attributeMapping: SsoAttributeMapping? = null,
+    val defaultRole: OrganizationRoleKey? = null,
+    val domains: List<OrganizationDomainName>? = null,
+)
+
+@Serializable
+enum class CreateMySsoConnectionRequestProtocol(val rawValue: String) {
+    @SerialName("oidc")
+    Oidc("oidc"),
+    @SerialName("saml")
+    Saml("saml"),
+}
+
+@Serializable
 data class CreateOrganizationInvitationRequest(
     val email: String,
     val role: OrganizationRoleKey,
@@ -123,6 +151,27 @@ data class CreateOrganizationInvitationRequest(
 data class CreateOrganizationRequest(
     val name: String,
     val slug: OrganizationSlug,
+)
+
+@Serializable
+data class CreatedSetupLink(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val name: String,
+    /** The start of the token, to tell links apart in a list. */
+    val prefix: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+    val revokedAt: String?,
+    val lastUsedAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** The setup token. Shown once; only its hash is stored. */
+    val token: String,
+    /** The address to send to the IT administrator. The token is in its fragment. */
+    val url: String,
 )
 
 @Serializable
@@ -454,6 +503,10 @@ sealed class FirstFactorStrategy {
         override val rawValue: String = "oauth_facebook"
     }
 
+    object Sso : FirstFactorStrategy() {
+        override val rawValue: String = "sso"
+    }
+
     /** A value this version does not know, as the API wrote it. Made by [of] only. */
     class Unknown internal constructor(override val rawValue: String) : FirstFactorStrategy() {
         override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
@@ -478,6 +531,7 @@ sealed class FirstFactorStrategy {
                 OauthLinkedin,
                 OauthX,
                 OauthFacebook,
+                Sso,
             )
         }
 
@@ -496,6 +550,7 @@ sealed class FirstFactorStrategy {
             "oauth_linkedin" -> OauthLinkedin
             "oauth_x" -> OauthX
             "oauth_facebook" -> OauthFacebook
+            "sso" -> Sso
             else -> Unknown(rawValue)
         }
     }
@@ -869,6 +924,21 @@ object MfaPolicySerializer : KSerializer<MfaPolicy> {
         encoder.encodeString(value.rawValue)
     }
 }
+
+@Serializable
+data class MyOrganizationInvitation(
+    val id: String,
+    val organizationName: String,
+    val role: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+)
+
+@Serializable
+data class MyOrganizationInvitationList(
+    val meta: PaginationMeta,
+    val data: List<MyOrganizationInvitation>,
+)
 
 @Serializable(with = NewPasswordReasonSerializer::class)
 sealed class NewPasswordReason {
@@ -1663,6 +1733,36 @@ data class RevokedSessions(
     val revoked: Long,
 )
 
+@Serializable
+data class SamlConnection(
+    val idpEntityId: String,
+    val ssoUrl: String,
+    val metadataUrl: String?,
+    val certificates: List<SamlConnectionCertificatesItem>,
+    val spEntityId: String,
+    val acsUrl: String,
+    val spMetadataUrl: String,
+)
+
+@Serializable
+data class SamlConnectionCertificatesItem(
+    val fingerprint: String,
+    /** Format: `date-time`. */
+    val notAfter: String,
+    val expired: Boolean,
+)
+
+@Serializable
+data class SamlSettingsInput(
+    val metadataXml: String? = null,
+    /** Format: `uri`. */
+    val metadataUrl: String? = null,
+    val idpEntityId: String? = null,
+    /** Format: `uri`. */
+    val ssoUrl: String? = null,
+    val certificates: List<String>? = null,
+)
+
 @Serializable(with = SecondFactorMethodSerializer::class)
 sealed class SecondFactorMethod {
     /** The value as the API writes it. */
@@ -1920,6 +2020,28 @@ data class SetActiveOrganizationRequest(
 )
 
 @Serializable
+data class SetupLink(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val name: String,
+    /** The start of the token, to tell links apart in a list. */
+    val prefix: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+    val revokedAt: String?,
+    val lastUsedAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class SetupLinkList(
+    val links: List<SetupLink>,
+)
+
+@Serializable
 data class SignInStartRequest(
     val identifier: String,
 )
@@ -1997,6 +2119,517 @@ data class SmsFactorCode(
 @Serializable
 data class SmsFactorConfirmRequest(
     val code: String,
+)
+
+@Serializable
+data class SsoAttributeMapping(
+    val idp: SsoAttributeMappingIdp? = null,
+    val email: String? = null,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val groups: String? = null,
+)
+
+@Serializable(with = SsoAttributeMappingIdpSerializer::class)
+sealed class SsoAttributeMappingIdp {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Okta : SsoAttributeMappingIdp() {
+        override val rawValue: String = "okta"
+    }
+
+    object Entra : SsoAttributeMappingIdp() {
+        override val rawValue: String = "entra"
+    }
+
+    object GoogleWorkspace : SsoAttributeMappingIdp() {
+        override val rawValue: String = "google_workspace"
+    }
+
+    object Jumpcloud : SsoAttributeMappingIdp() {
+        override val rawValue: String = "jumpcloud"
+    }
+
+    object Onelogin : SsoAttributeMappingIdp() {
+        override val rawValue: String = "onelogin"
+    }
+
+    object Ping : SsoAttributeMappingIdp() {
+        override val rawValue: String = "ping"
+    }
+
+    object Generic : SsoAttributeMappingIdp() {
+        override val rawValue: String = "generic"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoAttributeMappingIdp() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoAttributeMappingIdp> by lazy {
+            listOf(
+                Okta,
+                Entra,
+                GoogleWorkspace,
+                Jumpcloud,
+                Onelogin,
+                Ping,
+                Generic,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoAttributeMappingIdp = when (rawValue) {
+            "okta" -> Okta
+            "entra" -> Entra
+            "google_workspace" -> GoogleWorkspace
+            "jumpcloud" -> Jumpcloud
+            "onelogin" -> Onelogin
+            "ping" -> Ping
+            "generic" -> Generic
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoAttributeMappingIdp] as its string, whatever the string is. */
+object SsoAttributeMappingIdpSerializer : KSerializer<SsoAttributeMappingIdp> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoAttributeMappingIdp", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoAttributeMappingIdp = SsoAttributeMappingIdp.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoAttributeMappingIdp) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoConnection(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val protocol: SsoConnectionProtocol,
+    val name: String,
+    val status: SsoConnectionStatus,
+    val issuer: String,
+    val clientId: String,
+    val clientSecretSet: Boolean,
+    val saml: SamlConnection?,
+    val redirectUri: String?,
+    val attributeMapping: SsoAttributeMapping?,
+    val defaultRole: String,
+    val enforced: Boolean,
+    val breakGlassRole: String?,
+    val trustIdpMfa: Boolean,
+    val domains: List<String>,
+    val tested: Boolean,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** Format: `date-time`. */
+    val updatedAt: String,
+)
+
+@Serializable
+data class SsoConnectionList(
+    val connections: List<SsoConnection>,
+)
+
+@Serializable(with = SsoConnectionProtocolSerializer::class)
+sealed class SsoConnectionProtocol {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Oidc : SsoConnectionProtocol() {
+        override val rawValue: String = "oidc"
+    }
+
+    object Saml : SsoConnectionProtocol() {
+        override val rawValue: String = "saml"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoConnectionProtocol() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoConnectionProtocol> by lazy {
+            listOf(
+                Oidc,
+                Saml,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoConnectionProtocol = when (rawValue) {
+            "oidc" -> Oidc
+            "saml" -> Saml
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoConnectionProtocol] as its string, whatever the string is. */
+object SsoConnectionProtocolSerializer : KSerializer<SsoConnectionProtocol> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoConnectionProtocol", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoConnectionProtocol = SsoConnectionProtocol.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoConnectionProtocol) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable(with = SsoConnectionStatusSerializer::class)
+sealed class SsoConnectionStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Draft : SsoConnectionStatus() {
+        override val rawValue: String = "draft"
+    }
+
+    object Active : SsoConnectionStatus() {
+        override val rawValue: String = "active"
+    }
+
+    object Disabled : SsoConnectionStatus() {
+        override val rawValue: String = "disabled"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoConnectionStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoConnectionStatus> by lazy {
+            listOf(
+                Draft,
+                Active,
+                Disabled,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoConnectionStatus = when (rawValue) {
+            "draft" -> Draft
+            "active" -> Active
+            "disabled" -> Disabled
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoConnectionStatus] as its string, whatever the string is. */
+object SsoConnectionStatusSerializer : KSerializer<SsoConnectionStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoConnectionStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoConnectionStatus = SsoConnectionStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoConnectionStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoGroupRoles(
+    val mappings: List<SsoGroupRolesMappingsItem>,
+)
+
+@Serializable
+data class SsoGroupRolesMappingsItem(
+    val group: String,
+    val role: OrganizationRoleKey,
+)
+
+@Serializable
+data class SsoStartRequest(
+    val redirectUrl: String,
+)
+
+@Serializable
+data class SsoTestResult(
+    /** Format: `uuid`. */
+    val testId: String,
+    val status: SsoTestResultStatus,
+    val reason: SsoTestResultReason?,
+    val message: String?,
+    val attributes: List<SsoTestResultAttributesItem>,
+    val groups: List<String>,
+    val mapped: SsoTestResultMapped?,
+)
+
+@Serializable
+data class SsoTestResultAttributesItem(
+    val name: String,
+    val values: List<String>,
+)
+
+@Serializable
+data class SsoTestResultMapped(
+    val email: String?,
+    val givenName: String?,
+    val familyName: String?,
+    val emailOnVerifiedDomain: Boolean,
+)
+
+@Serializable(with = SsoTestResultReasonSerializer::class)
+sealed class SsoTestResultReason {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object WrongAudience : SsoTestResultReason() {
+        override val rawValue: String = "wrong_audience"
+    }
+
+    object WrongIssuer : SsoTestResultReason() {
+        override val rawValue: String = "wrong_issuer"
+    }
+
+    object WrongRecipient : SsoTestResultReason() {
+        override val rawValue: String = "wrong_recipient"
+    }
+
+    object UnsignedAssertion : SsoTestResultReason() {
+        override val rawValue: String = "unsigned_assertion"
+    }
+
+    object SignatureInvalid : SsoTestResultReason() {
+        override val rawValue: String = "signature_invalid"
+    }
+
+    object SignatureAlgorithm : SsoTestResultReason() {
+        override val rawValue: String = "signature_algorithm"
+    }
+
+    object CertificateNotTrusted : SsoTestResultReason() {
+        override val rawValue: String = "certificate_not_trusted"
+    }
+
+    object CertificateExpired : SsoTestResultReason() {
+        override val rawValue: String = "certificate_expired"
+    }
+
+    object AssertionExpired : SsoTestResultReason() {
+        override val rawValue: String = "assertion_expired"
+    }
+
+    object ClockSkew : SsoTestResultReason() {
+        override val rawValue: String = "clock_skew"
+    }
+
+    object ResponseNotToThisRequest : SsoTestResultReason() {
+        override val rawValue: String = "response_not_to_this_request"
+    }
+
+    object Replayed : SsoTestResultReason() {
+        override val rawValue: String = "replayed"
+    }
+
+    object IdpRefused : SsoTestResultReason() {
+        override val rawValue: String = "idp_refused"
+    }
+
+    object EncryptedAssertion : SsoTestResultReason() {
+        override val rawValue: String = "encrypted_assertion"
+    }
+
+    object MalformedResponse : SsoTestResultReason() {
+        override val rawValue: String = "malformed_response"
+    }
+
+    object DiscoveryFailed : SsoTestResultReason() {
+        override val rawValue: String = "discovery_failed"
+    }
+
+    object TokenExchangeFailed : SsoTestResultReason() {
+        override val rawValue: String = "token_exchange_failed"
+    }
+
+    object NoIdToken : SsoTestResultReason() {
+        override val rawValue: String = "no_id_token"
+    }
+
+    object IdTokenInvalid : SsoTestResultReason() {
+        override val rawValue: String = "id_token_invalid"
+    }
+
+    object EmailMissing : SsoTestResultReason() {
+        override val rawValue: String = "email_missing"
+    }
+
+    object EmailOutsideDomains : SsoTestResultReason() {
+        override val rawValue: String = "email_outside_domains"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoTestResultReason() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoTestResultReason> by lazy {
+            listOf(
+                WrongAudience,
+                WrongIssuer,
+                WrongRecipient,
+                UnsignedAssertion,
+                SignatureInvalid,
+                SignatureAlgorithm,
+                CertificateNotTrusted,
+                CertificateExpired,
+                AssertionExpired,
+                ClockSkew,
+                ResponseNotToThisRequest,
+                Replayed,
+                IdpRefused,
+                EncryptedAssertion,
+                MalformedResponse,
+                DiscoveryFailed,
+                TokenExchangeFailed,
+                NoIdToken,
+                IdTokenInvalid,
+                EmailMissing,
+                EmailOutsideDomains,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoTestResultReason = when (rawValue) {
+            "wrong_audience" -> WrongAudience
+            "wrong_issuer" -> WrongIssuer
+            "wrong_recipient" -> WrongRecipient
+            "unsigned_assertion" -> UnsignedAssertion
+            "signature_invalid" -> SignatureInvalid
+            "signature_algorithm" -> SignatureAlgorithm
+            "certificate_not_trusted" -> CertificateNotTrusted
+            "certificate_expired" -> CertificateExpired
+            "assertion_expired" -> AssertionExpired
+            "clock_skew" -> ClockSkew
+            "response_not_to_this_request" -> ResponseNotToThisRequest
+            "replayed" -> Replayed
+            "idp_refused" -> IdpRefused
+            "encrypted_assertion" -> EncryptedAssertion
+            "malformed_response" -> MalformedResponse
+            "discovery_failed" -> DiscoveryFailed
+            "token_exchange_failed" -> TokenExchangeFailed
+            "no_id_token" -> NoIdToken
+            "id_token_invalid" -> IdTokenInvalid
+            "email_missing" -> EmailMissing
+            "email_outside_domains" -> EmailOutsideDomains
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoTestResultReason] as its string, whatever the string is. */
+object SsoTestResultReasonSerializer : KSerializer<SsoTestResultReason> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoTestResultReason", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoTestResultReason = SsoTestResultReason.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoTestResultReason) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable(with = SsoTestResultStatusSerializer::class)
+sealed class SsoTestResultStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Pending : SsoTestResultStatus() {
+        override val rawValue: String = "pending"
+    }
+
+    object Passed : SsoTestResultStatus() {
+        override val rawValue: String = "passed"
+    }
+
+    object Failed : SsoTestResultStatus() {
+        override val rawValue: String = "failed"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoTestResultStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoTestResultStatus> by lazy {
+            listOf(
+                Pending,
+                Passed,
+                Failed,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoTestResultStatus = when (rawValue) {
+            "pending" -> Pending
+            "passed" -> Passed
+            "failed" -> Failed
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoTestResultStatus] as its string, whatever the string is. */
+object SsoTestResultStatusSerializer : KSerializer<SsoTestResultStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoTestResultStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoTestResultStatus = SsoTestResultStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoTestResultStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoTestStart(
+    /** Format: `uuid`. */
+    val testId: String,
+    val authorizationUrl: String,
+)
+
+@Serializable
+data class SsoTestStartRequest(
+    val redirectUrl: String,
 )
 
 @Serializable
@@ -2158,6 +2791,33 @@ data class UpdateOrganizationRequest(
     val name: String? = null,
     val slug: OrganizationSlug? = null,
 )
+
+@Serializable
+data class UpdateSsoConnectionRequest(
+    val name: String? = null,
+    /** Format: `uri`. */
+    val issuer: String? = null,
+    val clientId: String? = null,
+    val clientSecret: String? = null,
+    val saml: SamlSettingsInput? = null,
+    val attributeMapping: SsoAttributeMapping? = null,
+    val defaultRole: OrganizationRoleKey? = null,
+    val enforced: Boolean? = null,
+    val breakGlassRole: OrganizationRoleKey? = null,
+    val trustIdpMfa: Boolean? = null,
+    val domains: List<OrganizationDomainName>? = null,
+    val status: UpdateSsoConnectionRequestStatus? = null,
+)
+
+@Serializable
+enum class UpdateSsoConnectionRequestStatus(val rawValue: String) {
+    @SerialName("draft")
+    Draft("draft"),
+    @SerialName("active")
+    Active("active"),
+    @SerialName("disabled")
+    Disabled("disabled"),
+}
 
 @Serializable
 data class UserOrganization(

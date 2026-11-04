@@ -1,7 +1,7 @@
 {
   "extends": "@tula-tech/tsconfig/react.json",
   "compilerOptions": {
-    "types": ["bun-types"],
+    "types": ["bun-types", "vite/client"],
     "paths": {
       "@/components/ui/*": ["./test-support/components/ui/*"],
       "@/components/tula/*": ["./items/*"],
@@ -9,5 +9,5 @@
       "~/*": ["./src/*"]
     }
   },
-  "include": ["items/**/*", "src/**/*", "scripts/**/*", "test-support/**/*"]
+  "include": ["items/**/*", "src/**/*", "scripts/**/*", "test-support/**/*", "browser/**/*"]
 }

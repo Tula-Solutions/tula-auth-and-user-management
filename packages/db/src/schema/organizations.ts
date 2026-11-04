@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, text, unique, uuid } from 'drizzle-orm/pg-core'
+import { check, index, text, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -34,6 +34,16 @@ export const organizations = tula.table(
   },
   (t) => [
     unique('organizations_environment_slug_key').on(t.environmentId, t.slug),
+    // The administrator's search by the start of a name or a slug (`lower(name) LIKE 'x%'`).
+    // `text_pattern_ops` is what lets a prefix match use an index under a locale collation.
+    index('organizations_environment_lower_name_idx').on(
+      t.environmentId,
+      sql`lower(${t.name}) text_pattern_ops`
+    ),
+    index('organizations_environment_slug_prefix_idx').on(
+      t.environmentId,
+      sql`${t.slug} text_pattern_ops`
+    ),
     // What `organization_memberships` refers to: a member of an organization of its own
     // environment only.
     tenantParentKey('organizations', t),

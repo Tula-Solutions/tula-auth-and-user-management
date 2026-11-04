@@ -105,8 +105,18 @@ export interface SandboxSession {
   organizationId: string | null
 }
 
-/** A role the sandbox's organizations have: the contract's two built-in ones. */
-export type SandboxRole = 'admin' | 'member'
+/**
+ * The key of a role a sandbox organization's member holds: one of the contract's two built-in
+ * ones (`admin`, `member`) or of the environment's custom roles (`SANDBOX_CUSTOM_ROLES`).
+ */
+export type SandboxRole = string
+
+/** A custom role (ADR 0065, "Custom roles") the sandbox's environment defines. */
+export interface SandboxCustomRole {
+  key: string
+  name: string
+  permissions: readonly string[]
+}
 
 /** An organization of the sandbox, with everything that belongs to it. */
 export interface SandboxOrganization {
@@ -117,6 +127,8 @@ export interface SandboxOrganization {
   members: SandboxMember[]
   invitations: SandboxInvitation[]
   domains: SandboxDomain[]
+  /** The user who created it through the client, or `null` for one the sandbox started with. */
+  createdBy: string | null
 }
 
 /** A user's membership of a sandbox organization. */

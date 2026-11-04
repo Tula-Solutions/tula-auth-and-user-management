@@ -211,6 +211,96 @@ async function replaceSettings(request: Request): Promise<Response> {
   return json({ ok: true })
 }
 
+/** The loopback listener the mock identity provider is reached on; started by the first bind. */
+let ssoIdp: ReturnType<typeof Bun.serve> | undefined
+
+/**
+ * Bind a domain to an active OIDC single sign-on connection whose issuer is the API's own mock
+ * identity provider (`/v1/dev/sso`), through the admin API as an operator would: the
+ * organizations and SSO settings on, an organization, its domain claimed and verified (the
+ * code is read from the outbox) and the connection made active. `{ domain }` in; the address
+ * `ada@<domain>` then continues with SSO. `/__test/settings` puts the settings back.
+ */
+async function bindSsoDomain(body: unknown): Promise<Response> {
+  const domain = String((body as { domain?: unknown }).domain ?? '')
+  const settings = await replaceSettings(
+    new Request('http://fixture/', {
+      method: 'POST',
+      body: JSON.stringify({
+        organizations: {
+          enabled: true,
+          allowUserCreated: false,
+          maxCreatedPerUser: 1,
+          creatorRole: 'admin',
+          defaultRole: 'member',
+          personalAccount: true,
+        },
+        sso: { enabled: true },
+      }),
+    })
+  )
+  if (!settings.ok) {
+    return settings
+  }
+  const admin = async (method: string, path: string, payload: unknown) => {
+    const answer = await app.request(path, {
+      method,
+      headers: { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!answer.ok) {
+      throw new Error(`${method} ${path} answered ${answer.status}: ${await answer.text()}`)
+    }
+    return (await answer.json()) as { id: string }
+  }
+  const org = await admin('POST', '/v1/admin/organizations', {
+    name: 'SSO Org',
+    slug: `sso-${domain.split('.')[0]}`,
+  })
+  const base = `/v1/admin/organizations/${org.id}/domains`
+  const contact = `it@${domain}`
+  const claimed = await admin('POST', base, { domain, email: contact, mode: 'suggest' })
+  const code = deps.mailer.outbox
+    .findLast((sent) => sent.to === contact && /^\d{6}\b/.test(sent.subject))
+    ?.subject.slice(0, 6)
+  await admin('POST', `${base}/${claimed.id}/verify`, { code })
+  // The outbound guard needs a loopback address, and `api` listens on a name: a listener of
+  // its own on 127.0.0.1 hands each request to the app (as the SDK journeys do).
+  if (!ssoIdp) {
+    ssoIdp = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (r) => app.request(r) })
+  }
+  const connection = await admin('POST', '/v1/admin/sso-connections', {
+    organizationId: org.id,
+    name: 'Mock IdP',
+    issuer: `http://127.0.0.1:${ssoIdp.port}/v1/dev/sso`,
+    clientId: 'e2e-sso',
+    clientSecret: 'e2e-sso-secret',
+    domains: [domain],
+  })
+  // Activation needs a passing test sign-in (TULA-145): play the administrator at the mock
+  // provider, then the callback it sends the browser to.
+  const test = (await admin('POST', `/v1/admin/sso-connections/${connection.id}/tests`, {
+    redirectUrl: 'http://localhost:5174/oauth/callback',
+  })) as unknown as { authorizationUrl: string }
+  const authorize = new URL(test.authorizationUrl)
+  authorize.searchParams.set('login_hint', `tester@${domain}`)
+  // The mock provider answers a loopback Host only; a request made in process has none.
+  const LOOPBACK = { headers: { host: '127.0.0.1' } }
+  const consented = await app.request(authorize.pathname + authorize.search, LOOPBACK)
+  const callbackUrl = new URL(consented.headers.get('location') ?? '', authorize)
+  await app.request(callbackUrl.pathname + callbackUrl.search, LOOPBACK)
+  const outcome = await app.request(
+    `/v1/admin/sso-connections/${connection.id}/tests/${(test as unknown as { testId: string }).testId}`,
+    { headers: { authorization: `Bearer ${SECRET_KEY}` } }
+  )
+  if (((await outcome.json()) as { status: string }).status !== 'passed') {
+    throw new Error('the fixture SSO test sign-in did not pass')
+  }
+  await admin('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'active' })
+  // The issuer a connection made by hand must name to reach the mock provider (TULA-149).
+  return json({ ok: true, issuer: `http://127.0.0.1:${ssoIdp.port}/v1/dev/sso` })
+}
+
 /** Test-only routes, next to the API's own. Reached by the test runner, never by the page. */
 /**
  * Create an account whose address was never verified, as an administrator can
@@ -387,6 +477,9 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   if (request.method === 'POST' && url.pathname === '/__test/unverified-user') {
     return request.json().then(createUnverifiedUser)
   }
+  if (request.method === 'POST' && url.pathname === '/__test/sso') {
+    return request.json().then(bindSsoDomain)
+  }
   if (request.method === 'POST' && url.pathname === '/__test/oauth') {
     return request.json().then(enableProviders)
   }
@@ -427,12 +520,28 @@ const api = Bun.serve({
 })
 
 const dist = join(import.meta.dir, '..', 'examples', 'react-vite', 'dist')
+// The browser harness of Tula UI's organization items (packages/ui/browser, TULA-127), served
+// under `/__ui/` beside the example so that it shares the example's origin, and with it the
+// session cookie the test's sign-up leaves for the API.
+const uiDist = join(import.meta.dir, '..', 'packages', 'ui', 'browser', 'dist')
+const UI_PREFIX = '/__ui/'
 
 const web = Bun.serve({
   port: APP_PORT,
   hostname: 'localhost',
   async fetch(request) {
     const { pathname } = new URL(request.url)
+    if (pathname.startsWith(UI_PREFIX)) {
+      const asset = normalize(join(uiDist, pathname.slice(UI_PREFIX.length)))
+      const file = Bun.file(
+        asset.startsWith(uiDist) && pathname !== UI_PREFIX ? asset : join(uiDist, 'index.html')
+      )
+      return (await file.exists())
+        ? new Response(file, { headers: { 'cache-control': 'no-store' } })
+        : new Response('Build the harness first: bun run --filter @tula-tech/ui browser:build', {
+            status: 500,
+          })
+    }
     const path = normalize(join(dist, pathname))
     // A single-page app: a file when the path names one inside dist, the page otherwise.
     const file = path.startsWith(dist) && pathname !== '/' ? Bun.file(path) : null

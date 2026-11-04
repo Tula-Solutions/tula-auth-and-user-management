@@ -77,6 +77,11 @@ export const organizationInvitations = tula.table(
     // An organization's invitations, newest first; the purge by expiry.
     index('organization_invitations_organization_idx').on(t.environmentId, t.organizationId),
     index('organization_invitations_expires_idx').on(t.environmentId, t.expiresAt),
+    // The invitee's own list (`GET /v1/client/me/organization-invitations`): by address, across
+    // organizations. Partial: only a pending row is ever listed.
+    index('organization_invitations_email_idx')
+      .on(t.environmentId, t.emailNormalized)
+      .where(sql`${t.status} = 'pending'`),
     ...tenantConstraints('organization_invitations', t),
   ]
 )

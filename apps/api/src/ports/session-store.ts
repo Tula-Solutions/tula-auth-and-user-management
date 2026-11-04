@@ -66,6 +66,11 @@ export interface SessionRecord {
    * The service re-reads the membership each time it builds a token from it.
    */
   activeOrganizationId: string | null
+  /**
+   * The SSO connection the session was signed in through (ADR 0067), issued as `sso_conn`;
+   * `null` for any other sign-in. Fixed at creation.
+   */
+  ssoConnectionId: string | null
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -99,6 +104,7 @@ export type NewSession = Omit<
   | 'hookClaims'
   | 'deviceThumbprint'
   | 'activeOrganizationId'
+  | 'ssoConnectionId'
 > &
   Partial<
     Pick<
@@ -109,6 +115,7 @@ export type NewSession = Omit<
       | 'hookClaims'
       | 'deviceThumbprint'
       | 'activeOrganizationId'
+      | 'ssoConnectionId'
     >
   >
 
@@ -297,6 +304,8 @@ export function beganBefore(
 export interface RevokeByUserOptions {
   /** A session to leave signed in. */
   exceptSessionId?: string
+  /** Revoke only these sessions (a snapshot taken earlier), never one created since. */
+  onlyIds?: string[]
   /** Builds the activity for each revoked session; recorded in the same transaction. */
   activity: (sessionId: string) => Recorded
 }

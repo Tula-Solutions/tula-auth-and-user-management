@@ -7,6 +7,7 @@ import {
   type FlowAttempt,
   INVITATION_EXPIRY_DAYS,
   type InvitationPreview,
+  type MyOrganizationInvitationList,
   type Organization,
   type OrganizationInvitation,
   type OrganizationInvitationList,
@@ -1063,6 +1064,271 @@ describe('answering an invitation', () => {
       expect((await client('POST', full, { token })).status).toBe(401)
       expect((await client('POST', full, { token }, { token: SK })).status).toBe(401)
       expect((await client('POST', full, { token }, { token: AK })).status).toBe(401)
+    }
+  })
+})
+
+describe('the invitations addressed to me', () => {
+  const mine = (token: string, query = '') =>
+    client('GET', `/me/organization-invitations${query}`, undefined, { token })
+  const acceptMine = (token: string, id: string) =>
+    client('POST', `/me/organization-invitations/${id}/accept`, undefined, { token })
+  const declineMine = (token: string, id: string) =>
+    client('POST', `/me/organization-invitations/${id}/decline`, undefined, { token })
+
+  async function listed(token: string, query = '') {
+    const res = await mine(token, query)
+    expect(res.status).toBe(200)
+    return json<MyOrganizationInvitationList>(res)
+  }
+
+  /** The user's access token after the invitations' lifetime has passed, refreshing on the way. */
+  async function laterToken(session: SessionTokens): Promise<string> {
+    let refreshToken = session.refreshToken
+    let accessToken = session.accessToken
+    // A refresh token does not last a week unused, so the days pass in two halves.
+    for (const days of ['4d', '4d']) {
+      deps.clock.advance(days)
+      const refreshed = await client('POST', '/sessions/refresh', { refreshToken })
+      expect(refreshed.status).toBe(200)
+      ;({ accessToken, refreshToken } = await json<SessionTokens>(refreshed))
+    }
+    return accessToken
+  }
+
+  test('lists the pending invitations to my verified address: id, organization name, role, expiry', async () => {
+    const ada = await signUp('ada@northline.app')
+    const one = await makeOrganization('acme', 'Acme Corp')
+    const two = await makeOrganization('globex', 'Globex')
+    const first = await invited(one, { role: 'admin' })
+    deps.clock.advance('1s')
+    const second = await invited(two)
+    const res = await mine(ada.accessToken)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const body = await json<MyOrganizationInvitationList>(res)
+    expect(body.meta.totalCount).toBe(2)
+    expect(body.data).toEqual([
+      { id: second.id, organizationName: 'Globex', role: 'member', expiresAt: second.expiresAt },
+      { id: first.id, organizationName: 'Acme Corp', role: 'admin', expiresAt: first.expiresAt },
+    ])
+  })
+
+  test('shows nothing but those four fields: no token, address, inviter or organization id', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    await invited(org)
+    const token = tokenOfLastInvitation()
+    const raw = JSON.stringify(await (await mine(ada.accessToken)).json())
+    expect(raw).not.toContain(token)
+    expect(raw).not.toContain('ada@northline.app')
+    expect(raw).not.toContain(org.id)
+    const [entry] = (await listed(ada.accessToken)).data
+    expect(Object.keys(entry ?? {}).sort()).toEqual(['expiresAt', 'id', 'organizationName', 'role'])
+  })
+
+  test('never lists another user’s invitations', async () => {
+    const ada = await signUp('ada@northline.app')
+    const sam = await signUp('sam@northline.app')
+    const org = await makeOrganization()
+    await invited(org, { email: 'sam@northline.app' })
+    expect((await listed(ada.accessToken)).data).toEqual([])
+    expect((await listed(sam.accessToken)).data).toHaveLength(1)
+  })
+
+  test('an address that was never proven sees none', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    await invited(org)
+    const real = deps.users.findById.bind(deps.users)
+    const find = spyOn(deps.users, 'findById').mockImplementation(async (environmentId, id) => {
+      const user = await real(environmentId, id)
+      return user && { ...user, emailVerifiedAt: null }
+    })
+    const body = await listed(ada.accessToken)
+    find.mockRestore()
+    expect(body.data).toEqual([])
+    expect(body.meta.totalCount).toBe(0)
+  })
+
+  test('leaves out the expired, the revoked and the used', async () => {
+    const ada = await signUp('ada@northline.app')
+    const used = await makeOrganization('used', 'Used')
+    const revoked = await makeOrganization('revoked', 'Revoked')
+    const lapsing = await makeOrganization('late', 'Late')
+    await invited(used)
+    await accept(ada.accessToken, tokenOfLastInvitation())
+    const sent = await invited(revoked)
+    expect((await admin('DELETE', `/${revoked.id}/invitations/${sent.id}`)).status).toBe(204)
+    await invited(lapsing)
+    expect((await listed(ada.accessToken)).data.map((one) => one.organizationName)).toEqual([
+      'Late',
+    ])
+    const token = await laterToken(ada)
+    expect((await listed(token)).data).toEqual([])
+  })
+
+  test('is paged like the other lists, and a bad page is refused', async () => {
+    const ada = await signUp('ada@northline.app')
+    for (const slug of ['one', 'two', 'three']) {
+      await invited(await makeOrganization(slug, slug))
+      deps.clock.advance('1s')
+    }
+    const page = await listed(ada.accessToken, '?size=2&page=2')
+    expect(page.meta).toMatchObject({ totalCount: 3, totalPages: 2, page: 2, perPage: 2 })
+    expect(page.data.map((one) => one.organizationName)).toEqual(['one'])
+    expect((await mine(ada.accessToken, '?page=0')).status).toBe(422)
+    expect((await mine(ada.accessToken, '?size=100000')).status).toBe(422)
+  })
+
+  test('needs a publishable key and a session, and organizations switched on', async () => {
+    const ada = await signUp('ada@northline.app')
+    expect((await client('GET', '/me/organization-invitations')).status).toBe(401)
+    expect((await mine(SK)).status).toBe(401)
+    expect((await mine(AK)).status).toBe(401)
+    const keyless = await client('GET', '/me/organization-invitations', undefined, {
+      token: ada.accessToken,
+      key: null,
+    })
+    expect(keyless.status).toBe(401)
+    configure({ enabled: false })
+    const res = await mine(ada.accessToken)
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('organization.disabled')
+  })
+
+  test('is rate limited per IP', async () => {
+    const ada = await signUp('ada@northline.app')
+    let last = 200
+    for (let i = 0; i <= INVITATIONS_READ_RATE_LIMIT; i += 1) {
+      last = (await mine(ada.accessToken)).status
+    }
+    expect(last).toBe(429)
+  })
+
+  test('accepts one from the list by its id: the user joins with its role, once', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    const sent = await invited(org, { role: 'admin' })
+    const res = await acceptMine(ada.accessToken, sent.id)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await json<AcceptedInvitation>(res)).toMatchObject({ id: org.id, role: 'admin' })
+    expect((await listed(ada.accessToken)).data).toEqual([])
+    const again = await acceptMine(ada.accessToken, sent.id)
+    expect(again.status).toBe(410)
+    expect(await codeOf(again)).toBe('organization.invitation_used')
+    expect(invitationTypes()).toEqual([
+      'organization_invitation.created',
+      'organization_invitation.accepted',
+    ])
+  })
+
+  test('declines one from the list by its id: no membership, and it is gone from the list', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    const sent = await invited(org)
+    expect((await declineMine(ada.accessToken, sent.id)).status).toBe(204)
+    expect((await listed(ada.accessToken)).data).toEqual([])
+    const members = await json<OrganizationMembershipList>(
+      await admin('GET', `/${org.id}/memberships`)
+    )
+    expect(members.data).toEqual([])
+    expect(invitationTypes()).toEqual([
+      'organization_invitation.created',
+      'organization_invitation.declined',
+    ])
+  })
+
+  test.each([
+    ['accept', true],
+    ['decline', false],
+  ])(
+    'someone else’s id, an unknown id and a malformed one cannot be %sed, and look alike',
+    async (_, accepting) => {
+      const answer = accepting ? acceptMine : declineMine
+      const sam = await signUp('sam@northline.app')
+      const org = await makeOrganization()
+      const sent = await invited(org)
+      for (const id of [sent.id, UNKNOWN]) {
+        const res = await answer(sam.accessToken, id)
+        expect(res.status).toBe(404)
+        expect(await codeOf(res)).toBe('organization.invitation_not_found')
+      }
+      expect((await answer(sam.accessToken, 'not-a-uuid')).status).toBe(422)
+      // Nothing was used up: the real invitee can still answer.
+      const ada = await signUp('ada@northline.app')
+      expect([200, 204]).toContain((await answer(ada.accessToken, sent.id)).status)
+    }
+  )
+
+  test('a used-up invitation of someone else does not reveal its state', async () => {
+    const ada = await signUp('ada@northline.app')
+    const sam = await signUp('sam@northline.app')
+    const org = await makeOrganization()
+    const sent = await invited(org)
+    await declineMine(ada.accessToken, sent.id)
+    const res = await acceptMine(sam.accessToken, sent.id)
+    expect(res.status).toBe(404)
+    expect(await codeOf(res)).toBe('organization.invitation_not_found')
+  })
+
+  test.each([
+    ['accept', true],
+    ['decline', false],
+  ])('an address that was never proven cannot %s by id', async (_, accepting) => {
+    const answer = accepting ? acceptMine : declineMine
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    const sent = await invited(org)
+    const real = deps.users.findById.bind(deps.users)
+    const find = spyOn(deps.users, 'findById').mockImplementation(async (environmentId, id) => {
+      const user = await real(environmentId, id)
+      return user && { ...user, emailVerifiedAt: null }
+    })
+    const res = await answer(ada.accessToken, sent.id)
+    find.mockRestore()
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('organization.invitation_email_unverified')
+    const members = await json<OrganizationMembershipList>(
+      await admin('GET', `/${org.id}/memberships`)
+    )
+    expect(members.data).toEqual([])
+  })
+
+  test('a revoked and an expired invitation cannot be answered by id', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    const other = await makeOrganization('globex', 'Globex')
+    const sent = await invited(org)
+    await admin('DELETE', `/${org.id}/invitations/${sent.id}`)
+    const revoked = await acceptMine(ada.accessToken, sent.id)
+    expect(revoked.status).toBe(410)
+    expect(await codeOf(revoked)).toBe('organization.invitation_revoked')
+    const lapsing = await invited(other)
+    const token = await laterToken(ada)
+    const expired = await acceptMine(token, lapsing.id)
+    expect(expired.status).toBe(410)
+    expect(await codeOf(expired)).toBe('organization.invitation_expired')
+  })
+
+  test('the id routes need a session and a publishable key, and organizations switched on', async () => {
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    const sent = await invited(org)
+    for (const path of ['accept', 'decline']) {
+      const full = `/me/organization-invitations/${sent.id}/${path}`
+      expect((await client('POST', full)).status).toBe(401)
+      expect((await client('POST', full, undefined, { token: SK })).status).toBe(401)
+      expect((await client('POST', full, undefined, { token: AK })).status).toBe(401)
+      expect(
+        (await client('POST', full, undefined, { token: ada.accessToken, key: null })).status
+      ).toBe(401)
+    }
+    configure({ enabled: false })
+    for (const answer of [acceptMine, declineMine]) {
+      const res = await answer(ada.accessToken, sent.id)
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('organization.disabled')
     }
   })
 })

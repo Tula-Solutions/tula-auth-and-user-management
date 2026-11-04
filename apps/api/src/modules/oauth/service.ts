@@ -28,6 +28,7 @@ import { cleanOrigin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import { isEcP256PrivateKey } from '~/lib/pkcs8'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
@@ -68,7 +69,7 @@ type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
  * ```
  */
 export function callbackUrl(config: Pick<AppConfig, 'publicUrl'>, provider: OAuthProvider): string {
-  return `${config.publicUrl.replace(/\/+$/, '')}/v1/oauth/callback/${provider}`
+  return `${publicBase(config)}/v1/oauth/callback/${provider}`
 }
 
 /**

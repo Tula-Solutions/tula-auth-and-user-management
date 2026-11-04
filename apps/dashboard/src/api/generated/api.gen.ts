@@ -34,6 +34,8 @@ export const EventActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export interface EventActor {
@@ -55,6 +57,8 @@ export const UserCreatedEventDataMethod = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
+  scim: 'scim',
 } as const;
 
 /**
@@ -508,6 +512,45 @@ export interface UserIdentityUnlinkedEvent {
   actor: EventActor;
   target: UserIdentityUnlinkedEventTarget;
   data: UserIdentityUnlinkedEventData;
+  test?: true;
+}
+
+export type UserSsoLinkedEventDataMethod = typeof UserSsoLinkedEventDataMethod[keyof typeof UserSsoLinkedEventDataMethod];
+
+
+export const UserSsoLinkedEventDataMethod = {
+  email: 'email',
+  provisioned: 'provisioned',
+} as const;
+
+/**
+ * An account was given its identity at a single sign-on connection (ADR 0067).
+ */
+export interface UserSsoLinkedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  connectionId: string;
+  method: UserSsoLinkedEventDataMethod;
+}
+
+export type UserSsoLinkedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An account was given its identity at a single sign-on connection (ADR 0067).
+ */
+export interface UserSsoLinkedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sso_linked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSsoLinkedEventTarget;
+  data: UserSsoLinkedEventData;
   test?: true;
 }
 
@@ -1257,7 +1300,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 68
+     * @maximum 82
      */
   eventTypes: number;
   enabled: boolean;
@@ -1734,6 +1777,466 @@ export interface NativeAppDeletedEvent {
   actor: EventActor;
   target: NativeAppDeletedEventTarget;
   data: NativeAppDeletedEventData;
+  test?: true;
+}
+
+export type SsoConnectionCreatedEventDataProtocol = typeof SsoConnectionCreatedEventDataProtocol[keyof typeof SsoConnectionCreatedEventDataProtocol];
+
+
+export const SsoConnectionCreatedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionCreatedEventDataStatus = typeof SsoConnectionCreatedEventDataStatus[keyof typeof SsoConnectionCreatedEventDataStatus];
+
+
+export const SsoConnectionCreatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEventData {
+  protocol: SsoConnectionCreatedEventDataProtocol;
+  status: SsoConnectionCreatedEventDataStatus;
+  /**
+     * @minimum 0
+     * @maximum 20
+     */
+  domains: number;
+}
+
+export type SsoConnectionCreatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionCreatedEventTarget;
+  data: SsoConnectionCreatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionUpdatedEventDataProtocol = typeof SsoConnectionUpdatedEventDataProtocol[keyof typeof SsoConnectionUpdatedEventDataProtocol];
+
+
+export const SsoConnectionUpdatedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionUpdatedEventDataChangedItem = typeof SsoConnectionUpdatedEventDataChangedItem[keyof typeof SsoConnectionUpdatedEventDataChangedItem];
+
+
+export const SsoConnectionUpdatedEventDataChangedItem = {
+  name: 'name',
+  issuer: 'issuer',
+  clientId: 'clientId',
+  clientSecret: 'clientSecret',
+  saml: 'saml',
+  defaultRole: 'defaultRole',
+  enforced: 'enforced',
+  breakGlassRole: 'breakGlassRole',
+  trustIdpMfa: 'trustIdpMfa',
+  domains: 'domains',
+  status: 'status',
+  attributeMapping: 'attributeMapping',
+  groupRoles: 'groupRoles',
+  test: 'test',
+} as const;
+
+export type SsoConnectionUpdatedEventDataStatus = typeof SsoConnectionUpdatedEventDataStatus[keyof typeof SsoConnectionUpdatedEventDataStatus];
+
+
+export const SsoConnectionUpdatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEventData {
+  protocol: SsoConnectionUpdatedEventDataProtocol;
+  /**
+     * @minItems 1
+     * @maxItems 14
+     */
+  changed: SsoConnectionUpdatedEventDataChangedItem[];
+  status: SsoConnectionUpdatedEventDataStatus;
+  weakened?: boolean;
+}
+
+export type SsoConnectionUpdatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionUpdatedEventTarget;
+  data: SsoConnectionUpdatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionDeletedEventDataProtocol = typeof SsoConnectionDeletedEventDataProtocol[keyof typeof SsoConnectionDeletedEventDataProtocol];
+
+
+export const SsoConnectionDeletedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEventData {
+  protocol: SsoConnectionDeletedEventDataProtocol;
+}
+
+export type SsoConnectionDeletedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionDeletedEventTarget;
+  data: SsoConnectionDeletedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenCreatedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenCreatedEventTarget;
+  data: ScimTokenCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenRevokedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenRevokedEventTarget;
+  data: ScimTokenRevokedEventData;
+  test?: true;
+}
+
+/**
+ * A setup link was created for an organization (ADR 0067). The token is not in the event.
+ */
+export interface SetupLinkCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type SetupLinkCreatedEventTarget = {
+  type: 'setup_link';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A setup link was created for an organization (ADR 0067). The token is not in the event.
+ */
+export interface SetupLinkCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'setup_link.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SetupLinkCreatedEventTarget;
+  data: SetupLinkCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A setup link was revoked: the portal it opened refuses it from the next request.
+ */
+export interface SetupLinkRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type SetupLinkRevokedEventTarget = {
+  type: 'setup_link';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A setup link was revoked: the portal it opened refuses it from the next request.
+ */
+export interface SetupLinkRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'setup_link.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SetupLinkRevokedEventTarget;
+  data: SetupLinkRevokedEventData;
+  test?: true;
+}
+
+export type UserScimProvisionedEventDataMethod = typeof UserScimProvisionedEventDataMethod[keyof typeof UserScimProvisionedEventDataMethod];
+
+
+export const UserScimProvisionedEventDataMethod = {
+  created: 'created',
+  linked: 'linked',
+} as const;
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  method: UserScimProvisionedEventDataMethod;
+}
+
+export type UserScimProvisionedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_provisioned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimProvisionedEventTarget;
+  data: UserScimProvisionedEventData;
+  test?: true;
+}
+
+export type UserScimUpdatedEventDataChangedItem = typeof UserScimUpdatedEventDataChangedItem[keyof typeof UserScimUpdatedEventDataChangedItem];
+
+
+export const UserScimUpdatedEventDataChangedItem = {
+  name: 'name',
+  email: 'email',
+} as const;
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
+ */
+export interface UserScimUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: UserScimUpdatedEventDataChangedItem[];
+}
+
+export type UserScimUpdatedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
+ */
+export interface UserScimUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimUpdatedEventTarget;
+  data: UserScimUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupCreatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupCreatedEventTarget;
+  data: ScimGroupCreatedEventData;
+  test?: true;
+}
+
+export type ScimGroupUpdatedEventDataChangedItem = typeof ScimGroupUpdatedEventDataChangedItem[keyof typeof ScimGroupUpdatedEventDataChangedItem];
+
+
+export const ScimGroupUpdatedEventDataChangedItem = {
+  displayName: 'displayName',
+  externalId: 'externalId',
+  members: 'members',
+} as const;
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: ScimGroupUpdatedEventDataChangedItem[];
+}
+
+export type ScimGroupUpdatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupUpdatedEventTarget;
+  data: ScimGroupUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupDeletedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupDeletedEventTarget;
+  data: ScimGroupDeletedEventData;
   test?: true;
 }
 
@@ -2586,6 +3089,171 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
+export type AuditExportedEventDataPhase = typeof AuditExportedEventDataPhase[keyof typeof AuditExportedEventDataPhase];
+
+
+export const AuditExportedEventDataPhase = {
+  started: 'started',
+  finished: 'finished',
+} as const;
+
+export type AuditExportedEventDataFormat = typeof AuditExportedEventDataFormat[keyof typeof AuditExportedEventDataFormat];
+
+
+export const AuditExportedEventDataFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export type AuditExportedEventDataAction = typeof AuditExportedEventDataAction[keyof typeof AuditExportedEventDataAction];
+
+
+export const AuditExportedEventDataAction = {
+  usercreated: 'user.created',
+  userimported: 'user.imported',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export type AuditExportedEventDataActorType = typeof AuditExportedEventDataActorType[keyof typeof AuditExportedEventDataActorType];
+
+
+export const AuditExportedEventDataActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
+} as const;
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEventData {
+  phase?: AuditExportedEventDataPhase;
+  format: AuditExportedEventDataFormat;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  rowCount: number;
+  resumed: boolean;
+  action?: AuditExportedEventDataAction;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  actorType?: AuditExportedEventDataActorType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+}
+
+export type AuditExportedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'audit.exported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: AuditExportedEventTarget;
+  data: AuditExportedEventData;
+  test?: true;
+}
+
 /**
  * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
  */
@@ -2663,7 +3331,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | UserScimUpdatedEvent | ScimGroupCreatedEvent | ScimGroupUpdatedEvent | ScimGroupDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2679,6 +3347,7 @@ export const HookBeforeSignUpDataMethod = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
 } as const;
 
 /**
@@ -2875,6 +3544,7 @@ export const ErrorCode = {
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
   userlast_organization_manager: 'user.last_organization_manager',
+  usermanaged: 'user.managed',
   organizationdisabled: 'organization.disabled',
   organizationslug_taken: 'organization.slug_taken',
   organizationmember_exists: 'organization.member_exists',
@@ -2903,6 +3573,23 @@ export const ErrorCode = {
   organizationdomain_address_mismatch: 'organization.domain_address_mismatch',
   organizationdomain_limit: 'organization.domain_limit',
   organizationsuggestion_unavailable: 'organization.suggestion_unavailable',
+  ssodisabled: 'sso.disabled',
+  ssoconnection_not_found: 'sso.connection_not_found',
+  ssoname_taken: 'sso.name_taken',
+  ssodomain_taken: 'sso.domain_taken',
+  ssodomain_not_verified: 'sso.domain_not_verified',
+  ssoissuer_not_allowed: 'sso.issuer_not_allowed',
+  ssosaml_invalid: 'sso.saml_invalid',
+  ssoconnection_in_use: 'sso.connection_in_use',
+  ssoinvalid_transition: 'sso.invalid_transition',
+  ssourl_not_https: 'sso.url_not_https',
+  ssotest_required: 'sso.test_required',
+  ssotest_not_found: 'sso.test_not_found',
+  ssorole_not_allowed: 'sso.role_not_allowed',
+  ssounavailable: 'sso.unavailable',
+  ssoprovider_error: 'sso.provider_error',
+  ssouser_not_provisioned: 'sso.user_not_provisioned',
+  ssoemail_domain_mismatch: 'sso.email_domain_mismatch',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3300,6 +3987,7 @@ export interface AccessTokenClaims {
   sp?: string;
   cnf?: AccessTokenClaimsCnf;
   org_id?: string;
+  sso_conn?: string;
   org_role?: string;
   org_perms?: string[];
   ext?: AccessTokenClaimsExt;
@@ -3358,6 +4046,7 @@ export const FirstFactorStrategy = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
 } as const;
 
 export type PreparedFirstFactorStrategy = typeof PreparedFirstFactorStrategy[keyof typeof PreparedFirstFactorStrategy];
@@ -3578,6 +4267,11 @@ export interface OAuthStart {
 
 export interface OAuthStartRequest {
   provider: OAuthProvider;
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface SsoStartRequest {
   /** @maxLength 2048 */
   redirectUrl: string;
 }
@@ -3997,6 +4691,7 @@ export const ActivityType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4029,6 +4724,18 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4050,6 +4757,7 @@ export const ActivityType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4063,6 +4771,8 @@ export const AuditLogQueryActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export interface AuditLogQuery {
@@ -4086,6 +4796,45 @@ export interface AuditLogQuery {
      * @maximum 100
      */
   size?: number;
+}
+
+export type AuditExportRequestActorType = typeof AuditExportRequestActorType[keyof typeof AuditExportRequestActorType];
+
+
+export const AuditExportRequestActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
+} as const;
+
+export type AuditExportRequestFormat = typeof AuditExportRequestFormat[keyof typeof AuditExportRequestFormat];
+
+
+export const AuditExportRequestFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export interface AuditExportRequest {
+  action?: ActivityType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  actorType?: AuditExportRequestActorType;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  format?: AuditExportRequestFormat;
+  /** @pattern ^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)~([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$ */
+  after?: string;
 }
 
 export type SignUpPasswordMode = typeof SignUpPasswordMode[keyof typeof SignUpPasswordMode];
@@ -4344,6 +5093,10 @@ export type EnvironmentSettingsStateSettingsOrganizations = {
   personalAccount?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -4387,6 +5140,7 @@ export type EnvironmentSettingsStateSettings = {
   audit?: EnvironmentSettingsStateSettingsAudit;
   agents?: EnvironmentSettingsStateSettingsAgents;
   organizations?: EnvironmentSettingsStateSettingsOrganizations;
+  sso?: EnvironmentSettingsStateSettingsSso;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -4486,6 +5240,10 @@ export type EnvironmentSettingsInputOrganizations = {
   personalAccount?: boolean;
 };
 
+export type EnvironmentSettingsInputSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -4529,6 +5287,7 @@ export interface EnvironmentSettingsInput {
   audit?: EnvironmentSettingsInputAudit;
   agents?: EnvironmentSettingsInputAgents;
   organizations?: EnvironmentSettingsInputOrganizations;
+  sso?: EnvironmentSettingsInputSso;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -4861,6 +5620,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4893,6 +5653,18 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4914,6 +5686,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4927,7 +5700,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 68
+     * @maxItems 82
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4950,6 +5723,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4982,6 +5756,18 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5003,6 +5789,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -5016,7 +5803,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 68
+     * @maxItems 82
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5157,6 +5944,7 @@ export const SendTestWebhookRequestEventType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -5189,6 +5977,18 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5210,6 +6010,7 @@ export const SendTestWebhookRequestEventType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -5394,7 +6195,7 @@ export interface OrganizationList {
   data: Organization[];
 }
 
-export interface OrganizationPageQuery {
+export interface OrganizationSearchQuery {
   /**
      * @minimum 1
      * @maximum 1000000
@@ -5405,6 +6206,8 @@ export interface OrganizationPageQuery {
      * @maximum 100
      */
   size?: number;
+  /** @maxLength 100 */
+  q?: string;
 }
 
 /**
@@ -5446,6 +6249,19 @@ export interface OrganizationMembership {
 export interface OrganizationMembershipList {
   meta: PaginationMeta;
   data: OrganizationMembership[];
+}
+
+export interface OrganizationPageQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
 }
 
 export interface AddOrganizationMemberRequest {
@@ -5688,6 +6504,19 @@ export interface AcceptedInvitation {
   createdAt: string;
 }
 
+export interface MyOrganizationInvitation {
+  id: string;
+  organizationName: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface MyOrganizationInvitationList {
+  meta: PaginationMeta;
+  data: MyOrganizationInvitation[];
+}
+
 export interface OrganizationMember {
   userId: string;
   /** @nullable */
@@ -5857,6 +6686,544 @@ export interface UpdateNativeAppRequest {
      * @items.maxLength 255
      */
   appLinkPaths?: string[];
+}
+
+export type SamlConnectionCertificatesItem = {
+  fingerprint: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  notAfter: string;
+  expired: boolean;
+};
+
+export interface SamlConnection {
+  idpEntityId: string;
+  ssoUrl: string;
+  /** @nullable */
+  metadataUrl: string | null;
+  certificates: SamlConnectionCertificatesItem[];
+  spEntityId: string;
+  acsUrl: string;
+  spMetadataUrl: string;
+}
+
+export type SsoAttributeMappingIdp = typeof SsoAttributeMappingIdp[keyof typeof SsoAttributeMappingIdp];
+
+
+export const SsoAttributeMappingIdp = {
+  okta: 'okta',
+  entra: 'entra',
+  google_workspace: 'google_workspace',
+  jumpcloud: 'jumpcloud',
+  onelogin: 'onelogin',
+  ping: 'ping',
+  generic: 'generic',
+} as const;
+
+export interface SsoAttributeMapping {
+  idp?: SsoAttributeMappingIdp;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  email?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  firstName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  lastName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  groups?: string;
+}
+
+export type SsoConnectionProtocol = typeof SsoConnectionProtocol[keyof typeof SsoConnectionProtocol];
+
+
+export const SsoConnectionProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionStatus = typeof SsoConnectionStatus[keyof typeof SsoConnectionStatus];
+
+
+export const SsoConnectionStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface SsoConnection {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol: SsoConnectionProtocol;
+  name: string;
+  status: SsoConnectionStatus;
+  issuer: string;
+  clientId: string;
+  clientSecretSet: boolean;
+  saml: SamlConnection | null;
+  /** @nullable */
+  redirectUri: string | null;
+  attributeMapping: SsoAttributeMapping | null;
+  defaultRole: string;
+  enforced: boolean;
+  /** @nullable */
+  breakGlassRole: string | null;
+  trustIdpMfa: boolean;
+  domains: string[];
+  tested: boolean;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface SsoConnectionList {
+  connections: SsoConnection[];
+}
+
+export interface SamlSettingsInput {
+  /**
+     * @minLength 1
+     * @maxLength 524288
+     */
+  metadataXml?: string;
+  /** @maxLength 2048 */
+  metadataUrl?: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  idpEntityId?: string;
+  /** @maxLength 2048 */
+  ssoUrl?: string;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     * @items.minLength 1
+     * @items.maxLength 16384
+     */
+  certificates?: string[];
+}
+
+export type CreateSsoConnectionRequestProtocol = typeof CreateSsoConnectionRequestProtocol[keyof typeof CreateSsoConnectionRequestProtocol];
+
+
+export const CreateSsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface CreateSsoConnectionRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol?: CreateSsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export type SsoGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+};
+
+export interface SsoGroupRoles {
+  /** @maxItems 100 */
+  mappings: SsoGroupRolesMappingsItem[];
+}
+
+export type UpdateSsoConnectionRequestStatus = typeof UpdateSsoConnectionRequestStatus[keyof typeof UpdateSsoConnectionRequestStatus];
+
+
+export const UpdateSsoConnectionRequestStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface UpdateSsoConnectionRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  enforced?: boolean;
+  breakGlassRole?: OrganizationRoleKey | null;
+  trustIdpMfa?: boolean;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: UpdateSsoConnectionRequestStatus;
+}
+
+export interface SsoTestStart {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  authorizationUrl: string;
+}
+
+export interface AdminSsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl?: string;
+}
+
+export type SsoTestResultStatus = typeof SsoTestResultStatus[keyof typeof SsoTestResultStatus];
+
+
+export const SsoTestResultStatus = {
+  pending: 'pending',
+  passed: 'passed',
+  failed: 'failed',
+} as const;
+
+export type SsoTestResultReason = typeof SsoTestResultReason[keyof typeof SsoTestResultReason] | null;
+
+
+export const SsoTestResultReason = {
+  wrong_audience: 'wrong_audience',
+  wrong_issuer: 'wrong_issuer',
+  wrong_recipient: 'wrong_recipient',
+  unsigned_assertion: 'unsigned_assertion',
+  signature_invalid: 'signature_invalid',
+  signature_algorithm: 'signature_algorithm',
+  certificate_not_trusted: 'certificate_not_trusted',
+  certificate_expired: 'certificate_expired',
+  assertion_expired: 'assertion_expired',
+  clock_skew: 'clock_skew',
+  response_not_to_this_request: 'response_not_to_this_request',
+  replayed: 'replayed',
+  idp_refused: 'idp_refused',
+  encrypted_assertion: 'encrypted_assertion',
+  malformed_response: 'malformed_response',
+  discovery_failed: 'discovery_failed',
+  token_exchange_failed: 'token_exchange_failed',
+  no_id_token: 'no_id_token',
+  id_token_invalid: 'id_token_invalid',
+  email_missing: 'email_missing',
+  email_outside_domains: 'email_outside_domains',
+} as const;
+
+export type SsoTestResultAttributesItem = {
+  name: string;
+  values: string[];
+};
+
+export type SsoTestResultMapped = {
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  givenName: string | null;
+  /** @nullable */
+  familyName: string | null;
+  emailOnVerifiedDomain: boolean;
+} | null;
+
+export interface SsoTestResult {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  status: SsoTestResultStatus;
+  reason: SsoTestResultReason;
+  /** @nullable */
+  message: string | null;
+  attributes: SsoTestResultAttributesItem[];
+  groups: string[];
+  mapped: SsoTestResultMapped;
+}
+
+export type CreateMySsoConnectionRequestProtocol = typeof CreateMySsoConnectionRequestProtocol[keyof typeof CreateMySsoConnectionRequestProtocol];
+
+
+export const CreateMySsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface CreateMySsoConnectionRequest {
+  protocol?: CreateMySsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export interface SsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface ScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface ScimTokenList {
+  tokens: ScimToken[];
+}
+
+export interface CreatedScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The bearer token. Shown once; only its hash is stored. */
+  token: string;
+  /** The base URL to give the identity provider. */
+  scimBaseUrl: string;
+}
+
+export interface CreateScimTokenRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface SetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface SetupLinkList {
+  links: SetupLink[];
+}
+
+export interface CreatedSetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The setup token. Shown once; only its hash is stored. */
+  token: string;
+  /** The address to send to the IT administrator. The token is in its fragment. */
+  url: string;
+}
+
+export interface CreateSetupLinkRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export interface CreateMySetupLinkRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export type SetupPortalOrganization = {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  name: string;
+};
+
+export interface SetupPortal {
+  organization: SetupPortalOrganization;
+  /** The organization’s verified domains. */
+  domains: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  connections: SsoConnection[];
+}
+
+export type SetupConnectionCreateProtocol = typeof SetupConnectionCreateProtocol[keyof typeof SetupConnectionCreateProtocol];
+
+
+export const SetupConnectionCreateProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface SetupConnectionCreate {
+  protocol?: SetupConnectionCreateProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export interface SetupScimTokenCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface SetupConnectionUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: 'active';
+}
+
+export type SetupGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+  locked: boolean;
+};
+
+export interface SetupGroupRoles {
+  mappings: SetupGroupRolesMappingsItem[];
 }
 
 export interface SmsPrefixUsage {
@@ -6420,6 +7787,8 @@ export const ListAuditLogsActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export type ListWebhookDeliveriesParams = {
@@ -6457,6 +7826,10 @@ page?: number;
  * @maximum 100
  */
 size?: number;
+/**
+ * @maxLength 100
+ */
+q?: string;
 };
 
 export type ListOrganizationMembershipsParams = {
@@ -6508,6 +7881,41 @@ page?: number;
  * @maximum 100
  */
 size?: number;
+};
+
+export type ListSsoConnectionsParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId?: string;
+};
+
+export type ListScimTokensParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeScimTokenParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type ListSetupLinksParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeSetupLinkParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
 };
 
 export type GetSmsUsageParams = {
@@ -8692,6 +10100,95 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
+export const getExportAuditLogsUrl = () => {
+
+
+
+
+  return `/v1/admin/audit-logs/export`
+}
+
+/**
+ * Streams the secret key’s environment’s audit log, **oldest first**, as NDJSON (one entry per line, the fields of the list) or CSV (a header, then one row per entry; a cell that a spreadsheet would run as a formula is prefixed with `'`). Takes the list’s filters and `organizationId`. One request writes at most 100,000 entries: to continue, send `after` with the last entry’s `occurredAt` and `id` joined by `~`. Every export is itself recorded (`audit.exported`) with its filters and row count. A POST because it writes that entry, which also means an agent key is refused.
+ * @summary Export the audit log
+ */
+export const exportAuditLogs = async (auditExportRequest: AuditExportRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Response> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Response>(getExportAuditLogsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(auditExportRequest)
+  }
+);}
+
+
+
+
+
+export const getExportAuditLogsMutationKey = () => ['exportAuditLogs'] as const;
+
+export const getExportAuditLogsMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext> => {
+
+const mutationKey = getExportAuditLogsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportAuditLogs>>, ExportAuditLogsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  exportAuditLogs(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportAuditLogsMutationResult = NonNullable<Awaited<ReturnType<typeof exportAuditLogs>>>
+    export type ExportAuditLogsMutationBody = AuditExportRequest
+    export type ExportAuditLogsMutationError = ErrorEnvelope
+    export type ExportAuditLogsMutationVariables = {data: AuditExportRequest}
+
+    /**
+ * @summary Export the audit log
+ */
+export const useExportAuditLogs = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof exportAuditLogs>>,
+        TError,
+        ExportAuditLogsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExportAuditLogsMutationOptions(options), queryClient);
+    }
+
 export const getGetEnvironmentSettingsUrl = () => {
 
 
@@ -10728,7 +12225,7 @@ export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
 }
 
 /**
- * Organizations of the secret key’s environment, newest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps the organizations whose name or slug starts with it (ignoring case), counted and paged as a match. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
  * @summary List organizations
  */
 export const listOrganizations = async (params?: ListOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationList> => {
@@ -13321,6 +14818,1502 @@ export const useDeleteNativeApp = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getListSsoConnectionsUrl = (params?: ListSsoConnectionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/sso-connections?${stringifiedParams}` : `/v1/admin/sso-connections`
+}
+
+/**
+ * The single sign-on connections of one organization, or of the whole environment when `organizationId` is left out, oldest first.
+ * @summary List an organization’s SSO connections
+ */
+export const listSsoConnections = async (params?: ListSsoConnectionsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnectionList> => {
+
+  return dashboardFetch<SsoConnectionList>(getListSsoConnectionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSsoConnectionsQueryKey = (params?: ListSsoConnectionsParams,) => {
+    return [
+    `/v1/admin/sso-connections`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSsoConnectionsQueryOptions = <TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSsoConnectionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSsoConnections>>> = ({ signal }) => listSsoConnections(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSsoConnectionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSsoConnections>>>
+export type ListSsoConnectionsQueryError = ErrorEnvelope
+
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: undefined |  ListSsoConnectionsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO connections
+ */
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSsoConnectionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSsoConnectionUrl = () => {
+
+
+
+
+  return `/v1/admin/sso-connections`
+}
+
+/**
+ * Creates an OIDC connection for an organization as a draft, bound to some of its verified domains. The issuer is checked against the outbound rules. A draft signs nobody in; activate it with an update. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Create an SSO connection
+ */
+export const createSsoConnection = async (createSsoConnectionRequest: CreateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getCreateSsoConnectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSsoConnectionMutationKey = () => ['createSsoConnection'] as const;
+
+export const getCreateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getCreateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSsoConnection>>, CreateSsoConnectionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSsoConnection(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof createSsoConnection>>>
+    export type CreateSsoConnectionMutationBody = CreateSsoConnectionRequest
+    export type CreateSsoConnectionMutationError = ErrorEnvelope
+    export type CreateSsoConnectionMutationVariables = {data: CreateSsoConnectionRequest}
+
+    /**
+ * @summary Create an SSO connection
+ */
+export const useCreateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSsoConnection>>,
+        TError,
+        CreateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * One connection of the environment, without its secret.
+ * @summary Get an SSO connection
+ */
+export const getSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getGetSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnection>>> = ({ signal }) => getSsoConnection(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnection>>>
+export type GetSsoConnectionQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an SSO connection
+ */
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Changes the fields sent and keeps the rest. A status moves draft to active to disabled, never back to a draft; a domain belongs to at most one active connection (`sso.domain_taken`, 409). Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Change an SSO connection
+ */
+export const updateSsoConnection = async (id: string,
+    updateSsoConnectionRequest: UpdateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getUpdateSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateSsoConnectionMutationKey = () => ['updateSsoConnection'] as const;
+
+export const getUpdateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getUpdateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSsoConnection>>, UpdateSsoConnectionMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSsoConnection(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof updateSsoConnection>>>
+    export type UpdateSsoConnectionMutationBody = UpdateSsoConnectionRequest
+    export type UpdateSsoConnectionMutationError = ErrorEnvelope
+    export type UpdateSsoConnectionMutationVariables = {id: string;data: UpdateSsoConnectionRequest}
+
+    /**
+ * @summary Change an SSO connection
+ */
+export const useUpdateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateSsoConnection>>,
+        TError,
+        UpdateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getDeleteSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.
+ * @summary Delete an SSO connection
+ */
+export const deleteSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSsoConnectionMutationKey = () => ['deleteSsoConnection'] as const;
+
+export const getDeleteSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getDeleteSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSsoConnection>>, DeleteSsoConnectionMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSsoConnection(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSsoConnection>>>
+
+    export type DeleteSsoConnectionMutationError = ErrorEnvelope
+    export type DeleteSsoConnectionMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an SSO connection
+ */
+export const useDeleteSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSsoConnection>>,
+        TError,
+        DeleteSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * The mapping of the connection's organization, in precedence order: the first of a user's groups in this list decides their role. SCIM Groups use the same mapping.
+ * @summary Get an organization's IdP group to role mapping
+ */
+export const getSsoGroupRoles = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+  return dashboardFetch<SsoGroupRoles>(getGetSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoGroupRolesQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/group-roles`
+    ] as const;
+    }
+
+
+export const getGetSsoGroupRolesQueryOptions = <TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoGroupRolesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoGroupRoles>>> = ({ signal }) => getSsoGroupRoles(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoGroupRolesQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoGroupRoles>>>
+export type GetSsoGroupRolesQueryError = ErrorEnvelope
+
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization's IdP group to role mapping
+ */
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoGroupRolesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * Replaces the whole mapping. A role that does not exist is refused (`organization.role_unknown`); a group named twice is `request.malformed`. At each single sign-on the member's role is set from it, and a user in no mapped group gets the connection's `defaultRole`. The audit entry says only that the mapping changed.
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const replaceSsoGroupRoles = async (id: string,
+    ssoGroupRoles: SsoGroupRoles, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoGroupRoles>(getReplaceSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ssoGroupRoles)
+  }
+);}
+
+
+
+
+
+export const getReplaceSsoGroupRolesMutationKey = () => ['replaceSsoGroupRoles'] as const;
+
+export const getReplaceSsoGroupRolesMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext> => {
+
+const mutationKey = getReplaceSsoGroupRolesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, ReplaceSsoGroupRolesMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  replaceSsoGroupRoles(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceSsoGroupRolesMutationResult = NonNullable<Awaited<ReturnType<typeof replaceSsoGroupRoles>>>
+    export type ReplaceSsoGroupRolesMutationBody = SsoGroupRoles
+    export type ReplaceSsoGroupRolesMutationError = ErrorEnvelope
+    export type ReplaceSsoGroupRolesMutationVariables = {id: string;data: SsoGroupRoles}
+
+    /**
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const useReplaceSsoGroupRoles = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceSsoGroupRoles>>,
+        TError,
+        ReplaceSsoGroupRolesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceSsoGroupRolesMutationOptions(options), queryClient);
+    }
+
+export const getRefreshSsoConnectionMetadataUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/refresh-metadata`
+}
+
+/**
+ * Fetches the identity provider’s metadata from the address the connection was given (through the outbound guard: a private address is refused) and takes its entity id, SSO URL and signing certificates. `sso.saml_invalid` when the connection was not given an address. Limited to 10 such requests a minute per environment. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const refreshSsoConnectionMetadata = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getRefreshSsoConnectionMetadataUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRefreshSsoConnectionMetadataMutationKey = () => ['refreshSsoConnectionMetadata'] as const;
+
+export const getRefreshSsoConnectionMetadataMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext> => {
+
+const mutationKey = getRefreshSsoConnectionMetadataMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, RefreshSsoConnectionMetadataMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshSsoConnectionMetadata(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshSsoConnectionMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>>
+
+    export type RefreshSsoConnectionMetadataMutationError = ErrorEnvelope
+    export type RefreshSsoConnectionMetadataMutationVariables = {id: string}
+
+    /**
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const useRefreshSsoConnectionMetadata = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>,
+        TError,
+        RefreshSsoConnectionMetadataMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRefreshSsoConnectionMetadataMutationOptions(options), queryClient);
+    }
+
+export const getStartSsoConnectionTestUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests`
+}
+
+/**
+ * Starts the whole sign-in round through the identity provider without creating a session, user, identity or membership. Send the browser to `authorizationUrl`; it returns to `redirectUrl` (an address the environment allows; left out, the server’s own setup page) with `#tula_test=<testId>`, and the result is read with `GET /:id/tests/:testId`. A passing test of the connection’s current settings is required to activate it.
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const startSsoConnectionTest = async (id: string,
+    adminSsoTestStartRequest: AdminSsoTestStartRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestStart> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoTestStart>(getStartSsoConnectionTestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(adminSsoTestStartRequest)
+  }
+);}
+
+
+
+
+
+export const getStartSsoConnectionTestMutationKey = () => ['startSsoConnectionTest'] as const;
+
+export const getStartSsoConnectionTestMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext> => {
+
+const mutationKey = getStartSsoConnectionTestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startSsoConnectionTest>>, StartSsoConnectionTestMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startSsoConnectionTest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartSsoConnectionTestMutationResult = NonNullable<Awaited<ReturnType<typeof startSsoConnectionTest>>>
+    export type StartSsoConnectionTestMutationBody = AdminSsoTestStartRequest
+    export type StartSsoConnectionTestMutationError = ErrorEnvelope
+    export type StartSsoConnectionTestMutationVariables = {id: string;data: AdminSsoTestStartRequest}
+
+    /**
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const useStartSsoConnectionTest = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startSsoConnectionTest>>,
+        TError,
+        StartSsoConnectionTestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartSsoConnectionTestMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionTestUrl = (id: string,
+    testId: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests/${testId}`
+}
+
+/**
+ * The attributes and groups that arrived, how they mapped, or the reason the test failed with a sentence for it. `pending` until the browser has come back. It holds no assertion and no token. This is the one place a refusal’s reason is shown.
+ * @summary Read the result of a test sign-in
+ */
+export const getSsoConnectionTest = async (id: string,
+    testId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestResult> => {
+
+  return dashboardFetch<SsoTestResult>(getGetSsoConnectionTestUrl(id,testId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionTestQueryKey = (id: string,
+    testId: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/tests/${testId}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionTestQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionTestQueryKey(id,testId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnectionTest>>> = ({ signal }) => getSsoConnectionTest(id,testId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && testId !== null && testId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionTestQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnectionTest>>>
+export type GetSsoConnectionTestQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the result of a test sign-in
+ */
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionTestQueryOptions(id,testId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListScimTokensUrl = (params: ListScimTokensParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens?${stringifiedParams}` : `/v1/admin/scim-tokens`
+}
+
+/**
+ * The tokens of one organization, revoked ones included, newest first. No secrets.
+ * @summary List an organization’s SCIM tokens
+ */
+export const listScimTokens = async (params: ListScimTokensParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<ScimTokenList> => {
+
+  return dashboardFetch<ScimTokenList>(getListScimTokensUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListScimTokensQueryKey = (params?: ListScimTokensParams,) => {
+    return [
+    `/v1/admin/scim-tokens`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListScimTokensQueryOptions = <TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListScimTokensQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScimTokens>>> = ({ signal }) => listScimTokens(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListScimTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listScimTokens>>>
+export type ListScimTokensQueryError = ErrorEnvelope
+
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SCIM tokens
+ */
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListScimTokensQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateScimTokenUrl = () => {
+
+
+
+
+  return `/v1/admin/scim-tokens`
+}
+
+/**
+ * Creates the bearer token an organization’s identity provider presents to `/v1/scim/v2`. The token is in this answer and nowhere else: only its hash is stored. An organization holds at most ten live tokens (`resource.conflict`, 409).
+ * @summary Create a SCIM token
+ */
+export const createScimToken = async (createScimTokenRequest: CreateScimTokenRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedScimToken> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedScimToken>(getCreateScimTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createScimTokenRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateScimTokenMutationKey = () => ['createScimToken'] as const;
+
+export const getCreateScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getCreateScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScimToken>>, CreateScimTokenMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScimToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createScimToken>>>
+    export type CreateScimTokenMutationBody = CreateScimTokenRequest
+    export type CreateScimTokenMutationError = ErrorEnvelope
+    export type CreateScimTokenMutationVariables = {data: CreateScimTokenRequest}
+
+    /**
+ * @summary Create a SCIM token
+ */
+export const useCreateScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScimToken>>,
+        TError,
+        CreateScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getRevokeScimTokenUrl = (id: string,
+    params: RevokeScimTokenParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens/${id}?${stringifiedParams}` : `/v1/admin/scim-tokens/${id}`
+}
+
+/**
+ * Revokes a token that is not revoked yet. The identity provider holding it is refused from its next request; users it provisioned keep their accounts.
+ * @summary Revoke a SCIM token
+ */
+export const revokeScimToken = async (id: string,
+    params: RevokeScimTokenParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeScimTokenUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeScimTokenMutationKey = () => ['revokeScimToken'] as const;
+
+export const getRevokeScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getRevokeScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeScimToken>>, RevokeScimTokenMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeScimToken(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokeScimToken>>>
+
+    export type RevokeScimTokenMutationError = ErrorEnvelope
+    export type RevokeScimTokenMutationVariables = {id: string;params: RevokeScimTokenParams}
+
+    /**
+ * @summary Revoke a SCIM token
+ */
+export const useRevokeScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeScimToken>>,
+        TError,
+        RevokeScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getListSetupLinksUrl = (params: ListSetupLinksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links?${stringifiedParams}` : `/v1/admin/setup-links`
+}
+
+/**
+ * The links of one organization, revoked and expired ones included, newest first. No tokens.
+ * @summary List an organization’s SSO setup links
+ */
+export const listSetupLinks = async (params: ListSetupLinksParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SetupLinkList> => {
+
+  return dashboardFetch<SetupLinkList>(getListSetupLinksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSetupLinksQueryKey = (params?: ListSetupLinksParams,) => {
+    return [
+    `/v1/admin/setup-links`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSetupLinksQueryOptions = <TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSetupLinksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSetupLinks>>> = ({ signal }) => listSetupLinks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSetupLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listSetupLinks>>>
+export type ListSetupLinksQueryError = ErrorEnvelope
+
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO setup links
+ */
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSetupLinksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSetupLinkUrl = () => {
+
+
+
+
+  return `/v1/admin/setup-links`
+}
+
+/**
+ * Creates a link that lets an organization’s IT administrator set up single sign-on at `/dashboard/setup` without an account. It lives 7 days unless `expiresInDays` (1 to 30) says otherwise and can be revoked. The token and the address, built from `PUBLIC_URL` with the token in its fragment, are in this answer and nowhere else: only the token’s hash is stored. An organization holds at most ten live links (`resource.conflict`, 409).
+ * @summary Create an SSO setup link
+ */
+export const createSetupLink = async (createSetupLinkRequest: CreateSetupLinkRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedSetupLink> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedSetupLink>(getCreateSetupLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSetupLinkRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSetupLinkMutationKey = () => ['createSetupLink'] as const;
+
+export const getCreateSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getCreateSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSetupLink>>, CreateSetupLinkMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSetupLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createSetupLink>>>
+    export type CreateSetupLinkMutationBody = CreateSetupLinkRequest
+    export type CreateSetupLinkMutationError = ErrorEnvelope
+    export type CreateSetupLinkMutationVariables = {data: CreateSetupLinkRequest}
+
+    /**
+ * @summary Create an SSO setup link
+ */
+export const useCreateSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSetupLink>>,
+        TError,
+        CreateSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSetupLinkMutationOptions(options), queryClient);
+    }
+
+export const getRevokeSetupLinkUrl = (id: string,
+    params: RevokeSetupLinkParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links/${id}?${stringifiedParams}` : `/v1/admin/setup-links/${id}`
+}
+
+/**
+ * Revokes a link that is not revoked yet. Whoever holds it is refused from the next request; connections made through it stay.
+ * @summary Revoke an SSO setup link
+ */
+export const revokeSetupLink = async (id: string,
+    params: RevokeSetupLinkParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeSetupLinkUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeSetupLinkMutationKey = () => ['revokeSetupLink'] as const;
+
+export const getRevokeSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getRevokeSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeSetupLink>>, RevokeSetupLinkMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeSetupLink(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof revokeSetupLink>>>
+
+    export type RevokeSetupLinkMutationError = ErrorEnvelope
+    export type RevokeSetupLinkMutationVariables = {id: string;params: RevokeSetupLinkParams}
+
+    /**
+ * @summary Revoke an SSO setup link
+ */
+export const useRevokeSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeSetupLink>>,
+        TError,
+        RevokeSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeSetupLinkMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {

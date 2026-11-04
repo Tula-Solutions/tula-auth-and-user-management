@@ -1,5 +1,6 @@
 import type {
   InvitationPreview,
+  MyOrganizationInvitation,
   OrganizationSuggestion,
   TulaError,
   UserOrganization,
@@ -80,6 +81,7 @@ function OrganizationSwitcherParts(props: OrganizationSwitcherProps) {
   const [error, setError] = useState<TulaError | null>(null)
   const [said, setSaid] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<OrganizationSuggestion[] | null>(null)
+  const [mine, setMine] = useState<MyOrganizationInvitation[] | null>(null)
   const [invitation, setInvitation] = useState<InvitationState>({ status: 'none' })
   const container = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -119,7 +121,8 @@ function OrganizationSwitcherParts(props: OrganizationSwitcherProps) {
     }
   }, [client, enabled, sessionId, invitationToken])
 
-  // Opening the panel asks which organizations the user's verified address may join.
+  // Opening the panel asks which organizations the user's verified address may join, and which
+  // invitations were sent to it.
   useEffect(() => {
     if (!open || !enabled) {
       return
@@ -129,6 +132,18 @@ function OrganizationSwitcherParts(props: OrganizationSwitcherProps) {
       (answer) => {
         if (current()) {
           setSuggestions(answer.data)
+        }
+      },
+      (caught) => {
+        if (current()) {
+          setError(toTulaError(caught))
+        }
+      }
+    )
+    client.organizations.invitations.mine().then(
+      (answer) => {
+        if (current()) {
+          setMine(answer.data)
         }
       },
       (caught) => {
@@ -248,6 +263,48 @@ function OrganizationSwitcherParts(props: OrganizationSwitcherProps) {
     } catch (caught) {
       if (current()) {
         setError(toTulaError(caught))
+      }
+    } finally {
+      if (current()) {
+        setPending(null)
+      }
+    }
+  }
+  // An invitation listed for the user is answered by its id: the session proves who they are.
+  const answerMine = async (entry: MyOrganizationInvitation, outcome: 'accepted' | 'declined') => {
+    if (pending !== null) {
+      return
+    }
+    const current = guard()
+    setPending(`mine:${entry.id}:${outcome}`)
+    setError(null)
+    try {
+      if (outcome === 'accepted') {
+        await client.organizations.invitations.acceptMine(entry.id)
+        await list.reload()
+      } else {
+        await client.organizations.invitations.declineMine(entry.id)
+      }
+      if (current()) {
+        setMine((entries) => (entries ?? []).filter((one) => one.id !== entry.id))
+        setSaid(
+          outcome === 'accepted'
+            ? formatText(t.organizationSwitcher.joined, { name: entry.organizationName })
+            : t.organizationSwitcher.invitationDeclined
+        )
+      }
+    } catch (caught) {
+      if (current()) {
+        setError(toTulaError(caught))
+        // Whatever the server refused, what is still on offer may have changed: ask again.
+        client.organizations.invitations.mine().then(
+          (answer) => {
+            if (current()) {
+              setMine(answer.data)
+            }
+          },
+          () => undefined
+        )
       }
     } finally {
       if (current()) {
@@ -405,6 +462,48 @@ function OrganizationSwitcherParts(props: OrganizationSwitcherProps) {
               {organizations.length === 0 ? (
                 <p className='tula-text'>{t.organizations.empty}</p>
               ) : null}
+              {(mine ?? []).length > 0 ? (
+                <>
+                  <p {...el('sectionTitle')}>{t.organizationSwitcher.pendingInvitationsTitle}</p>
+                  <ul {...el('organizationList')}>
+                    {(mine ?? []).map((entry) => (
+                      <li key={entry.id} {...el('memberItem')}>
+                        <span>
+                          {formatText(t.organizationSwitcher.pendingInvitationText, {
+                            organization: entry.organizationName,
+                            role: entry.role,
+                          })}
+                        </span>
+                        <div className='tula-button-row tula-is-compact'>
+                          <Button
+                            pending={pending === `mine:${entry.id}:accepted`}
+                            disabled={pending !== null}
+                            aria-label={formatText(
+                              t.organizationSwitcher.pendingInvitationAcceptLabel,
+                              { name: entry.organizationName }
+                            )}
+                            onClick={() => void answerMine(entry, 'accepted')}
+                          >
+                            {t.organizationSwitcher.invitationAccept}
+                          </Button>
+                          <Button
+                            kind='secondary'
+                            pending={pending === `mine:${entry.id}:declined`}
+                            disabled={pending !== null}
+                            aria-label={formatText(
+                              t.organizationSwitcher.pendingInvitationDeclineLabel,
+                              { name: entry.organizationName }
+                            )}
+                            onClick={() => void answerMine(entry, 'declined')}
+                          >
+                            {t.organizationSwitcher.invitationDecline}
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
               {(suggestions ?? []).length > 0 ? (
                 <>
                   <p {...el('sectionTitle')}>{t.organizationSwitcher.suggestionsTitle}</p>
@@ -509,7 +608,9 @@ function OrganizationItem(props: { label: string; active: boolean; onClick(): vo
 /**
  * The organization the session acts in, and a panel to change it: the user's organizations,
  * "Personal account" where the environment allows it, the organizations their verified email
- * address may join, an invitation the app handed over (`invitationToken`), "Manage
+ * address may join, the invitations sent to that address (listed when the panel opens, each
+ * with "Accept" and "Decline", answered by its id: no token is involved), an invitation the app
+ * handed over (`invitationToken`), "Manage
  * organization" and "Create organization". Renders nothing while signed out and where the
  * environment has organizations off.
  *

@@ -15,8 +15,8 @@ turning them on is something you do on purpose.
 > What is built today: organizations, memberships, built-in and custom roles, the active
 > organization and its token claims, `has()` in Next.js, React and any backend, the admin API,
 > and the [MCP server](mcp.md#read-tools-need-an-agent-key-or-a-secret-key)'s tools that read them.
-> The dashboard has no organization screens yet. A guide to invitations and verified domains is
-> [coming](#invitations-and-verified-domains).
+> The dashboard has [organization screens](dashboard.md#screens) too. Invitations and verified
+> domains have a guide each: [Invitations](invitations.md) and [Verified domains](verified-domains.md).
 
 ## Turn organizations on
 
@@ -109,12 +109,13 @@ try {
   await tula.organizations.setActive(organization.id)
   // tula.state.organizationId === organization.id
 
-  const { data, activeOrganizationId } = await tula.organizations.list()
+  const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 1 })
   // data[n] has `role` and `permissions`; activeOrganizationId is the one just chosen.
+  // `meta.totalPages` says whether to ask for `{ page: 2 }`.
 
   // `null` is the personal account.
   await tula.organizations.setActive(null)
-  return { data, activeOrganizationId }
+  return { data, meta, activeOrganizationId }
 } catch (error) {
   if (isTulaError(error) && error.code === 'organization.slug_taken') {
     // Ask for another slug.
@@ -142,10 +143,10 @@ await admin.call('addOrganizationMember', {
 
 | Call | Route | Who |
 | --- | --- | --- |
-| `client.organizations.list()` | `GET /v1/client/me/organizations` | The signed-in user: their organizations (the first page), each with their role and its permissions, and the active one. |
+| `client.organizations.list({ page, size })` | `GET /v1/client/me/organizations` | The signed-in user: their organizations, a page at a time (20 by default, up to 100; `meta.totalPages` says how many pages there are), each with their role and its permissions, and the active one. |
 | `client.organizations.create({ name, slug })` | `POST /v1/client/me/organizations` | The signed-in user, where `allowUserCreated` is on. |
 | `client.organizations.setActive(id \| null)` | `PUT /v1/client/me/organizations/active` | The signed-in user, for an organization they belong to. |
-| `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). |
+| `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). `listOrganizations` takes `page`, `size` and `q`: the organizations whose name or slug starts with `q`, ignoring case (up to 100 characters; `%` and `_` match themselves), counted and paged as a match. |
 | `listOrganizationMemberships`, `addOrganizationMember` | `/v1/admin/organizations/:id/memberships` | Your server (secret key). |
 | `listUserOrganizations` | `GET /v1/admin/users/:userId/organizations` | Your server (secret key): the organizations a user belongs to and their role in each. The dashboard's user page uses it. |
 
@@ -428,44 +429,22 @@ organizations as off.
 
 ## Invitations and verified domains
 
-Two ways to join an organization have a page of their own coming, and are only outlined here
+Two ways to join an organization without being added by hand, each with a guide of its own
 ([ADR 0065](adr/0065-organizations.md)):
 
-- **Invitations.** A member who may manage invitations invites an email address with a role.
-  The invitee gets a single-use link that works for seven days, and joins only with an account
-  whose address is verified and matches. The server routes and `client.organizations.invitations`
-  in `@tula-tech/core` exist, and `<OrganizationProfile>` and `<OrganizationSwitcher>` draw
-  them; read their JSDoc in the [`@tula-tech/core` reference](reference/core.md).
-- **Verified domains.** An organization proves it owns an email domain with a code sent to an
-  address at it. Users with a verified address there are then offered the organization
-  (`suggest`) or join it at once (`auto_join`) with the `defaultRole`. The client routes and
-  `client.organizations.domains` exist; the [Domains tab](organization-profile.md#domains) of
-  `<OrganizationProfile>` claims, verifies and manages them. What to know before you rely on
-  one:
-  - **A verification lasts a year.** A domain can be lost and registered again by someone else,
-    so after 365 days the domain stops matching: nobody is offered the organization or joined to
-    it because of it, and its `status` reads `needs_reverification`. Members who joined stay.
-    Nothing is deleted.
-  - **Prove it again with a new code.** Claiming the same domain again (the same call as the
-    first time) emails a code to an address on it; entering the code restarts the year. Until
-    then a domain that has not lapsed keeps working, and asking does not change its `mode`.
-  - **Managers are emailed 30 and 7 days before** (the members whose role holds
-    `org:sys:domains:manage`, with a verified address). The email names the organization and how
-    many domains, never a domain, and carries no code and no link: open the organization's
-    domain settings and ask for a code there. Its wording is the `organization_domain_expiring`
-    [email template](email-templates.md). A domain verified before this existed has at least 30
-    days from the upgrade.
-  - **Another organization can claim a lapsed name.** While a verification holds, the name is
-    that organization's alone; once it has lapsed, whoever proves the domain now takes it.
-  - **Sending codes is limited**: one a minute and ten an hour for an organization, ten a day
-    for one a user created (thirty for one an administrator made), twenty a day across all the
-    organizations one user created, and 200 a day for the environment. Being told that a name
-    is already claimed elsewhere (`organization.domain_taken`) spends one of the hour's ten.
+- **[Invitations](invitations.md).** A member who may manage invitations, or your server, invites
+  an email address with a role. The invitee gets a single-use link that works for seven days
+  and joins only with an account whose verified address matches. A signed-in user can also list
+  and answer the invitations sent to their own address, with no token.
+- **[Verified domains](verified-domains.md).** An organization proves it owns an email domain with
+  a code sent to an address at it. People who then sign up with a verified address there are
+  offered the organization (`suggest`) or join it at once (`auto_join`) with the `defaultRole`.
+  A verification lasts a year and is renewed with a new code.
 
 The [Invitations](organization-profile.md#invitations) and
 [Domains](organization-profile.md#domains) tabs of `<OrganizationProfile>` are the screens for
-both. Until a guide covers the server's side, add members from your server with
-`addOrganizationMember`, or let users create organizations of their own.
+both, and `client.organizations.invitations` and `client.organizations.domains` in
+`@tula-tech/core` are the calls under them.
 
 ## Not built
 
