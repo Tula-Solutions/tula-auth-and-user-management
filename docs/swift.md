@@ -830,9 +830,53 @@ if let first = offered.data.first {
 ```
 <!-- /snippet -->
 
-Members, roles and invitations are managed by administrators (the dashboard, or
-`@tula-tech/admin` on your server). `tula.organizations.invitations` also has `list`,
-`invite` and `revoke` for a signed-in member whose role may do it; the server decides.
+A member manages an organization with the role they hold: the server decides, from the
+membership it reads on every call, and answers `organization.permission_required` (or
+`auth.forbidden` for the domain routes) for what the role may not do. A role you changed is
+carried by the member's sessions from their next refresh.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-members -->
+```swift
+// The server decides from the role the user holds now, on every call.
+let members = try await tula.organizations.members.list(organizationId: organizationId)
+let roles = try await tula.organizations.roles(organizationId: organizationId)  // the roles the user may give
+if let member = members.data.first, roles.data.contains(where: { $0.key == "admin" }) {
+    try await tula.organizations.members.changeRole(
+        organizationId: organizationId, userId: member.userId, role: "admin")
+}
+try await tula.organizations.update(organizationId: organizationId, name: "Acme Inc")
+try await tula.organizations.leave(organizationId: organizationId)  // refused for the last manager
+try await tula.organizations.remove(organizationId: organizationId)  // deletes it for good
+```
+<!-- /snippet -->
+
+`members.list` is the first page only. `leave` is refused with `organization.last_manager`
+for the one member who can manage members, and the same code refuses demoting or removing
+that member. Deleting an organization removes its memberships, invitations and domains; a
+session that had it active keeps working and reads the personal account (or the next
+organization you choose) from its next refresh.
+
+An administrator claims a domain by a code emailed to an address on it; a verified domain
+suggests the organization to people whose verified address is on it, or joins them
+(`mode`). A row's `status` is `pending`, `verified` or `needsReverification`; a verified
+claim must be proved again after `expiresAt`:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-domains -->
+```swift
+// Claim a domain: a code is emailed to an address on it.
+let claim = try await tula.organizations.domains.start(
+    organizationId: organizationId, domain: "acme.com", email: "ada@acme.com", mode: .suggest)
+let proved = try await tula.organizations.domains.verify(
+    organizationId: organizationId, domainId: claim.id, code: typed)
+// proved.status is .verified until proved.expiresAt; later .needsReverification.
+_ = try await tula.organizations.domains.update(
+    organizationId: organizationId, domainId: proved.id, mode: .autoJoin)
+try await tula.organizations.domains.remove(organizationId: organizationId, domainId: proved.id)
+```
+<!-- /snippet -->
+
+`tula.organizations.invitations` also has `list`, `invite` and `revoke` for a signed-in
+member whose role may do it; the server decides.
 
 ## Errors
 

@@ -1,5 +1,7 @@
 package dev.tula.auth
 
+import dev.tula.auth.generated.OrganizationDomainMode
+import dev.tula.auth.generated.OrganizationDomainStatus
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
@@ -451,5 +453,104 @@ class OrganizationsTest {
             answer(403, errorJson("organization.permission_required", 403))
         }
         assertEquals("organization.permission_required", caught { bench.tula.organizations.invitations.list("org_1") }.code)
+    }
+
+    @Test
+    fun `an organization is renamed, deleted, left and its roles read, each by its route and body`() = runTest {
+        val bench = Bench()
+        bench.signIn()
+        val org = "$ME_ORGANIZATIONS/org_1"
+        bench.engine.on("PATCH", org) { ok(ORGANIZATION) }
+        assertEquals("org_1", bench.tula.organizations.update("org_1", name = "Acme Inc").id)
+        assertEquals("""{"name":"Acme Inc"}""", bench.engine.sent(org).single().body)
+
+        bench.engine.on("PATCH", org) { ok(ORGANIZATION.replace("\"org_1\"", "\"\"")) }
+        assertEquals("response.invalid", caught { bench.tula.organizations.update("org_1", name = "x") }.code)
+
+        bench.engine.on("DELETE", org) { answer(204, "") }
+        bench.tula.organizations.remove("org_1")
+        assertEquals(1, bench.engine.sent(org).count { it.method == "DELETE" })
+
+        bench.engine.on("GET", "$org/roles") { ok("""{"data":[{"key":"admin","name":"Admin"}]}""") }
+        assertEquals(listOf("admin"), bench.tula.organizations.roles("org_1").data.map { it.key })
+
+        // Leaving removes the signed-in user's own membership: their id is in the path.
+        val own = "$org/members/user-1"
+        bench.engine.on("DELETE", own) { answer(204, "") }
+        bench.tula.organizations.leave("org_1")
+        assertEquals(1, bench.engine.sent(own).size)
+
+        bench.engine.on("DELETE", own) { answer(409, errorJson("organization.last_manager", 409)) }
+        assertEquals("organization.last_manager", caught { bench.tula.organizations.leave("org_1") }.code)
+    }
+
+    @Test
+    fun `members are listed, given another role and removed by organization and user`() = runTest {
+        val bench = Bench()
+        bench.signIn()
+        val base = "$ME_ORGANIZATIONS/org_1/members"
+        val member =
+            """{"userId":"user-2","name":null,"email":"b@example.com","role":"admin","createdAt":"2026-01-01T00:00:00.000Z"}"""
+        bench.engine.on("GET", base) {
+            ok("""{"meta":{"totalCount":1,"totalPages":1,"page":1,"perPage":20},"data":[$member]}""")
+        }
+        assertEquals("user-2", bench.tula.organizations.members.list("org_1").data.single().userId)
+        bench.engine.on("PATCH", "$base/user-2") { ok(member) }
+        assertEquals("admin", bench.tula.organizations.members.changeRole("org_1", "user-2", "admin").role)
+        assertEquals("""{"role":"admin"}""", bench.engine.sent("$base/user-2").single().body)
+        bench.engine.on("DELETE", "$base/user-2") { answer(204, "") }
+        bench.tula.organizations.members.remove("org_1", "user-2")
+        assertEquals(1, bench.engine.sent("$base/user-2").count { it.method == "DELETE" })
+
+        bench.engine.on("PATCH", "$base/user-2") { answer(422, errorJson("organization.role_unknown", 422)) }
+        assertEquals(
+            "organization.role_unknown",
+            caught { bench.tula.organizations.members.changeRole("org_1", "user-2", "x") }.code,
+        )
+        val before = bench.engine.requests.size
+        for (id in listOf("", "..", "a/b")) {
+            assertEquals("response.invalid", caught { bench.tula.organizations.members.list(id) }.code, id)
+            assertEquals("response.invalid", caught { bench.tula.organizations.members.remove("org_1", id) }.code, id)
+            assertEquals("response.invalid", caught { bench.tula.organizations.domains.list(id) }.code, id)
+        }
+        assertEquals(before, bench.engine.requests.size)
+    }
+
+    @Test
+    fun `domains are listed, claimed, proved, changed and removed by organization and domain`() = runTest {
+        val bench = Bench()
+        bench.signIn()
+        val base = "$ME_ORGANIZATIONS/org_1/domains"
+        val row =
+            """{"id":"dom_1","domain":"acme.com","mode":"suggest","status":"pending","verifiedAt":null,"expiresAt":null,""" +
+                """"codeExpiresAt":"2026-01-01T01:00:00.000Z","createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z"}"""
+        bench.engine.on("GET", base) { ok("""{"data":[$row]}""") }
+        assertEquals(OrganizationDomainStatus.Pending, bench.tula.organizations.domains.list("org_1").data.single().status)
+
+        bench.engine.on("POST", base) { ok(row) }
+        val claim = bench.tula.organizations.domains.start("org_1", "acme.com", "ada@acme.com", OrganizationDomainMode.Suggest)
+        assertEquals("dom_1", claim.id)
+        assertEquals("""{"domain":"acme.com","email":"ada@acme.com","mode":"suggest"}""", bench.engine.sent(base).last().body)
+
+        val verifiedRow = row.replace("\"pending\"", "\"verified\"")
+        bench.engine.on("POST", "$base/dom_1/verify") { ok(verifiedRow) }
+        assertEquals(OrganizationDomainStatus.Verified, bench.tula.organizations.domains.verify("org_1", "dom_1", "123456").status)
+        assertEquals("""{"code":"123456"}""", bench.engine.sent("$base/dom_1/verify").single().body)
+
+        bench.engine.on("PATCH", "$base/dom_1") { ok(verifiedRow) }
+        bench.tula.organizations.domains.update("org_1", "dom_1", OrganizationDomainMode.AutoJoin)
+        assertEquals("""{"mode":"auto_join"}""", bench.engine.sent("$base/dom_1").single().body)
+
+        bench.engine.on("DELETE", "$base/dom_1") { answer(204, "") }
+        bench.tula.organizations.domains.remove("org_1", "dom_1")
+        assertEquals(1, bench.engine.sent("$base/dom_1").count { it.method == "DELETE" })
+
+        bench.engine.on("GET", base) { ok("""{"data":[${row.replace("\"pending\"", "\"needs_reverification\"")}]}""") }
+        assertEquals(
+            OrganizationDomainStatus.NeedsReverification,
+            bench.tula.organizations.domains.list("org_1").data.single().status,
+        )
+        bench.engine.on("GET", base) { answer(403, errorJson("auth.forbidden", 403)) }
+        assertEquals("auth.forbidden", caught { bench.tula.organizations.domains.list("org_1") }.code)
     }
 }

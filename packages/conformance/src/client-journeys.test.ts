@@ -99,10 +99,9 @@ describe('the committed list', () => {
     for (const { ticket } of notBuilt(await loadClientJourneys(), 'kotlin')) {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
     }
-    // TULA-76: the native clients' emailed link. TULA-130: member management in the native clients.
+    // TULA-76: the native clients' emailed link.
     // TULA-132: the invitee's own list of invitations in the native clients.
     expect(Object.fromEntries(perTicket)).toEqual({
-      'TULA-130': 1,
       'TULA-132': 1,
       'TULA-142': 13,
       'TULA-76': 1,
