@@ -112,7 +112,8 @@ that middleware and refused by `secretKey()` and `agentKey()`. The routes have n
 description on purpose: no SDK or dashboard is generated from them. They answer RFC 7644 error
 documents. Ownership is a column, `users.managed_by_directory_id`: only a user the directory
 created, and who has no other membership, is banned or deleted by it; anyone else only loses
-the membership. Membership changes go through the Organizations service, so the last-manager
+the membership. A reactivation lifts only the ban of the directory's own deactivation, never an
+operator's. Membership changes go through the Organizations service, so the last-manager
 rule of ADR 0065 holds and answers 409. The actor of an audit entry is `directory`. A create
 that cannot join the organization removes the account it just made (a compensating delete, so a
 crash between the two leaves it), and a name sent by the directory is kept in step with the user. So is its

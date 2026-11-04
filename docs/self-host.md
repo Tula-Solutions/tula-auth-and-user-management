@@ -872,6 +872,7 @@ reports whether the database is at the version the running image ships.
 | Migration | What it does | What you do |
 | --- | --- | --- |
 | `0006` API keys | Ties each API key's project to its environment with a foreign key. | Nothing. It fails only if a key row was written by hand with a project that is not its environment's. |
+| `0037` user import columns | Adds a check on the size of a user's metadata (`users_metadata_bounds`). | **Run the upgrade in a quiet window.** The migration checks every row of `users` under a lock on the table, so on a large table sign-ins pause for that time. |
 | `0007` environment settings | The table behind `GET`/`PUT /v1/admin/settings`. | Nothing. Every environment starts at revision 0 with the defaults, including your `PASSWORD_POLICY` and `CORS_ORIGINS`, until it saves a document. |
 | `0008` attempt secret | Every sign-up, sign-in and reset attempt now has a secret its client must present. | Nothing. Attempts in flight during the upgrade (they live ten minutes) cannot be continued: the user starts again. Clients must be on an SDK that sends `x-tula-attempt`. |
 | `0009` two-step verification | Tables for authenticator secrets and backup codes. | Decide the policy: `mfa.policy` is `optional` unless you set it, which lets users turn it on. From here on, **changing `TULA_MASTER_KEY` breaks every user's second factor**. |

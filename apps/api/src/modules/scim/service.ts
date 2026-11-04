@@ -94,8 +94,16 @@ async function hasMembership(deps: Deps, ctx: ScimContext, userId: string) {
  * Give or take back access. Deactivating removes the membership (the last manager of the
  * organization cannot be removed: 409) and, only for an account this directory created that
  * has no other membership, bans it, which signs it out and denylists its sessions.
+ * Activating lifts only a ban of the directory's own deactivation (`mayUnban`), never an operator's.
  */
-async function setActive(deps: Deps, ctx: ScimContext, user: UserRecord, active: boolean) {
+async function setActive(
+  deps: Deps,
+  ctx: ScimContext,
+  user: UserRecord,
+  active: boolean,
+  // Whether this directory last set the user inactive: only then is a ban its own to lift.
+  mayUnban = true
+) {
   const { environmentId } = ctx.tenant
   const member = await deps.organizations.findMembership(environmentId, ctx.organizationId, user.id)
   const managed = user.managedByDirectoryId === ctx.organizationId
@@ -111,7 +119,9 @@ async function setActive(deps: Deps, ctx: ScimContext, user: UserRecord, active:
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
       await Roles.sync(deps, ctx, user.id)
     }
-    if (managed && user.bannedAt !== null) {
+    // shortcut: an operator ban placed while the directory already holds the user inactive is
+    // lifted on reactivation (who banned is not recorded); upgrade by recording the banner.
+    if (managed && mayUnban && user.bannedAt !== null) {
       await Users.unban(deps, ctx.tenant, user.id, ctx.actor)
     }
   } else {
@@ -390,7 +400,8 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     }
     throw error
   }
-  await setActive(deps, ctx, user, wanted)
+  // A new record has no deactivation of its own behind it, so a ban found here is someone else's.
+  await setActive(deps, ctx, user, wanted, false)
   const fresh = await load(deps, ctx, user.id)
   return resource(deps, fresh.user, fresh.record)
 }

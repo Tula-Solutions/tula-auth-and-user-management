@@ -258,6 +258,38 @@ describe('deactivation, reactivation and deletion', () => {
     expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).toBeNull()
   })
 
+  test('an operator’s ban outlives the directory: a routine active:true does not lift it', async () => {
+    const id = await provision()
+    await Users.ban(deps, TENANT, id, TEST_ACTOR)
+    const put = await scim('PUT', `/Users/${id}`, okta('maya@acme.test', { active: true }))
+    expect(put.status).toBe(200)
+    expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).not.toBeNull()
+    const patch = await scim('PATCH', `/Users/${id}`, {
+      Operations: [{ op: 'replace', path: 'active', value: true }],
+    })
+    expect(patch.status).toBe(200)
+    expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).not.toBeNull()
+  })
+
+  test('a create that repairs an operator-banned account does not lift the ban', async () => {
+    const insert = spyOn(deps.scim, 'insertUser').mockImplementationOnce(async () => {
+      throw new Error('crash')
+    })
+    const gone = spyOn(deps.users, 'delete').mockImplementationOnce(async () => {
+      throw new Error('crash again')
+    })
+    await scim('POST', '/Users', okta('banned@acme.test'))
+    insert.mockRestore()
+    gone.mockRestore()
+    const orphan = await deps.users.findByEmail(TENANT.environmentId, 'banned@acme.test')
+    await Users.ban(deps, TENANT, orphan?.id ?? '', TEST_ACTOR)
+    const retry = await scim('POST', '/Users', okta('banned@acme.test'))
+    expect(retry.status).toBe(201)
+    expect(
+      (await deps.users.findById(TENANT.environmentId, retry.body.id))?.bannedAt
+    ).not.toBeNull()
+  })
+
   test('PUT with active false deactivates', async () => {
     const id = await provision()
     const res = await scim('PUT', `/Users/${id}`, okta('maya@acme.test', { active: false }))

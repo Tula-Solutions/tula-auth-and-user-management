@@ -67,6 +67,8 @@ managed user cannot change it from a client.
   the access token is refused at once. Setting `active: true` again restores access.
 - **Delete** removes the membership, and deletes the account only if the directory manages it
   and the user has no other membership.
+- **Reactivate** (`active: true`) lifts only the ban of the directory's own deactivation. A ban an operator set
+  in the dashboard or through the admin API outlives the directory: a routine `active: true` does not undo it.
 - A user the directory does not manage, or who belongs to another organization, is never banned
   or deleted by SCIM.
 - The organization's **last manager** cannot be removed: deactivate and delete answer 409, as
