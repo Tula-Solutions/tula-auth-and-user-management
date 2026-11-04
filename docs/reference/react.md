@@ -352,6 +352,8 @@ export interface FirstFactorFormProps {
   sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
   /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
   sendText?(): Promise<FlowStep | null>
+  /** Start single sign-on (`sso`): replaces the page with the identity provider's. */
+  startSso?(): Promise<FlowStep | null>
   /** The other ways to sign in the attempt offers, drawn under the form. */
   alternatives?: ReactNode
 }
@@ -680,8 +682,8 @@ const byRole: OrganizationCheck = { role: 'admin' }
 _function_, defined in `packages/react/src/components/organization-profile.tsx`
 
 Manage an organization: General (its details, rename, leave, delete), Members (roles,
-removal), Invitations (invite, revoke) and Domains (claim, verify with the emailed code, what
-a verified domain does). A tab is drawn only where the user's role holds its permission, and
+removal), Invitations (invite, revoke), Domains (claim, verify with the emailed code, what
+a verified domain does) and Single sign-on (connections, on/off, enforcement). A tab is drawn only where the user's role holds its permission, and
 the server checks every call again: a refusal because the role changed (or the membership
 ended) reads the user's organizations again, says the permissions changed, and a user who is
 no longer a member is told so.
@@ -1923,6 +1925,203 @@ export interface TulaClient {
       remove(organizationId: string, domainId: string): Promise<void>
     }
     /**
+     * An organization's single sign-on (ADR 0067), for a member whose role holds
+     * `org:sys:sso:manage`, which the API reads from the membership on every call. The client
+     * secret is write-only: no answer returns it. Switching enforcement off, trusting the
+     * identity provider for MFA and naming a break-glass role need a recent sign-in
+     * (`auth.step_up_required`: step up, then repeat the call).
+     */
+    readonly sso: {
+      /**
+       * The organization's connections, with the service provider values to give the IdP.
+       *
+       * @param organizationId - The organization.
+       * @returns The connections.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { connections } = await tula.organizations.sso.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationSsoConnectionList>
+      /**
+       * One connection.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * const connection = await tula.organizations.sso.get(org.id, id)
+       * ```
+       */
+      get(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Create a draft connection; a draft signs nobody in.
+       *
+       * @param organizationId - The organization.
+       * @param input - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret })
+       * ```
+       */
+      create(
+        organizationId: string,
+        input: CreateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Change a connection; fields left out are kept.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param input - The fields to change.
+       * @returns The connection as it is now.
+       * @throws TulaError `auth.step_up_required` for a weakening on a stale session.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.update(org.id, id, { status: 'active' })
+       * ```
+       */
+      update(
+        organizationId: string,
+        id: string,
+        input: UpdateOrganizationSsoConnectionInput
+      ): Promise<OrganizationSsoConnection>
+      /**
+       * Read a SAML connection's metadata address again (a rotated certificate).
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @returns The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.refreshMetadata(org.id, id)
+       * ```
+       */
+      refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
+      /**
+       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep their accounts.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.remove(org.id, id)
+       * ```
+       */
+      remove(organizationId: string, id: string): Promise<void>
+      /**
+       * The IdP group to role mapping, in precedence order.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @returns The mapping.
+       * @example
+       * ```ts
+       * const { mappings } = await tula.organizations.sso.groupRoles(org.id, id)
+       * ```
+       */
+      groupRoles(organizationId: string, id: string): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Replace the whole mapping.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param mapping - The new mapping.
+       * @returns The mapping as saved.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role: 'admin' }] })
+       * ```
+       */
+      setGroupRoles(
+        organizationId: string,
+        id: string,
+        mapping: OrganizationSsoGroupRoles
+      ): Promise<OrganizationSsoGroupRoles>
+      /**
+       * Start a test sign-in of a connection. A passing test of its current settings is what
+       * turns it on (`sso.test_required`). Send the browser to `authorizationUrl`; it returns to
+       * `redirectUrl` with `#tula_test=<testId>`.
+       *
+       * @param organizationId - The organization.
+       * @param id - A connection of the organization.
+       * @param redirectUrl - The page to return to; the environment must allow it.
+       * @returns The test's id and where to send the browser.
+       * @throws TulaError `request.redirect_not_allowed`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id, location.href)
+       * ```
+       */
+      startTest(
+        organizationId: string,
+        id: string,
+        redirectUrl: string
+      ): Promise<OrganizationSsoTestStart>
+      /**
+       * Read a test's result: what arrived and how it mapped, or why it failed.
+       *
+       * @param organizationId - The organization.
+       * @param id - The connection.
+       * @param testId - The id the browser came back with.
+       * @returns The result; `pending` until the browser has come back.
+       * @throws TulaError `sso.test_not_found`, and those of {@link get}.
+       * @example
+       * ```ts
+       * const result = await tula.organizations.sso.testResult(org.id, id, testId)
+       * ```
+       */
+      testResult(
+        organizationId: string,
+        id: string,
+        testId: string
+      ): Promise<OrganizationSsoTestResult>
+      /**
+       * The organization's SSO setup links, newest first; never their tokens. A link lets an
+       * IT administrator without an account set up an OpenID Connect connection (not SAML).
+       *
+       * @param organizationId - The organization.
+       * @returns The links.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { links } = await tula.organizations.sso.setupLinks(org.id)
+       * ```
+       */
+      setupLinks(organizationId: string): Promise<OrganizationSetupLinkList>
+      /**
+       * Make a setup link. The answer holds the link's `url` once; it is not stored.
+       *
+       * @param organizationId - The organization.
+       * @param input - The link's name and life in days.
+       * @returns The link, with its token and address.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * const { url } = await tula.organizations.sso.createSetupLink(org.id, { name: 'Acme IT' })
+       * ```
+       */
+      createSetupLink(
+        organizationId: string,
+        input?: CreateOrganizationSetupLinkInput
+      ): Promise<CreatedOrganizationSetupLink>
+      /**
+       * End a setup link now.
+       *
+       * @param organizationId - The organization.
+       * @param linkId - The link.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.revokeSetupLink(org.id, link.id)
+       * ```
+       */
+      revokeSetupLink(organizationId: string, linkId: string): Promise<void>
+    }
+    /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
      * call. Answering needs the invited account: signed in, with the invited address, verified.
@@ -2537,6 +2736,10 @@ export interface TulaLocalization {
     emailResent: string
     /** The button that asks for a texted code, and the title before one was asked for. */
     smsCode: string
+    /** The button that starts single sign-on, and the title of its screen. */
+    sso: string
+    /** The line under that title. */
+    ssoPrompt: string
     /** Before a code was asked for. */
     smsCodePrompt: string
     /** The title once a code was asked for. */
@@ -2969,6 +3172,7 @@ export interface TulaLocalization {
     tabMembers: string
     tabInvitations: string
     tabDomains: string
+    tabSso: string
     /** A section this version of the components does not know. */
     unsupportedTitle: string
     unsupportedMessage: string
@@ -3077,6 +3281,54 @@ export interface TulaLocalization {
     domainRemoved: string
     /** `{domain}`. */
     domainModeChanged: string
+    ssoTitle: string
+    ssoIntro: string
+    setupLinkTitle: string
+    setupLinkIntro: string
+    setupLinkNameLabel: string
+    setupLinkCreate: string
+    setupLinkShownOnce: string
+    setupLinkAddressLabel: string
+    setupLinkDone: string
+    setupLinkExpires: string
+    setupLinkRevokedState: string
+    setupLinkRevoke: string
+    setupLinkRevokeConfirm: string
+    setupLinkRevokeConfirmButton: string
+    setupLinkRevoked: string
+    ssoLoading: string
+    ssoEmpty: string
+    ssoNameLabel: string
+    ssoIssuerLabel: string
+    ssoClientIdLabel: string
+    ssoClientSecretLabel: string
+    ssoFieldRequired: string
+    ssoAdd: string
+    /** `{name}`. */
+    ssoAdded: string
+    /** `{name}`. */
+    ssoUpdated: string
+    /** `{name}`. */
+    ssoDeleted: string
+    ssoStatusDraft: string
+    ssoStatusActive: string
+    ssoStatusDisabled: string
+    ssoEnforcedBadge: string
+    ssoSecretSet: string
+    ssoNoSecret: string
+    /** `{name}`. */
+    ssoTurnOn: string
+    /** `{name}`. */
+    ssoTurnOff: string
+    /** `{name}`. */
+    ssoEnforce: string
+    /** `{name}`. */
+    ssoUnenforce: string
+    /** `{name}`. */
+    ssoDelete: string
+    /** `{name}`. */
+    ssoDeleteConfirm: string
+    ssoDeleteConfirmButton: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -3661,6 +3913,14 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param options - `signal`: stop waiting.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep | null>
+  /**
+   * Start single sign-on (the `sso` first factor): the page is replaced by the identity
+   * provider's. The sign-in finishes on the `redirectUrl` page, in `<OAuthCallback>` or
+   * `signIn.handleOAuthCallback()`. It answers the step it was on, which is unchanged.
+   *
+   * @param input - `redirectUrl`: a page of this origin that finishes the round trip.
+   */
+  startSso(input: { redirectUrl: string }): Promise<FlowStep | null>
   /**
    * Whether an emailed link can be used in this browser: it needs storage the browser's tabs
    * share, which some privacy modes and sandboxed frames refuse. Offer only the code where it

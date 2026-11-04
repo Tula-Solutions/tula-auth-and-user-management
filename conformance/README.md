@@ -38,6 +38,7 @@ bun run conformance
 | `CONFORMANCE_SECRET_KEY` | none | A secret key of the same environment. Without it, scenarios marked `needsSecretKey` are skipped. |
 | `CONFORMANCE_BASE_URL` | `http://localhost:3003` | Origin of the API. |
 | `CONFORMANCE_PUBLIC_URL` | `CONFORMANCE_BASE_URL` | The server's own `PUBLIC_URL`, when the run reaches it at another address. A [device-binding proof](#scenario-format) is signed for the address the server knows itself by, not the one the request was sent to. |
+| `CONFORMANCE_SSO_ISSUER` | `CONFORMANCE_PUBLIC_URL`, else `CONFORMANCE_BASE_URL`, plus `/v1/dev/sso` | The mock enterprise identity provider's issuer as the *server* reaches it. A server in a container cannot reach the port published on the host (its `PUBLIC_URL`): set `http://localhost:3003/v1/dev/sso`, or the connection's discovery fails and the SSO scenarios end at a 404. |
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 | `CONFORMANCE_SETTLE_MS` | `0` | For a run through one address in front of several instances ([below](#behind-one-address)): how long to wait after each step that changes the environment's settings. At most 60000. |
 | `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenarios](#the-webhook-scenarios-need-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |

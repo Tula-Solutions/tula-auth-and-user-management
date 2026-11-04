@@ -26,10 +26,13 @@ import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryProposalStore } from '~/adapters/memory/proposals'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { MemoryScimStore } from '~/adapters/memory/scim'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
+import { MemorySetupLinkStore } from '~/adapters/memory/setup-links'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemorySmsSender } from '~/adapters/memory/sms-sender'
 import { MemorySmsUsageStore } from '~/adapters/memory/sms-usage'
+import { MemorySsoConnectionStore } from '~/adapters/memory/sso-connections'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
@@ -74,6 +77,9 @@ export interface TestDeps extends Deps {
   webhookDeliveries: MemoryWebhookDeliveryStore
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
+  ssoConnections: MemorySsoConnectionStore
+  scim: MemoryScimStore
+  setupLinks: MemorySetupLinkStore
   organizations: MemoryOrganizationStore
   organizationDomains: MemoryOrganizationDomainStore
   proposals: MemoryProposalStore
@@ -176,6 +182,9 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
+    ssoConnections: new MemorySsoConnectionStore(activityLog, users),
+    scim: new MemoryScimStore(activityLog),
+    setupLinks: new MemorySetupLinkStore(activityLog),
     organizations,
     organizationDomains: new MemoryOrganizationDomainStore(activityLog, organizations),
     proposals: new MemoryProposalStore(activityLog, apiKeys),

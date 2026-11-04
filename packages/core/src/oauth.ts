@@ -402,6 +402,28 @@ export async function startOAuth(
     attemptId = answer.attempt.id
     started = { authorizationUrl: answer.authorizationUrl, binding: answer.binding }
   }
+  return keepAndNavigate(context, attemptId, started, input.navigate, intent)
+}
+
+/**
+ * Keep a round trip's binding for this tab and send the page to the provider.
+ *
+ * @param context - Storage and the page.
+ * @param attemptId - The attempt the round trip belongs to.
+ * @param started - The provider's URL and the binding.
+ * @param navigate - `false` to leave the navigation to the caller.
+ * @param intent - A sign-in, or connecting an account.
+ * @returns The provider's URL.
+ * @throws TulaError `response.invalid` for a URL that is not http(s), `storage.failed`.
+ */
+function keepAndNavigate(
+  context: OAuthContext,
+  attemptId: string,
+  started: { authorizationUrl: string; binding: string },
+  navigate: boolean | undefined,
+  intent: Intent
+): { url: string } {
+  const { oauth, environment } = context
   // Only ever an http(s) URL: the answer is the server's, but a navigation is not something
   // to hand a `javascript:` URL to on anyone's word.
   if (!/^https?:\/\//i.test(started.authorizationUrl)) {
@@ -410,10 +432,55 @@ export async function startOAuth(
   if (!oauth.save(attemptId, started.binding, intent)) {
     throw clientError('storage.failed', context.messages())
   }
-  if (input.navigate !== false) {
-    page?.assign?.(started.authorizationUrl)
+  if (navigate !== false) {
+    environment.page?.assign?.(started.authorizationUrl)
   }
   return { url: started.authorizationUrl }
+}
+
+/**
+ * Continue a sign-in with the identity provider of the address's domain (the `sso` strategy).
+ *
+ * The round trip returns like a provider's: {@link handleOAuthCallback} finishes it.
+ *
+ * @param context - Transport, storage and the page.
+ * @param bound - The attempt's id and secret.
+ * @param input - The page to come back to, and whether to navigate.
+ * @returns The identity provider's URL.
+ * @throws TulaError `storage.failed`, `link.cross_origin`, `response.invalid`, or what the API
+ *   answered (`sso.*`, `request.redirect_not_allowed`).
+ */
+export async function startSso(
+  context: OAuthContext,
+  bound: { params: { attemptId: string }; attemptSecret: string },
+  input: { redirectUrl: string; navigate?: boolean }
+): Promise<{ url: string }> {
+  discardOAuthCallback(context)
+  if (!context.oauth.available()) {
+    throw clientError('storage.failed', context.messages())
+  }
+  const page = context.environment.page
+  if (page && originOf(input.redirectUrl) !== originOf(page.url())) {
+    throw clientError('link.cross_origin', context.messages())
+  }
+  const answer: unknown = await context.transport.call('startSsoSignIn', {
+    ...bound,
+    body: { redirectUrl: input.redirectUrl },
+  })
+  if (
+    !isRecord(answer) ||
+    typeof answer.authorizationUrl !== 'string' ||
+    typeof answer.binding !== 'string'
+  ) {
+    throw clientError('response.invalid', context.messages())
+  }
+  return keepAndNavigate(
+    context,
+    bound.params.attemptId,
+    { authorizationUrl: answer.authorizationUrl, binding: answer.binding },
+    input.navigate,
+    'sign_in'
+  )
 }
 
 function originOf(url: string): string | null {

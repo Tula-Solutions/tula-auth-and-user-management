@@ -57,6 +57,21 @@ export interface Schemas {
       personalAccount: boolean
     }
   }
+  CreateMySetupLinkRequest: {
+    name?: string
+    expiresInDays?: number
+  }
+  CreateMySsoConnectionRequest: {
+    protocol?: 'oidc' | 'saml'
+    name: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    domains?: Schemas['OrganizationDomainName'][]
+  }
   CreateOrganizationInvitationRequest: {
     email: string
     role: Schemas['OrganizationRoleKey']
@@ -65,6 +80,21 @@ export interface Schemas {
   CreateOrganizationRequest: {
     name: string
     slug: Schemas['OrganizationSlug']
+  }
+  CreatedSetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+    /** The setup token. Shown once; only its hash is stored. */
+    token: string
+    /** The address to send to the IT administrator. The token is in its fragment. */
+    url: string
   }
   CurrentUser: {
     id: string
@@ -98,7 +128,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'user.managed' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.url_not_https' | 'sso.test_required' | 'sso.test_not_found' | 'sso.role_not_allowed' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -144,7 +174,7 @@ export interface Schemas {
     strategy: Schemas['PreparedFirstFactorStrategy']
     redirectUrl?: string
   }
-  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'sms_code' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
+  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'sms_code' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook' | 'sso'
   FlowAttempt: {
     id: string
     kind: Schemas['FlowKind']
@@ -450,6 +480,26 @@ export interface Schemas {
   RevokedSessions: {
     revoked: number
   }
+  SamlConnection: {
+    idpEntityId: string
+    ssoUrl: string
+    metadataUrl: string | null
+    certificates: {
+      fingerprint: string
+      notAfter: string
+      expired: boolean
+    }[]
+    spEntityId: string
+    acsUrl: string
+    spMetadataUrl: string
+  }
+  SamlSettingsInput: {
+    metadataXml?: string
+    metadataUrl?: string
+    idpEntityId?: string
+    ssoUrl?: string
+    certificates?: string[]
+  }
   SecondFactorMethod: 'totp' | 'passkey' | 'backup_code' | 'sms_code'
   SecondFactorPrepareRequest: {
     method: Schemas['PreparedSecondFactorMethod']
@@ -491,6 +541,20 @@ export interface Schemas {
   SetActiveOrganizationRequest: {
     organizationId: string | null
   }
+  SetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+  }
+  SetupLinkList: {
+    links: Schemas['SetupLink'][]
+  }
   SignInStartRequest: {
     identifier: string
   }
@@ -508,6 +572,70 @@ export interface Schemas {
   }
   SmsFactorConfirmRequest: {
     code: string
+  }
+  SsoAttributeMapping: {
+    idp?: 'okta' | 'entra' | 'google_workspace' | 'jumpcloud' | 'onelogin' | 'ping' | 'generic'
+    email?: string
+    firstName?: string
+    lastName?: string
+    groups?: string
+  }
+  SsoConnection: {
+    id: string
+    organizationId: string
+    protocol: 'oidc' | 'saml'
+    name: string
+    status: 'draft' | 'active' | 'disabled'
+    issuer: string
+    clientId: string
+    clientSecretSet: boolean
+    saml: Schemas['SamlConnection'] | null
+    redirectUri: string | null
+    attributeMapping: Schemas['SsoAttributeMapping'] | null
+    defaultRole: string
+    enforced: boolean
+    breakGlassRole: string | null
+    trustIdpMfa: boolean
+    domains: string[]
+    tested: boolean
+    createdAt: string
+    updatedAt: string
+  }
+  SsoConnectionList: {
+    connections: Schemas['SsoConnection'][]
+  }
+  SsoGroupRoles: {
+    mappings: {
+      group: string
+      role: Schemas['OrganizationRoleKey']
+    }[]
+  }
+  SsoStartRequest: {
+    redirectUrl: string
+  }
+  SsoTestResult: {
+    testId: string
+    status: 'pending' | 'passed' | 'failed'
+    reason: 'wrong_audience' | 'wrong_issuer' | 'wrong_recipient' | 'unsigned_assertion' | 'signature_invalid' | 'signature_algorithm' | 'certificate_not_trusted' | 'certificate_expired' | 'assertion_expired' | 'clock_skew' | 'response_not_to_this_request' | 'replayed' | 'idp_refused' | 'encrypted_assertion' | 'malformed_response' | 'discovery_failed' | 'token_exchange_failed' | 'no_id_token' | 'id_token_invalid' | 'email_missing' | 'email_outside_domains' | null
+    message: string | null
+    attributes: {
+      name: string
+      values: string[]
+    }[]
+    groups: string[]
+    mapped: {
+      email: string | null
+      givenName: string | null
+      familyName: string | null
+      emailOnVerifiedDomain: boolean
+    } | null
+  }
+  SsoTestStart: {
+    testId: string
+    authorizationUrl: string
+  }
+  SsoTestStartRequest: {
+    redirectUrl: string
   }
   StartOrganizationDomainRequest: {
     domain: Schemas['OrganizationDomainName']
@@ -555,6 +683,20 @@ export interface Schemas {
     name?: string
     slug?: Schemas['OrganizationSlug']
   }
+  UpdateSsoConnectionRequest: {
+    name?: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    enforced?: boolean
+    breakGlassRole?: Schemas['OrganizationRoleKey'] | null
+    trustIdpMfa?: boolean
+    domains?: Schemas['OrganizationDomainName'][]
+    status?: 'draft' | 'active' | 'disabled'
+  }
   UserOrganization: {
     id: string
     name: string
@@ -598,6 +740,10 @@ export interface Operations {
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Create an organization (`POST /v1/client/me/organizations`). */
   createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
+  /** Create an SSO setup link for my organization (`POST /v1/client/me/organizations/{id}/setup-links`). */
+  createMyOrganizationSetupLink: { params: { id: string }; body: Schemas['CreateMySetupLinkRequest']; response: Schemas['CreatedSetupLink'] }
+  /** Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). */
+  createMyOrganizationSsoConnection: { params: { organizationId: string }; body: Schemas['CreateMySsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). */
   declineMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: undefined }
   /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). */
@@ -606,6 +752,8 @@ export interface Operations {
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
   /** Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). */
   deleteMyOrganization: { params: { organizationId: string }; body: undefined; response: undefined }
+  /** Delete an SSO connection (`DELETE /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  deleteMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: undefined; response: undefined }
   /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
   disableSmsFactor: { params: Record<string, never>; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
@@ -622,6 +770,12 @@ export interface Operations {
   getMe: { params: Record<string, never>; body: undefined; response: Schemas['CurrentUser'] }
   /** Get my second factors (`GET /v1/client/me/factors`). */
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
+  /** Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  getMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoConnection'] }
+  /** Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). */
+  getMyOrganizationSsoConnectionTest: { params: { id: string; testId: string; organizationId: string }; body: undefined; response: Schemas['SsoTestResult'] }
+  /** Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). */
+  getMyOrganizationSsoGroupRoles: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoGroupRoles'] }
   /** Password policy (`GET /v1/client/password-policy`). */
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
   /** Get the options for a passkey second factor (`POST /v1/client/password-resets/{attemptId}/second-factor/passkey/options`). */
@@ -646,6 +800,10 @@ export interface Operations {
   listMyOrganizationRoles: { params: { organizationId: string }; body: undefined; response: Schemas['AssignableRoleList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
   listMyOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['UserOrganizationList'] }
+  /** List my organization’s SSO setup links (`GET /v1/client/me/organizations/{id}/setup-links`). */
+  listMyOrganizationSetupLinks: { params: { id: string }; body: undefined; response: Schemas['SetupLinkList'] }
+  /** List my organization’s SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). */
+  listMyOrganizationSsoConnections: { params: { organizationId: string }; body: undefined; response: Schemas['SsoConnectionList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
@@ -662,6 +820,8 @@ export interface Operations {
   prepareSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Preview an invitation (`POST /v1/client/organization-invitations/preview`). */
   previewOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['InvitationPreview'] }
+  /** Read a SAML connection’s metadata address again (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata`). */
+  refreshMyOrganizationSsoMetadata: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoConnection'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
@@ -676,6 +836,8 @@ export interface Operations {
   removePhoneNumber: { params: Record<string, never>; body: undefined; response: undefined }
   /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). */
   renamePasskey: { params: { passkeyId: string }; body: Schemas['PasskeyRenameRequest']; response: Schemas['Passkey'] }
+  /** Replace the IdP group to role mapping (`PUT /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). */
+  replaceMyOrganizationSsoGroupRoles: { params: { organizationId: string; id: string }; body: Schemas['SsoGroupRoles']; response: Schemas['SsoGroupRoles'] }
   /** Email a code to an address to add to my account (`POST /v1/client/me/email`). */
   requestEmailAddressCode: { params: Record<string, never>; body: Schemas['EmailAddressRequest']; response: Schemas['EmailCodeSent'] }
   /** Text a code to a phone number (`POST /v1/client/me/phone`). */
@@ -688,6 +850,8 @@ export interface Operations {
   resendSignUpCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). */
   revokeMyOrganizationInvitation: { params: { organizationId: string; invitationId: string }; body: undefined; response: undefined }
+  /** Revoke one of my organization’s SSO setup links (`DELETE /v1/client/me/organizations/{id}/setup-links/{linkId}`). */
+  revokeMyOrganizationSetupLink: { params: { id: string; linkId: string }; body: undefined; response: undefined }
   /** Sign out my other devices (`POST /v1/client/sessions/revoke-others`). */
   revokeOtherSessions: { params: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Sign out one of my devices (`DELETE /v1/client/sessions/{sessionId}`). */
@@ -706,6 +870,8 @@ export interface Operations {
   startIdTokenSignIn: { params: Record<string, never>; body: Schemas['IdTokenStartRequest']; response: Schemas['IdTokenStart'] }
   /** Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). */
   startMyOrganizationDomain: { params: { id: string }; body: Schemas['StartOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
+  /** Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). */
+  startMyOrganizationSsoConnectionTest: { params: { organizationId: string; id: string }; body: Schemas['SsoTestStartRequest']; response: Schemas['SsoTestStart'] }
   /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
   startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
   /** Start registering a passkey (`POST /v1/client/me/passkeys/options`). */
@@ -726,6 +892,8 @@ export interface Operations {
   startSignUpTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). */
   startSmsFactorEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
+  /** Continue with the identity provider of the address’s domain (`POST /v1/client/sign-ins/{attemptId}/sso`). */
+  startSsoSignIn: { params: { attemptId: string }; body: Schemas['SsoStartRequest']; response: Schemas['OAuthStart'] }
   /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). */
   startTotpEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Prove it is still me (`POST /v1/client/sessions/step-up`). */
@@ -750,6 +918,8 @@ export interface Operations {
   updateMyOrganizationDomain: { params: { id: string; domainId: string }; body: Schemas['UpdateOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
   /** Change a member’s role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). */
   updateMyOrganizationMember: { params: { organizationId: string; userId: string }; body: Schemas['UpdateOrganizationMemberRequest']; response: Schemas['OrganizationMember'] }
+  /** Change an SSO connection (`PATCH /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  updateMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: Schemas['UpdateSsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Confirm the address with its code (`POST /v1/client/me/email/verify`). */
   verifyEmailAddress: { params: Record<string, never>; body: Schemas['EmailAddressVerifyRequest']; response: Schemas['CurrentUser'] }
   /** Verify a claimed domain (`POST /v1/client/me/organizations/{id}/domains/{domainId}/verify`). */
@@ -786,10 +956,13 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
+  createMyOrganizationSetupLink: { method: 'POST', path: '/v1/client/me/organizations/{id}/setup-links', session: true },
+  createMyOrganizationSsoConnection: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections', session: true },
   declineMyOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/{invitationId}/decline', session: true },
   declineOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/decline', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
   deleteMyOrganization: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}', session: true },
+  deleteMyOrganizationSsoConnection: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
   disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
@@ -798,6 +971,9 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
+  getMyOrganizationSsoConnection: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
+  getMyOrganizationSsoConnectionTest: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}', session: true },
+  getMyOrganizationSsoGroupRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
   getPasswordResetSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/passkey/options', session: false },
   getSignInSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/passkey/options', session: false },
@@ -810,6 +986,8 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyOrganizationMembers: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/members', session: true },
   listMyOrganizationRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/roles', session: true },
   listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
+  listMyOrganizationSetupLinks: { method: 'GET', path: '/v1/client/me/organizations/{id}/setup-links', session: true },
+  listMyOrganizationSsoConnections: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections', session: true },
   listMyOrganizationSuggestions: { method: 'GET', path: '/v1/client/me/organizations/suggestions', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listMyPendingOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organization-invitations', session: true },
@@ -818,6 +996,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   prepareSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/prepare', session: false },
   previewOrganizationInvitation: { method: 'POST', path: '/v1/client/organization-invitations/preview', session: false },
+  refreshMyOrganizationSsoMetadata: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata', session: true },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removeMyOrganizationDomain: { method: 'DELETE', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
@@ -825,12 +1004,14 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
   removePhoneNumber: { method: 'DELETE', path: '/v1/client/me/phone', session: true },
   renamePasskey: { method: 'PATCH', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
+  replaceMyOrganizationSsoGroupRoles: { method: 'PUT', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles', session: true },
   requestEmailAddressCode: { method: 'POST', path: '/v1/client/me/email', session: true },
   requestPhoneCode: { method: 'POST', path: '/v1/client/me/phone', session: true },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
   revokeMyOrganizationInvitation: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/invitations/{invitationId}', session: true },
+  revokeMyOrganizationSetupLink: { method: 'DELETE', path: '/v1/client/me/organizations/{id}/setup-links/{linkId}', session: true },
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },
@@ -840,6 +1021,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startIdTokenSignIn: { method: 'POST', path: '/v1/client/sign-ins/id-token', session: false },
   startMyOrganizationDomain: { method: 'POST', path: '/v1/client/me/organizations/{id}/domains', session: true },
+  startMyOrganizationSsoConnectionTest: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests', session: true },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
   startPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys/options', session: true },
   startPasskeySignIn: { method: 'POST', path: '/v1/client/sign-ins/passkey', session: false },
@@ -850,6 +1032,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startSignUp: { method: 'POST', path: '/v1/client/sign-ups', session: false },
   startSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp', session: false },
   startSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms', session: true },
+  startSsoSignIn: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/sso', session: false },
   startTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp', session: true },
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
@@ -862,6 +1045,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   updateMyOrganization: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}', session: true },
   updateMyOrganizationDomain: { method: 'PATCH', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
   updateMyOrganizationMember: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}/members/{userId}', session: true },
+  updateMyOrganizationSsoConnection: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
   verifyEmailAddress: { method: 'POST', path: '/v1/client/me/email/verify', session: true },
   verifyMyOrganizationDomain: { method: 'POST', path: '/v1/client/me/organizations/{id}/domains/{domainId}/verify', session: true },
   verifyPhoneNumber: { method: 'POST', path: '/v1/client/me/phone/verify', session: true },

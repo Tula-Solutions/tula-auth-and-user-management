@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { fakeWebhookEndpoint, installFakeApi } from '~/testing/fake-api'
+import { fakeOrganization, fakeWebhookEndpoint, installFakeApi } from '~/testing/fake-api'
 import {
   DEV_PATH,
   expectFocus,
@@ -120,6 +120,36 @@ describe('a dialog whose answer carries a secret cannot be left while its reques
     await user.click(button('I have copied it'))
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(screen.getAllByTestId('rotation-overlap')).toHaveLength(1)
+  })
+
+  test('a new SCIM token: the same', async () => {
+    const acme = '00000000-0000-7000-8000-0000000aaa01'
+    const api = installFakeApi()
+    api.state.settings.settings.organizations = {
+      ...api.state.settings.settings.organizations,
+      enabled: true,
+    }
+    api.state.organizations.push(fakeOrganization({ id: acme, name: 'Acme Corp', slug: 'acme' }))
+    const current = start(`${DEV_PATH}/organizations/${acme}`, { api })
+    const { user } = current
+    await user.click(await screen.findByRole('button', { name: 'Create token' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Okta')
+    const hold = holdAnswers(
+      (path, _headers, method) => method === 'POST' && path === '/v1/admin/scim-tokens'
+    )
+    await user.click(button('Create token'))
+    await waitFor(() => expect(hold.held()).toBe(1))
+    expect(button('Creating…').getAttribute('aria-busy')).toBe('true')
+    await expectNoWayOut(current)
+    expect(api.callsTo('POST', '/v1/admin/scim-tokens')).toHaveLength(1)
+
+    await act(() => hold.release())
+    const token = (await within(dialog()).findByTestId('created-scim-token')).textContent ?? ''
+    expect(token).toStartWith('tula_scim_')
+    await expectFocus(within(dialog()).getByRole('heading', { name: 'Copy this token now' }))
+    await user.click(button('I have copied it'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(token)).toBe(false)
   })
 
   test('a new API key: the same', async () => {

@@ -404,7 +404,8 @@ router.post(
       'device stays signed in. A wrong current password answers `auth.invalid_credentials`. ' +
       'An account that has no password answers `password.not_set` (409): a first password is ' +
       'set through a password reset. A user with two-step verification must also have proven ' +
-      'their second factor in the last ten minutes: otherwise `auth.step_up_required` (403).',
+      'their second factor in the last ten minutes: otherwise `auth.step_up_required` (403). An account ' +
+      'managed by an active SSO connection or SCIM directory answers `user.managed` (403).',
     security: openapi.security.session,
     responses: {
       413: openapi.responses[413],

@@ -316,6 +316,69 @@
       "when": 1792751006253,
       "tag": "0045_organization_search_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793685820312,
+      "tag": "0047_sso_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793712276035,
+      "tag": "0048_user_and_session_sso_connection",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793714689494,
+      "tag": "0049_sso_saml_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793716986445,
+      "tag": "0050_sso_enforcement",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793717000000,
+      "tag": "0051_scim",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793717116165,
+      "tag": "0053_sso_attribute_mapping",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793719356258,
+      "tag": "0054_sso_connection_tested",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793720254131,
+      "tag": "0056_sso_setup_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793724004355,
+      "tag": "0057_scim_groups",
+      "breakpoints": true
     }
   ]
 }

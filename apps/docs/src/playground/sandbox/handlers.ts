@@ -50,6 +50,7 @@ type Handlers = {
  */
 export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   startIdTokenSignIn: 'native ID-token sign-in needs a provider app on a phone',
+  startSsoSignIn: 'single sign-on needs an identity provider the sandbox does not have',
   submitSignInIdToken: 'native ID-token sign-in needs a provider app on a phone',
   stepUpSession: 'the sandbox never asks for a recent sign-in',
   sendStepUpEmailCode: 'the sandbox never asks for a recent sign-in',
@@ -444,6 +445,17 @@ export const HANDLERS: Handlers = {
   getSignInSecondFactorPasskeyOptions: () => unsupported('getSignInSecondFactorPasskeyOptions'),
   submitSignInNewPassword: () => unsupported('submitSignInNewPassword'),
   startIdTokenSignIn: () => unsupported('startIdTokenSignIn'),
+  startSsoSignIn: () => unsupported('startSsoSignIn'),
+  listMyOrganizationSsoConnections: () => unsupported('listMyOrganizationSsoConnections'),
+  createMyOrganizationSsoConnection: () => unsupported('createMyOrganizationSsoConnection'),
+  getMyOrganizationSsoConnection: () => unsupported('getMyOrganizationSsoConnection'),
+  updateMyOrganizationSsoConnection: () => unsupported('updateMyOrganizationSsoConnection'),
+  refreshMyOrganizationSsoMetadata: () => unsupported('refreshMyOrganizationSsoMetadata'),
+  deleteMyOrganizationSsoConnection: () => unsupported('deleteMyOrganizationSsoConnection'),
+  getMyOrganizationSsoGroupRoles: () => unsupported('getMyOrganizationSsoGroupRoles'),
+  replaceMyOrganizationSsoGroupRoles: () => unsupported('replaceMyOrganizationSsoGroupRoles'),
+  startMyOrganizationSsoConnectionTest: () => unsupported('startMyOrganizationSsoConnectionTest'),
+  getMyOrganizationSsoConnectionTest: () => unsupported('getMyOrganizationSsoConnectionTest'),
   submitSignInIdToken: () => unsupported('submitSignInIdToken'),
 
   // Passkeys -----------------------------------------------------------------------------------
@@ -993,4 +1005,7 @@ export const HANDLERS: Handlers = {
   startSmsFactorEnrolment: () => unsupported('startSmsFactorEnrolment'),
   confirmSmsFactorEnrolment: () => unsupported('confirmSmsFactorEnrolment'),
   disableSmsFactor: () => unsupported('disableSmsFactor'),
+  listMyOrganizationSetupLinks: () => unsupported('listMyOrganizationSetupLinks'),
+  createMyOrganizationSetupLink: () => unsupported('createMyOrganizationSetupLink'),
+  revokeMyOrganizationSetupLink: () => unsupported('revokeMyOrganizationSetupLink'),
 }

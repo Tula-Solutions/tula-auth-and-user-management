@@ -444,6 +444,114 @@ public struct ClientConfigSignUp: Codable, Hashable, Sendable {
     }
 }
 
+public struct CreateMySetupLinkRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    public var expiresInDays: Int?
+
+    public init(
+        name: String? = nil,
+        expiresInDays: Int? = nil
+    ) {
+        self.name = name
+        self.expiresInDays = expiresInDays
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case expiresInDays
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.expiresInDays = try container.decodeIfPresent(Int.self, forKey: .expiresInDays)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.name, forKey: .name)
+        try container.encodeIfPresent(self.expiresInDays, forKey: .expiresInDays)
+    }
+}
+
+public struct CreateMySsoConnectionRequest: Codable, Hashable, Sendable {
+    public var `protocol`: CreateMySsoConnectionRequestProtocol?
+    public var name: String
+    /// Format: `uri`.
+    public var issuer: String?
+    public var clientId: String?
+    public var clientSecret: String?
+    public var saml: SamlSettingsInput?
+    public var attributeMapping: SsoAttributeMapping?
+    public var defaultRole: OrganizationRoleKey?
+    public var domains: [OrganizationDomainName]?
+
+    public init(
+        `protocol`: CreateMySsoConnectionRequestProtocol? = nil,
+        name: String,
+        issuer: String? = nil,
+        clientId: String? = nil,
+        clientSecret: String? = nil,
+        saml: SamlSettingsInput? = nil,
+        attributeMapping: SsoAttributeMapping? = nil,
+        defaultRole: OrganizationRoleKey? = nil,
+        domains: [OrganizationDomainName]? = nil
+    ) {
+        self.`protocol` = `protocol`
+        self.name = name
+        self.issuer = issuer
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        self.saml = saml
+        self.attributeMapping = attributeMapping
+        self.defaultRole = defaultRole
+        self.domains = domains
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case `protocol`
+        case name
+        case issuer
+        case clientId
+        case clientSecret
+        case saml
+        case attributeMapping
+        case defaultRole
+        case domains
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.`protocol` = try container.decodeIfPresent(CreateMySsoConnectionRequestProtocol.self, forKey: .`protocol`)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.issuer = try container.decodeIfPresent(String.self, forKey: .issuer)
+        self.clientId = try container.decodeIfPresent(String.self, forKey: .clientId)
+        self.clientSecret = try container.decodeIfPresent(String.self, forKey: .clientSecret)
+        self.saml = try container.decodeIfPresent(SamlSettingsInput.self, forKey: .saml)
+        self.attributeMapping = try container.decodeIfPresent(SsoAttributeMapping.self, forKey: .attributeMapping)
+        self.defaultRole = try container.decodeIfPresent(OrganizationRoleKey.self, forKey: .defaultRole)
+        self.domains = try container.decodeIfPresent([OrganizationDomainName].self, forKey: .domains)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.`protocol`, forKey: .`protocol`)
+        try container.encode(self.name, forKey: .name)
+        try container.encodeIfPresent(self.issuer, forKey: .issuer)
+        try container.encodeIfPresent(self.clientId, forKey: .clientId)
+        try container.encodeIfPresent(self.clientSecret, forKey: .clientSecret)
+        try container.encodeIfPresent(self.saml, forKey: .saml)
+        try container.encodeIfPresent(self.attributeMapping, forKey: .attributeMapping)
+        try container.encodeIfPresent(self.defaultRole, forKey: .defaultRole)
+        try container.encodeIfPresent(self.domains, forKey: .domains)
+    }
+}
+
+public enum CreateMySsoConnectionRequestProtocol: String, Codable, Hashable, Sendable, CaseIterable {
+    case oidc
+    case saml
+}
+
 public struct CreateOrganizationInvitationRequest: Codable, Hashable, Sendable {
     public var email: String
     public var role: OrganizationRoleKey
@@ -507,6 +615,91 @@ public struct CreateOrganizationRequest: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.name, forKey: .name)
         try container.encode(self.slug, forKey: .slug)
+    }
+}
+
+public struct CreatedSetupLink: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var id: String
+    /// Format: `uuid`.
+    public var organizationId: String
+    public var name: String
+    /// The start of the token, to tell links apart in a list.
+    public var prefix: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+    public var revokedAt: String?
+    public var lastUsedAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+    /// The setup token. Shown once; only its hash is stored.
+    public var token: String
+    /// The address to send to the IT administrator. The token is in its fragment.
+    public var url: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        name: String,
+        prefix: String,
+        expiresAt: String,
+        revokedAt: String?,
+        lastUsedAt: String?,
+        createdAt: String,
+        token: String,
+        url: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.name = name
+        self.prefix = prefix
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+        self.createdAt = createdAt
+        self.token = token
+        self.url = url
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case name
+        case prefix
+        case expiresAt
+        case revokedAt
+        case lastUsedAt
+        case createdAt
+        case token
+        case url
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.prefix = try container.decode(String.self, forKey: .prefix)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.revokedAt = try container.decode(String?.self, forKey: .revokedAt)
+        self.lastUsedAt = try container.decode(String?.self, forKey: .lastUsedAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.token = try container.decode(String.self, forKey: .token)
+        self.url = try container.decode(String.self, forKey: .url)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.prefix, forKey: .prefix)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.revokedAt, forKey: .revokedAt)
+        try container.encode(self.lastUsedAt, forKey: .lastUsedAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encode(self.token, forKey: .token)
+        try container.encode(self.url, forKey: .url)
     }
 }
 
@@ -1222,6 +1415,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
     case oauthLinkedin
     case oauthX
     case oauthFacebook
+    case sso
     /// A value this version does not know, as the API wrote it.
     case unknown(String)
 
@@ -1240,6 +1434,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         .oauthLinkedin,
         .oauthX,
         .oauthFacebook,
+        .sso,
     ]
 
     /// The value for a string of the API: `unknown` for one this version does not know.
@@ -1258,6 +1453,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         case "oauth_linkedin": self = .oauthLinkedin
         case "oauth_x": self = .oauthX
         case "oauth_facebook": self = .oauthFacebook
+        case "sso": self = .sso
         default: self = .unknown(rawValue)
         }
     }
@@ -1278,6 +1474,7 @@ public enum FirstFactorStrategy: Codable, Hashable, Sendable {
         case .oauthLinkedin: return "oauth_linkedin"
         case .oauthX: return "oauth_x"
         case .oauthFacebook: return "oauth_facebook"
+        case .sso: return "sso"
         case .unknown(let value): return value
         }
     }
@@ -4127,6 +4324,153 @@ public struct RevokedSessions: Codable, Hashable, Sendable {
     }
 }
 
+public struct SamlConnection: Codable, Hashable, Sendable {
+    public var idpEntityId: String
+    public var ssoUrl: String
+    public var metadataUrl: String?
+    public var certificates: [SamlConnectionCertificatesItem]
+    public var spEntityId: String
+    public var acsUrl: String
+    public var spMetadataUrl: String
+
+    public init(
+        idpEntityId: String,
+        ssoUrl: String,
+        metadataUrl: String?,
+        certificates: [SamlConnectionCertificatesItem],
+        spEntityId: String,
+        acsUrl: String,
+        spMetadataUrl: String
+    ) {
+        self.idpEntityId = idpEntityId
+        self.ssoUrl = ssoUrl
+        self.metadataUrl = metadataUrl
+        self.certificates = certificates
+        self.spEntityId = spEntityId
+        self.acsUrl = acsUrl
+        self.spMetadataUrl = spMetadataUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case idpEntityId
+        case ssoUrl
+        case metadataUrl
+        case certificates
+        case spEntityId
+        case acsUrl
+        case spMetadataUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.idpEntityId = try container.decode(String.self, forKey: .idpEntityId)
+        self.ssoUrl = try container.decode(String.self, forKey: .ssoUrl)
+        self.metadataUrl = try container.decode(String?.self, forKey: .metadataUrl)
+        self.certificates = try container.decode([SamlConnectionCertificatesItem].self, forKey: .certificates)
+        self.spEntityId = try container.decode(String.self, forKey: .spEntityId)
+        self.acsUrl = try container.decode(String.self, forKey: .acsUrl)
+        self.spMetadataUrl = try container.decode(String.self, forKey: .spMetadataUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.idpEntityId, forKey: .idpEntityId)
+        try container.encode(self.ssoUrl, forKey: .ssoUrl)
+        try container.encode(self.metadataUrl, forKey: .metadataUrl)
+        try container.encode(self.certificates, forKey: .certificates)
+        try container.encode(self.spEntityId, forKey: .spEntityId)
+        try container.encode(self.acsUrl, forKey: .acsUrl)
+        try container.encode(self.spMetadataUrl, forKey: .spMetadataUrl)
+    }
+}
+
+public struct SamlConnectionCertificatesItem: Codable, Hashable, Sendable {
+    public var fingerprint: String
+    /// Format: `date-time`.
+    public var notAfter: String
+    public var expired: Bool
+
+    public init(
+        fingerprint: String,
+        notAfter: String,
+        expired: Bool
+    ) {
+        self.fingerprint = fingerprint
+        self.notAfter = notAfter
+        self.expired = expired
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fingerprint
+        case notAfter
+        case expired
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.fingerprint = try container.decode(String.self, forKey: .fingerprint)
+        self.notAfter = try container.decode(String.self, forKey: .notAfter)
+        self.expired = try container.decode(Bool.self, forKey: .expired)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.fingerprint, forKey: .fingerprint)
+        try container.encode(self.notAfter, forKey: .notAfter)
+        try container.encode(self.expired, forKey: .expired)
+    }
+}
+
+public struct SamlSettingsInput: Codable, Hashable, Sendable {
+    public var metadataXml: String?
+    /// Format: `uri`.
+    public var metadataUrl: String?
+    public var idpEntityId: String?
+    /// Format: `uri`.
+    public var ssoUrl: String?
+    public var certificates: [String]?
+
+    public init(
+        metadataXml: String? = nil,
+        metadataUrl: String? = nil,
+        idpEntityId: String? = nil,
+        ssoUrl: String? = nil,
+        certificates: [String]? = nil
+    ) {
+        self.metadataXml = metadataXml
+        self.metadataUrl = metadataUrl
+        self.idpEntityId = idpEntityId
+        self.ssoUrl = ssoUrl
+        self.certificates = certificates
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case metadataXml
+        case metadataUrl
+        case idpEntityId
+        case ssoUrl
+        case certificates
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.metadataXml = try container.decodeIfPresent(String.self, forKey: .metadataXml)
+        self.metadataUrl = try container.decodeIfPresent(String.self, forKey: .metadataUrl)
+        self.idpEntityId = try container.decodeIfPresent(String.self, forKey: .idpEntityId)
+        self.ssoUrl = try container.decodeIfPresent(String.self, forKey: .ssoUrl)
+        self.certificates = try container.decodeIfPresent([String].self, forKey: .certificates)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.metadataXml, forKey: .metadataXml)
+        try container.encodeIfPresent(self.metadataUrl, forKey: .metadataUrl)
+        try container.encodeIfPresent(self.idpEntityId, forKey: .idpEntityId)
+        try container.encodeIfPresent(self.ssoUrl, forKey: .ssoUrl)
+        try container.encodeIfPresent(self.certificates, forKey: .certificates)
+    }
+}
+
 public enum SecondFactorMethod: Codable, Hashable, Sendable {
     case totp
     case passkey
@@ -4596,6 +4940,101 @@ public struct SetActiveOrganizationRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct SetupLink: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var id: String
+    /// Format: `uuid`.
+    public var organizationId: String
+    public var name: String
+    /// The start of the token, to tell links apart in a list.
+    public var prefix: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+    public var revokedAt: String?
+    public var lastUsedAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        name: String,
+        prefix: String,
+        expiresAt: String,
+        revokedAt: String?,
+        lastUsedAt: String?,
+        createdAt: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.name = name
+        self.prefix = prefix
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case name
+        case prefix
+        case expiresAt
+        case revokedAt
+        case lastUsedAt
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.prefix = try container.decode(String.self, forKey: .prefix)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.revokedAt = try container.decode(String?.self, forKey: .revokedAt)
+        self.lastUsedAt = try container.decode(String?.self, forKey: .lastUsedAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.prefix, forKey: .prefix)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.revokedAt, forKey: .revokedAt)
+        try container.encode(self.lastUsedAt, forKey: .lastUsedAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct SetupLinkList: Codable, Hashable, Sendable {
+    public var links: [SetupLink]
+
+    public init(
+        links: [SetupLink]
+    ) {
+        self.links = links
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case links
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.links = try container.decode([SetupLink].self, forKey: .links)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.links, forKey: .links)
+    }
+}
+
 public struct SignInStartRequest: Codable, Hashable, Sendable {
     public var identifier: String
 
@@ -4769,6 +5208,824 @@ public struct SmsFactorConfirmRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.code, forKey: .code)
+    }
+}
+
+public struct SsoAttributeMapping: Codable, Hashable, Sendable {
+    public var idp: SsoAttributeMappingIdp?
+    public var email: String?
+    public var firstName: String?
+    public var lastName: String?
+    public var groups: String?
+
+    public init(
+        idp: SsoAttributeMappingIdp? = nil,
+        email: String? = nil,
+        firstName: String? = nil,
+        lastName: String? = nil,
+        groups: String? = nil
+    ) {
+        self.idp = idp
+        self.email = email
+        self.firstName = firstName
+        self.lastName = lastName
+        self.groups = groups
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case idp
+        case email
+        case firstName
+        case lastName
+        case groups
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.idp = try container.decodeIfPresent(SsoAttributeMappingIdp.self, forKey: .idp)
+        self.email = try container.decodeIfPresent(String.self, forKey: .email)
+        self.firstName = try container.decodeIfPresent(String.self, forKey: .firstName)
+        self.lastName = try container.decodeIfPresent(String.self, forKey: .lastName)
+        self.groups = try container.decodeIfPresent(String.self, forKey: .groups)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.idp, forKey: .idp)
+        try container.encodeIfPresent(self.email, forKey: .email)
+        try container.encodeIfPresent(self.firstName, forKey: .firstName)
+        try container.encodeIfPresent(self.lastName, forKey: .lastName)
+        try container.encodeIfPresent(self.groups, forKey: .groups)
+    }
+}
+
+public enum SsoAttributeMappingIdp: Codable, Hashable, Sendable {
+    case okta
+    case entra
+    case googleWorkspace
+    case jumpcloud
+    case onelogin
+    case ping
+    case generic
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [SsoAttributeMappingIdp] = [
+        .okta,
+        .entra,
+        .googleWorkspace,
+        .jumpcloud,
+        .onelogin,
+        .ping,
+        .generic,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "okta": self = .okta
+        case "entra": self = .entra
+        case "google_workspace": self = .googleWorkspace
+        case "jumpcloud": self = .jumpcloud
+        case "onelogin": self = .onelogin
+        case "ping": self = .ping
+        case "generic": self = .generic
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .okta: return "okta"
+        case .entra: return "entra"
+        case .googleWorkspace: return "google_workspace"
+        case .jumpcloud: return "jumpcloud"
+        case .onelogin: return "onelogin"
+        case .ping: return "ping"
+        case .generic: return "generic"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public struct SsoConnection: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var id: String
+    /// Format: `uuid`.
+    public var organizationId: String
+    public var `protocol`: SsoConnectionProtocol
+    public var name: String
+    public var status: SsoConnectionStatus
+    public var issuer: String
+    public var clientId: String
+    public var clientSecretSet: Bool
+    public var saml: SamlConnection?
+    public var redirectUri: String?
+    public var attributeMapping: SsoAttributeMapping?
+    public var defaultRole: String
+    public var enforced: Bool
+    public var breakGlassRole: String?
+    public var trustIdpMfa: Bool
+    public var domains: [String]
+    public var tested: Bool
+    /// Format: `date-time`.
+    public var createdAt: String
+    /// Format: `date-time`.
+    public var updatedAt: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        `protocol`: SsoConnectionProtocol,
+        name: String,
+        status: SsoConnectionStatus,
+        issuer: String,
+        clientId: String,
+        clientSecretSet: Bool,
+        saml: SamlConnection?,
+        redirectUri: String?,
+        attributeMapping: SsoAttributeMapping?,
+        defaultRole: String,
+        enforced: Bool,
+        breakGlassRole: String?,
+        trustIdpMfa: Bool,
+        domains: [String],
+        tested: Bool,
+        createdAt: String,
+        updatedAt: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.`protocol` = `protocol`
+        self.name = name
+        self.status = status
+        self.issuer = issuer
+        self.clientId = clientId
+        self.clientSecretSet = clientSecretSet
+        self.saml = saml
+        self.redirectUri = redirectUri
+        self.attributeMapping = attributeMapping
+        self.defaultRole = defaultRole
+        self.enforced = enforced
+        self.breakGlassRole = breakGlassRole
+        self.trustIdpMfa = trustIdpMfa
+        self.domains = domains
+        self.tested = tested
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case `protocol`
+        case name
+        case status
+        case issuer
+        case clientId
+        case clientSecretSet
+        case saml
+        case redirectUri
+        case attributeMapping
+        case defaultRole
+        case enforced
+        case breakGlassRole
+        case trustIdpMfa
+        case domains
+        case tested
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.`protocol` = try container.decode(SsoConnectionProtocol.self, forKey: .`protocol`)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.status = try container.decode(SsoConnectionStatus.self, forKey: .status)
+        self.issuer = try container.decode(String.self, forKey: .issuer)
+        self.clientId = try container.decode(String.self, forKey: .clientId)
+        self.clientSecretSet = try container.decode(Bool.self, forKey: .clientSecretSet)
+        self.saml = try container.decode(SamlConnection?.self, forKey: .saml)
+        self.redirectUri = try container.decode(String?.self, forKey: .redirectUri)
+        self.attributeMapping = try container.decode(SsoAttributeMapping?.self, forKey: .attributeMapping)
+        self.defaultRole = try container.decode(String.self, forKey: .defaultRole)
+        self.enforced = try container.decode(Bool.self, forKey: .enforced)
+        self.breakGlassRole = try container.decode(String?.self, forKey: .breakGlassRole)
+        self.trustIdpMfa = try container.decode(Bool.self, forKey: .trustIdpMfa)
+        self.domains = try container.decode([String].self, forKey: .domains)
+        self.tested = try container.decode(Bool.self, forKey: .tested)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(String.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.`protocol`, forKey: .`protocol`)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.status, forKey: .status)
+        try container.encode(self.issuer, forKey: .issuer)
+        try container.encode(self.clientId, forKey: .clientId)
+        try container.encode(self.clientSecretSet, forKey: .clientSecretSet)
+        try container.encode(self.saml, forKey: .saml)
+        try container.encode(self.redirectUri, forKey: .redirectUri)
+        try container.encode(self.attributeMapping, forKey: .attributeMapping)
+        try container.encode(self.defaultRole, forKey: .defaultRole)
+        try container.encode(self.enforced, forKey: .enforced)
+        try container.encode(self.breakGlassRole, forKey: .breakGlassRole)
+        try container.encode(self.trustIdpMfa, forKey: .trustIdpMfa)
+        try container.encode(self.domains, forKey: .domains)
+        try container.encode(self.tested, forKey: .tested)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encode(self.updatedAt, forKey: .updatedAt)
+    }
+}
+
+public struct SsoConnectionList: Codable, Hashable, Sendable {
+    public var connections: [SsoConnection]
+
+    public init(
+        connections: [SsoConnection]
+    ) {
+        self.connections = connections
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case connections
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.connections = try container.decode([SsoConnection].self, forKey: .connections)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.connections, forKey: .connections)
+    }
+}
+
+public enum SsoConnectionProtocol: Codable, Hashable, Sendable {
+    case oidc
+    case saml
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [SsoConnectionProtocol] = [
+        .oidc,
+        .saml,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "oidc": self = .oidc
+        case "saml": self = .saml
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .oidc: return "oidc"
+        case .saml: return "saml"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public enum SsoConnectionStatus: Codable, Hashable, Sendable {
+    case draft
+    case active
+    case disabled
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [SsoConnectionStatus] = [
+        .draft,
+        .active,
+        .disabled,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "draft": self = .draft
+        case "active": self = .active
+        case "disabled": self = .disabled
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .draft: return "draft"
+        case .active: return "active"
+        case .disabled: return "disabled"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public struct SsoGroupRoles: Codable, Hashable, Sendable {
+    public var mappings: [SsoGroupRolesMappingsItem]
+
+    public init(
+        mappings: [SsoGroupRolesMappingsItem]
+    ) {
+        self.mappings = mappings
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mappings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mappings = try container.decode([SsoGroupRolesMappingsItem].self, forKey: .mappings)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.mappings, forKey: .mappings)
+    }
+}
+
+public struct SsoGroupRolesMappingsItem: Codable, Hashable, Sendable {
+    public var group: String
+    public var role: OrganizationRoleKey
+
+    public init(
+        group: String,
+        role: OrganizationRoleKey
+    ) {
+        self.group = group
+        self.role = role
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case group
+        case role
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.group = try container.decode(String.self, forKey: .group)
+        self.role = try container.decode(OrganizationRoleKey.self, forKey: .role)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.group, forKey: .group)
+        try container.encode(self.role, forKey: .role)
+    }
+}
+
+public struct SsoStartRequest: Codable, Hashable, Sendable {
+    public var redirectUrl: String
+
+    public init(
+        redirectUrl: String
+    ) {
+        self.redirectUrl = redirectUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case redirectUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.redirectUrl = try container.decode(String.self, forKey: .redirectUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.redirectUrl, forKey: .redirectUrl)
+    }
+}
+
+public struct SsoTestResult: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var testId: String
+    public var status: SsoTestResultStatus
+    public var reason: SsoTestResultReason?
+    public var message: String?
+    public var attributes: [SsoTestResultAttributesItem]
+    public var groups: [String]
+    public var mapped: SsoTestResultMapped?
+
+    public init(
+        testId: String,
+        status: SsoTestResultStatus,
+        reason: SsoTestResultReason?,
+        message: String?,
+        attributes: [SsoTestResultAttributesItem],
+        groups: [String],
+        mapped: SsoTestResultMapped?
+    ) {
+        self.testId = testId
+        self.status = status
+        self.reason = reason
+        self.message = message
+        self.attributes = attributes
+        self.groups = groups
+        self.mapped = mapped
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case testId
+        case status
+        case reason
+        case message
+        case attributes
+        case groups
+        case mapped
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.testId = try container.decode(String.self, forKey: .testId)
+        self.status = try container.decode(SsoTestResultStatus.self, forKey: .status)
+        self.reason = try container.decode(SsoTestResultReason?.self, forKey: .reason)
+        self.message = try container.decode(String?.self, forKey: .message)
+        self.attributes = try container.decode([SsoTestResultAttributesItem].self, forKey: .attributes)
+        self.groups = try container.decode([String].self, forKey: .groups)
+        self.mapped = try container.decode(SsoTestResultMapped?.self, forKey: .mapped)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.testId, forKey: .testId)
+        try container.encode(self.status, forKey: .status)
+        try container.encode(self.reason, forKey: .reason)
+        try container.encode(self.message, forKey: .message)
+        try container.encode(self.attributes, forKey: .attributes)
+        try container.encode(self.groups, forKey: .groups)
+        try container.encode(self.mapped, forKey: .mapped)
+    }
+}
+
+public struct SsoTestResultAttributesItem: Codable, Hashable, Sendable {
+    public var name: String
+    public var values: [String]
+
+    public init(
+        name: String,
+        values: [String]
+    ) {
+        self.name = name
+        self.values = values
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case values
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.values = try container.decode([String].self, forKey: .values)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.values, forKey: .values)
+    }
+}
+
+public struct SsoTestResultMapped: Codable, Hashable, Sendable {
+    public var email: String?
+    public var givenName: String?
+    public var familyName: String?
+    public var emailOnVerifiedDomain: Bool
+
+    public init(
+        email: String?,
+        givenName: String?,
+        familyName: String?,
+        emailOnVerifiedDomain: Bool
+    ) {
+        self.email = email
+        self.givenName = givenName
+        self.familyName = familyName
+        self.emailOnVerifiedDomain = emailOnVerifiedDomain
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+        case givenName
+        case familyName
+        case emailOnVerifiedDomain
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.email = try container.decode(String?.self, forKey: .email)
+        self.givenName = try container.decode(String?.self, forKey: .givenName)
+        self.familyName = try container.decode(String?.self, forKey: .familyName)
+        self.emailOnVerifiedDomain = try container.decode(Bool.self, forKey: .emailOnVerifiedDomain)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.givenName, forKey: .givenName)
+        try container.encode(self.familyName, forKey: .familyName)
+        try container.encode(self.emailOnVerifiedDomain, forKey: .emailOnVerifiedDomain)
+    }
+}
+
+public enum SsoTestResultReason: Codable, Hashable, Sendable {
+    case wrongAudience
+    case wrongIssuer
+    case wrongRecipient
+    case unsignedAssertion
+    case signatureInvalid
+    case signatureAlgorithm
+    case certificateNotTrusted
+    case certificateExpired
+    case assertionExpired
+    case clockSkew
+    case responseNotToThisRequest
+    case replayed
+    case idpRefused
+    case encryptedAssertion
+    case malformedResponse
+    case discoveryFailed
+    case tokenExchangeFailed
+    case noIdToken
+    case idTokenInvalid
+    case emailMissing
+    case emailOutsideDomains
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [SsoTestResultReason] = [
+        .wrongAudience,
+        .wrongIssuer,
+        .wrongRecipient,
+        .unsignedAssertion,
+        .signatureInvalid,
+        .signatureAlgorithm,
+        .certificateNotTrusted,
+        .certificateExpired,
+        .assertionExpired,
+        .clockSkew,
+        .responseNotToThisRequest,
+        .replayed,
+        .idpRefused,
+        .encryptedAssertion,
+        .malformedResponse,
+        .discoveryFailed,
+        .tokenExchangeFailed,
+        .noIdToken,
+        .idTokenInvalid,
+        .emailMissing,
+        .emailOutsideDomains,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "wrong_audience": self = .wrongAudience
+        case "wrong_issuer": self = .wrongIssuer
+        case "wrong_recipient": self = .wrongRecipient
+        case "unsigned_assertion": self = .unsignedAssertion
+        case "signature_invalid": self = .signatureInvalid
+        case "signature_algorithm": self = .signatureAlgorithm
+        case "certificate_not_trusted": self = .certificateNotTrusted
+        case "certificate_expired": self = .certificateExpired
+        case "assertion_expired": self = .assertionExpired
+        case "clock_skew": self = .clockSkew
+        case "response_not_to_this_request": self = .responseNotToThisRequest
+        case "replayed": self = .replayed
+        case "idp_refused": self = .idpRefused
+        case "encrypted_assertion": self = .encryptedAssertion
+        case "malformed_response": self = .malformedResponse
+        case "discovery_failed": self = .discoveryFailed
+        case "token_exchange_failed": self = .tokenExchangeFailed
+        case "no_id_token": self = .noIdToken
+        case "id_token_invalid": self = .idTokenInvalid
+        case "email_missing": self = .emailMissing
+        case "email_outside_domains": self = .emailOutsideDomains
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .wrongAudience: return "wrong_audience"
+        case .wrongIssuer: return "wrong_issuer"
+        case .wrongRecipient: return "wrong_recipient"
+        case .unsignedAssertion: return "unsigned_assertion"
+        case .signatureInvalid: return "signature_invalid"
+        case .signatureAlgorithm: return "signature_algorithm"
+        case .certificateNotTrusted: return "certificate_not_trusted"
+        case .certificateExpired: return "certificate_expired"
+        case .assertionExpired: return "assertion_expired"
+        case .clockSkew: return "clock_skew"
+        case .responseNotToThisRequest: return "response_not_to_this_request"
+        case .replayed: return "replayed"
+        case .idpRefused: return "idp_refused"
+        case .encryptedAssertion: return "encrypted_assertion"
+        case .malformedResponse: return "malformed_response"
+        case .discoveryFailed: return "discovery_failed"
+        case .tokenExchangeFailed: return "token_exchange_failed"
+        case .noIdToken: return "no_id_token"
+        case .idTokenInvalid: return "id_token_invalid"
+        case .emailMissing: return "email_missing"
+        case .emailOutsideDomains: return "email_outside_domains"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public enum SsoTestResultStatus: Codable, Hashable, Sendable {
+    case pending
+    case passed
+    case failed
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [SsoTestResultStatus] = [
+        .pending,
+        .passed,
+        .failed,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .pending
+        case "passed": self = .passed
+        case "failed": self = .failed
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .passed: return "passed"
+        case .failed: return "failed"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public struct SsoTestStart: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var testId: String
+    public var authorizationUrl: String
+
+    public init(
+        testId: String,
+        authorizationUrl: String
+    ) {
+        self.testId = testId
+        self.authorizationUrl = authorizationUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case testId
+        case authorizationUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.testId = try container.decode(String.self, forKey: .testId)
+        self.authorizationUrl = try container.decode(String.self, forKey: .authorizationUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.testId, forKey: .testId)
+        try container.encode(self.authorizationUrl, forKey: .authorizationUrl)
+    }
+}
+
+public struct SsoTestStartRequest: Codable, Hashable, Sendable {
+    public var redirectUrl: String
+
+    public init(
+        redirectUrl: String
+    ) {
+        self.redirectUrl = redirectUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case redirectUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.redirectUrl = try container.decode(String.self, forKey: .redirectUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.redirectUrl, forKey: .redirectUrl)
     }
 }
 
@@ -5213,6 +6470,103 @@ public struct UpdateOrganizationRequest: Codable, Hashable, Sendable {
         try container.encodeIfPresent(self.name, forKey: .name)
         try container.encodeIfPresent(self.slug, forKey: .slug)
     }
+}
+
+public struct UpdateSsoConnectionRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    /// Format: `uri`.
+    public var issuer: String?
+    public var clientId: String?
+    public var clientSecret: String?
+    public var saml: SamlSettingsInput?
+    public var attributeMapping: SsoAttributeMapping?
+    public var defaultRole: OrganizationRoleKey?
+    public var enforced: Bool?
+    public var breakGlassRole: OrganizationRoleKey?
+    public var trustIdpMfa: Bool?
+    public var domains: [OrganizationDomainName]?
+    public var status: UpdateSsoConnectionRequestStatus?
+
+    public init(
+        name: String? = nil,
+        issuer: String? = nil,
+        clientId: String? = nil,
+        clientSecret: String? = nil,
+        saml: SamlSettingsInput? = nil,
+        attributeMapping: SsoAttributeMapping? = nil,
+        defaultRole: OrganizationRoleKey? = nil,
+        enforced: Bool? = nil,
+        breakGlassRole: OrganizationRoleKey? = nil,
+        trustIdpMfa: Bool? = nil,
+        domains: [OrganizationDomainName]? = nil,
+        status: UpdateSsoConnectionRequestStatus? = nil
+    ) {
+        self.name = name
+        self.issuer = issuer
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        self.saml = saml
+        self.attributeMapping = attributeMapping
+        self.defaultRole = defaultRole
+        self.enforced = enforced
+        self.breakGlassRole = breakGlassRole
+        self.trustIdpMfa = trustIdpMfa
+        self.domains = domains
+        self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case issuer
+        case clientId
+        case clientSecret
+        case saml
+        case attributeMapping
+        case defaultRole
+        case enforced
+        case breakGlassRole
+        case trustIdpMfa
+        case domains
+        case status
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.issuer = try container.decodeIfPresent(String.self, forKey: .issuer)
+        self.clientId = try container.decodeIfPresent(String.self, forKey: .clientId)
+        self.clientSecret = try container.decodeIfPresent(String.self, forKey: .clientSecret)
+        self.saml = try container.decodeIfPresent(SamlSettingsInput.self, forKey: .saml)
+        self.attributeMapping = try container.decodeIfPresent(SsoAttributeMapping.self, forKey: .attributeMapping)
+        self.defaultRole = try container.decodeIfPresent(OrganizationRoleKey.self, forKey: .defaultRole)
+        self.enforced = try container.decodeIfPresent(Bool.self, forKey: .enforced)
+        self.breakGlassRole = try container.decodeIfPresent(OrganizationRoleKey.self, forKey: .breakGlassRole)
+        self.trustIdpMfa = try container.decodeIfPresent(Bool.self, forKey: .trustIdpMfa)
+        self.domains = try container.decodeIfPresent([OrganizationDomainName].self, forKey: .domains)
+        self.status = try container.decodeIfPresent(UpdateSsoConnectionRequestStatus.self, forKey: .status)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.name, forKey: .name)
+        try container.encodeIfPresent(self.issuer, forKey: .issuer)
+        try container.encodeIfPresent(self.clientId, forKey: .clientId)
+        try container.encodeIfPresent(self.clientSecret, forKey: .clientSecret)
+        try container.encodeIfPresent(self.saml, forKey: .saml)
+        try container.encodeIfPresent(self.attributeMapping, forKey: .attributeMapping)
+        try container.encodeIfPresent(self.defaultRole, forKey: .defaultRole)
+        try container.encodeIfPresent(self.enforced, forKey: .enforced)
+        try container.encodeIfPresent(self.breakGlassRole, forKey: .breakGlassRole)
+        try container.encodeIfPresent(self.trustIdpMfa, forKey: .trustIdpMfa)
+        try container.encodeIfPresent(self.domains, forKey: .domains)
+        try container.encodeIfPresent(self.status, forKey: .status)
+    }
+}
+
+public enum UpdateSsoConnectionRequestStatus: String, Codable, Hashable, Sendable, CaseIterable {
+    case draft
+    case active
+    case disabled
 }
 
 public struct UserOrganization: Codable, Hashable, Sendable {

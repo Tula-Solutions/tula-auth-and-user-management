@@ -22,6 +22,7 @@ import {
   type SessionProfile,
   type SessionSettings,
   type SessionTokens,
+  SSO_CONNECTION_CLAIM,
 } from '@tula-tech/contract'
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
@@ -214,7 +215,8 @@ type ClaimSource = Pick<
   | 'authMethods'
   | 'createdAt'
   | 'deviceThumbprint'
->
+> &
+  Partial<Pick<SessionRecord, 'ssoConnectionId'>>
 
 /** A session's profile as configured now, with the settings it was read from. */
 interface Configured extends NamedSessionProfile {
@@ -373,6 +375,8 @@ function claimsOf(
     // Only for a session bound to a device key (ADR 0043): absent, never `null`, so that the
     // token of a session that is not bound is what it always was.
     ...(session.deviceThumbprint && { cnf: { jkt: session.deviceThumbprint } }),
+    // Only for a session signed in through an SSO connection (ADR 0067): absent otherwise.
+    ...(session.ssoConnectionId && { [SSO_CONNECTION_CLAIM]: session.ssoConnectionId }),
     // Absent, never empty: a session without custom claims is what it always was.
     ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
     // All three or none (ADR 0065): a session acting in no organization is what it always was.
@@ -536,6 +540,8 @@ export interface CreateInput {
    * accepted a proof for. `null` or absent for a session that is not bound.
    */
   deviceThumbprint?: string | null
+  /** The SSO connection the sign-in went through (ADR 0067): the token's `sso_conn` claim. */
+  ssoConnectionId?: string | null
 }
 
 /**
@@ -645,6 +651,7 @@ export async function create(
     authMethods,
     hookClaims: hook.claims,
     deviceThumbprint,
+    ssoConnectionId: input.ssoConnectionId ?? null,
     createdAt: now,
   }
   const root = {
@@ -1435,7 +1442,13 @@ export async function revokeForProposal(
 export async function revokeOthers(
   deps: RevokeDeps,
   scope: Scope,
-  input: { userId: string; currentSessionId: string; reason?: SessionRevokeReason; actor: Actor }
+  input: {
+    userId: string
+    currentSessionId: string
+    reason?: SessionRevokeReason
+    actor: Actor
+    onlyIds?: string[]
+  }
 ): Promise<number> {
   return revokeForUser(
     deps,
@@ -1443,7 +1456,8 @@ export async function revokeOthers(
     input.userId,
     input.reason ?? 'revoked_by_user',
     input.actor,
-    input.currentSessionId
+    input.currentSessionId,
+    input.onlyIds
   )
 }
 
@@ -1453,18 +1467,22 @@ async function revokeForUser(
   userId: string,
   reason: SessionRevokeReason,
   actor: Actor,
-  exceptSessionId?: string
+  exceptSessionId?: string,
+  onlyIds?: string[]
 ): Promise<number> {
   const now = deps.clock.now()
   // Only active sessions can have unexpired access tokens, so those are denylisted up front.
   const active = await deps.sessions.listActiveByUser(scope.environmentId, userId, now)
   await denylist(
     deps,
-    active.map((session) => session.id).filter((id) => id !== exceptSessionId),
+    active
+      .map((session) => session.id)
+      .filter((id) => id !== exceptSessionId && (!onlyIds || onlyIds.includes(id))),
     now
   )
   const ended = await deps.sessions.revokeByUser(scope.environmentId, userId, reason, now, {
     exceptSessionId,
+    onlyIds,
     activity: (sessionId) => revoked(deps, scope, { id: sessionId, userId }, reason, actor),
   })
   // Covers a session created between the list and the update.
@@ -1480,6 +1498,7 @@ async function revokeForUser(
  * @param userId - The user.
  * @param reason - Why the sessions end.
  * @param actor - Who is ending them, for the audit log.
+ * @param onlyIds - Revoke just these (a snapshot taken earlier), none created since.
  * @returns How many sessions were revoked.
  */
 export async function revokeAllForUser(
@@ -1487,9 +1506,10 @@ export async function revokeAllForUser(
   scope: Scope,
   userId: string,
   reason: SessionRevokeReason,
-  actor: Actor
+  actor: Actor,
+  onlyIds?: string[]
 ): Promise<number> {
-  return revokeForUser(deps, scope, userId, reason, actor)
+  return revokeForUser(deps, scope, userId, reason, actor, undefined, onlyIds)
 }
 
 /**

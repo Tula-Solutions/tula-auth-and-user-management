@@ -154,8 +154,30 @@ import { join } from 'node:path'
  * to 18,821: the query's part of `CallInput` costs nothing, the rest is the transport writing
  * a search string onto the address. The budget moved by exactly those 63 bytes, from 18,762 to
  * 18,825: the room is the 4 bytes it was.
+ * Single sign-on (TULA-138) added its twelve error codes and the `sso` first factor: 264 bytes, from
+ * 18,821 to 19,085, and its start operation 13 more, to 19,098. The budget moved by exactly those,
+ * to 19,102: the room is the 4 bytes it was.
+ * `flow.startSso` (TULA-141: the start step, the kept binding and the redirect, on the OAuth
+ * round trip's own functions) added 105 bytes, from 19,098 to 19,203. The budget moved by
+ * exactly those 105 bytes, to 19,207: the room is the 4 bytes it was.
+ * SAML connections (TULA-139) added the `sso.saml_invalid` code: 31 bytes, to 19,234. The budget moved
+ * by exactly those, to 19,238: the room is the 4 bytes it was.
+ * The test sign-in (TULA-145) added the codes `sso.url_not_https`, `sso.test_required` and
+ * `sso.test_not_found`: 85 bytes, to 19,319. The budget moved by exactly those, to 19,323.
+ * Organization admins' SSO calls (TULA-148: ten client operations, `organizations.sso`) added 284
+ * bytes, to 19,603. The budget moved by exactly those, to 19,607: the room is the 4 bytes it was.
+ * Setup links (TULA-149: three client operations on `organizations.sso`'s neighbour, and their error
+ * codes) added 46 bytes, to 19,653. The budget moved by exactly those, to 19,657.
+ * The setup portal's refusal `sso.role_not_allowed` (Phase 4 review) added 41 bytes, to 19,694.
+ * The budget moved by exactly those, to 19,698.
+
+ * Managed accounts (DECISIONS 11: the `user.managed` code, and the longer `sso.connection_in_use`
+ * message) added 27 bytes on top of that, to 19,721. The budget moved by exactly those, to 19,725.
+ * The member setup-link client calls (`setupLinks`, `createSetupLink`, `revokeSetupLink`, Phase 4
+ * review) added 42 bytes, to 19,763. The budget moved by exactly those, to 19,767.
+
  */
-const GZIP_BUDGET_BYTES = 18_825
+const GZIP_BUDGET_BYTES = 19_767
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

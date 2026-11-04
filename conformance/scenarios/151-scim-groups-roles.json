@@ -1,0 +1,452 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim groups: roles follow the group and keep the last manager",
+  "description": "A mapped group gives its members the mapped role; taking the only manager out of it is a 409 and changes nothing (ADR 0067).",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims its domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "learn the mock identity provider's issuer",
+      "sso": {
+        "captureIssuer": "issuer"
+      }
+    },
+    {
+      "name": "an administrator creates an OIDC connection, as a draft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Mock IdP",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecret": "conformance-sso-secret",
+          "domains": ["s{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "protocol": "oidc",
+          "name": "Mock IdP",
+          "status": "draft",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecretSet": true,
+          "defaultRole": "member",
+          "domains": ["s{{suffix}}.example"],
+          "createdAt": "$any",
+          "updatedAt": "$any"
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
+      "name": "map a group to admin",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/group-roles",
+        "auth": "secret",
+        "body": {
+          "mappings": [
+            {
+              "group": "ops-{{suffix}}",
+              "role": "admin"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "provision a",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "a-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-a-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "a-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "aId": "id"
+      }
+    },
+    {
+      "name": "a is a member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{aId}}/organizations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "organizationId": "{{orgId}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "create group ops",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Groups",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          "displayName": "ops-{{suffix}}",
+          "externalId": "g-ops-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "displayName": "ops-{{suffix}}"
+        }
+      },
+      "capture": {
+        "opsGid": "id"
+      }
+    },
+    {
+      "name": "a joins the mapped group",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{opsGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "add",
+              "path": "members",
+              "value": [
+                {
+                  "value": "{{aId}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "a is now an admin",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{aId}}/organizations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "organizationId": "{{orgId}}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the only manager cannot be taken out of the group",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{opsGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "remove",
+              "path": "members[value eq \"{{aId}}\"]"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "and nothing changed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{aId}}/organizations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "organizationId": "{{orgId}}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

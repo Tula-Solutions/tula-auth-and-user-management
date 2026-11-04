@@ -97,6 +97,13 @@ export const sessions = tula.table(
      * column says.
      */
     activeOrganizationId: uuid('active_organization_id'),
+    /**
+     * The SSO connection the session was signed in through (ADR 0067), issued as the access
+     * token's `sso_conn` claim; null for every other session. Fixed at creation, and not a
+     * foreign key for the reason `active_organization_id` is not: deleting a connection must
+     * not rewrite session rows.
+     */
+    ssoConnectionId: uuid('sso_connection_id'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokeReason: text('revoke_reason', { enum: SESSION_REVOKE_REASONS }),
     ...timestamps(),

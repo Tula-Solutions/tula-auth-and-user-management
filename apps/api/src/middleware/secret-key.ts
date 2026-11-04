@@ -3,11 +3,11 @@ import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Tenant, TenantVariables } from '~/dependencies'
 import { AuthError, BadRequestError, NotFoundError } from '~/exceptions'
+import { UUID_PATTERN } from '~/lib/uuid'
 import { bearerToken, resolveApiKey } from '~/middleware/api-key'
 import { isDashboardRequest, requireDashboardSession } from '~/middleware/dashboard-session'
 
 /** The shape of an environment id; anything else never reaches the database. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Resolve the tenant of an admin request made by the dashboard: a valid session, plus the
@@ -34,7 +34,7 @@ async function resolveDashboardTenant<E extends AppEnv>(c: Context<E>): Promise<
       message: `A dashboard request to an admin route names its environment in ${ENVIRONMENT_HEADER}.`,
     })
   }
-  const environment = UUID.test(environmentId)
+  const environment = UUID_PATTERN.test(environmentId)
     ? await c.get('deps').environments.findById(environmentId.toLowerCase())
     : null
   if (!environment) {

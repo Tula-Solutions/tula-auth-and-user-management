@@ -2,14 +2,13 @@ import { parseArgs } from 'node:util'
 import { createContainer } from '~/container'
 import { loadEnv } from '~/env'
 import { systemActor } from '~/lib/actor'
+import { UUID_PATTERN } from '~/lib/uuid'
 import * as Project from '~/modules/project/service'
 
 // Bootstrap: admin routes need a secret key, and keys are minted by admin routes. This mints the
 // first one through the same service function the API uses. The key is printed once, to stdout.
 //
 //   bun run api-key:create --environment <uuid> [--kind secret|publishable] [--name "Backend"]
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function fail(message: string): never {
   process.stderr.write(`api-key:create: ${message}\n`)
@@ -23,7 +22,7 @@ const { values } = parseArgs({
     name: { type: 'string', default: 'Bootstrap key' },
   },
 })
-if (!values.environment || !UUID.test(values.environment)) {
+if (!values.environment || !UUID_PATTERN.test(values.environment)) {
   fail('pass --environment <uuid> (`bun run seed` prints the environment ids)')
 }
 if (values.kind !== 'secret' && values.kind !== 'publishable' && values.kind !== 'agent') {

@@ -1,0 +1,642 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "sso group roles follow the identity provider",
+  "description": "An organization maps identity-provider groups to roles (ADR 0067). The saved order is the precedence: a user in two mapped groups gets the role of the first in the list. The role is set at each single sign-on, so it follows the group across two sign-ins.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SSO Org",
+          "slug": "sso-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims its domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "learn the mock identity provider's issuer",
+      "sso": {
+        "captureIssuer": "issuer"
+      }
+    },
+    {
+      "name": "an administrator creates an OIDC connection, as a draft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Mock IdP",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecret": "conformance-sso-secret",
+          "domains": ["s{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "protocol": "oidc",
+          "name": "Mock IdP",
+          "status": "draft",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecretSet": true,
+          "defaultRole": "member",
+          "domains": ["s{{suffix}}.example"],
+          "createdAt": "$any",
+          "updatedAt": "$any"
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
+      "name": "an administrator starts a test sign-in of the connection",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests",
+        "auth": "secret",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "testId": "$any",
+          "authorizationUrl": "$any"
+        }
+      },
+      "capture": {
+        "testId": "testId",
+        "testUrl": "authorizationUrl"
+      }
+    },
+    {
+      "name": "the administrator signs in at the identity provider as someone on the domain",
+      "sso": {
+        "authorizationUrl": "{{testUrl}}",
+        "email": "tester-{{suffix}}@s{{suffix}}.example",
+        "captureTest": "returnedTest"
+      }
+    },
+    {
+      "name": "the test passed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests/{{testId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "testId": "{{testId}}",
+          "status": "passed",
+          "reason": null,
+          "message": null,
+          "attributes": "$any",
+          "groups": "$any",
+          "mapped": {
+            "email": "tester-{{suffix}}@s{{suffix}}.example",
+            "givenName": null,
+            "familyName": null,
+            "emailOnVerifiedDomain": true
+          }
+        }
+      }
+    },
+    {
+      "name": "the administrator activates the connection",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "name": "the administrator maps two groups to roles, the first one winning",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/group-roles",
+        "auth": "secret",
+        "body": {
+          "mappings": [
+            {
+              "group": "ops-{{suffix}}",
+              "role": "admin"
+            },
+            {
+              "group": "staff-{{suffix}}",
+              "role": "member"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the mapping reads back in the same order",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/group-roles",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "mappings": [
+            {
+              "group": "ops-{{suffix}}",
+              "role": "admin"
+            },
+            {
+              "group": "staff-{{suffix}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bob starts a sign-in with an address on the domain (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "bob-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "bobfirstId": "id",
+        "bobfirstSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "bob continues with single sign-on (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bobfirstId}}/sso",
+        "client": "ios",
+        "attempt": "{{bobfirstSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "bobfirstUrl": "authorizationUrl",
+        "bobfirstBinding": "binding"
+      }
+    },
+    {
+      "name": "bob signs in at the identity provider with their groups (first)",
+      "sso": {
+        "authorizationUrl": "{{bobfirstUrl}}",
+        "email": "bob-{{suffix}}@s{{suffix}}.example",
+        "captureTicket": "bobfirstTicket",
+        "captureAttempt": "bobfirstAttempt",
+        "groups": "ops-{{suffix}}"
+      }
+    },
+    {
+      "name": "the ticket signs bob in (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{bobfirstTicket}}",
+          "attemptId": "{{bobfirstAttempt}}",
+          "binding": "{{bobfirstBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "bobUserId": "step.userId"
+      }
+    },
+    {
+      "name": "ada starts a sign-in with an address on the domain (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "ada-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "adafirstId": "id",
+        "adafirstSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "ada continues with single sign-on (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{adafirstId}}/sso",
+        "client": "ios",
+        "attempt": "{{adafirstSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "adafirstUrl": "authorizationUrl",
+        "adafirstBinding": "binding"
+      }
+    },
+    {
+      "name": "ada signs in at the identity provider with their groups (first)",
+      "sso": {
+        "authorizationUrl": "{{adafirstUrl}}",
+        "email": "ada-{{suffix}}@s{{suffix}}.example",
+        "captureTicket": "adafirstTicket",
+        "captureAttempt": "adafirstAttempt",
+        "groups": "staff-{{suffix}},ops-{{suffix}}"
+      }
+    },
+    {
+      "name": "the ticket signs ada in (first)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{adafirstTicket}}",
+          "attemptId": "{{adafirstAttempt}}",
+          "binding": "{{adafirstBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "adaUserId": "step.userId"
+      }
+    },
+    {
+      "name": "both are admins: the first mapped group in the saved order wins, whatever order the provider listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "userId": "{{bobUserId}}",
+              "role": "admin"
+            },
+            {
+              "userId": "{{adaUserId}}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ada starts a sign-in with an address on the domain (second)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "ada-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "adasecondId": "id",
+        "adasecondSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "ada continues with single sign-on (second)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{adasecondId}}/sso",
+        "client": "ios",
+        "attempt": "{{adasecondSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "adasecondUrl": "authorizationUrl",
+        "adasecondBinding": "binding"
+      }
+    },
+    {
+      "name": "ada signs in at the identity provider with their groups (second)",
+      "sso": {
+        "authorizationUrl": "{{adasecondUrl}}",
+        "email": "ada-{{suffix}}@s{{suffix}}.example",
+        "captureTicket": "adasecondTicket",
+        "captureAttempt": "adasecondAttempt",
+        "groups": "staff-{{suffix}}"
+      }
+    },
+    {
+      "name": "the ticket signs ada in (second)",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{adasecondTicket}}",
+          "attemptId": "{{adasecondAttempt}}",
+          "binding": "{{adasecondBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "adaUserId": "step.userId"
+      }
+    },
+    {
+      "name": "after the second sign-in the role follows the group",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "userId": "{{bobUserId}}",
+              "role": "admin"
+            },
+            {
+              "userId": "{{adaUserId}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "disable the connection",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "status": "disabled"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

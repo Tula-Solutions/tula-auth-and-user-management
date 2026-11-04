@@ -252,3 +252,10 @@ export const OAUTH_TICKET_PARAM = 'tula_ticket'
  * ```
  */
 export const OAUTH_ERROR_PARAM = 'tula_error'
+
+/**
+ * The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+ * the token from the page address's fragment, which a browser never sends, and puts it here:
+ * it is never in a path or a query, so no access log or `Referer` holds it.
+ */
+export const SETUP_LINK_HEADER = 'x-tula-setup-token'

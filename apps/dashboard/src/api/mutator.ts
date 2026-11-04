@@ -14,6 +14,11 @@ export interface DashboardRequestInit extends RequestInit {
    * header (`x-tula-can-still-sign-in`).
    */
   onResponse?: (response: Response) => void
+  /**
+   * Return the successful `Response` itself instead of its parsed JSON, for a body that is
+   * not JSON (the audit log export is NDJSON or CSV). Failures are still an {@link ApiError}.
+   */
+  raw?: boolean
 }
 
 /** Admin routes act on one environment, named by a header (ADR 0032). */
@@ -56,7 +61,7 @@ export async function dashboardFetch<T>(
   url: string,
   options: DashboardRequestInit = {}
 ): Promise<T> {
-  const { onResponse, headers: given, ...init } = options
+  const { onResponse, raw, headers: given, ...init } = options
   const headers = new Headers(given)
   headers.delete('authorization')
   headers.set(DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE)
@@ -105,6 +110,9 @@ export async function dashboardFetch<T>(
     throw failure
   }
   onResponse?.(response)
+  if (raw) {
+    return response as T
+  }
   if (response.status === 204 || response.status === 205) {
     return undefined as T
   }

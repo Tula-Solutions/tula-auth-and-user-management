@@ -30,10 +30,13 @@ import type { ProofReplayGuard } from '~/ports/proof-replay'
 import type { ProposalStore } from '~/ports/proposal-store'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
+import type { ScimStore } from '~/ports/scim-store'
 import type { SessionStore } from '~/ports/session-store'
+import type { SetupLinkStore } from '~/ports/setup-link-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
 import type { SmsUsageStore } from '~/ports/sms-usage-store'
+import type { SsoConnectionStore } from '~/ports/sso-connection-store'
 import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 import type { WebhookDeliveryStore } from '~/ports/webhook-delivery-store'
@@ -162,6 +165,11 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
+  /** An organization's single sign-on connections, their domain bindings and identities (ADR 0067). */
+  ssoConnections: SsoConnectionStore
+  /** An organization's SCIM tokens and the users its directory manages (ADR 0067). */
+  scim: ScimStore
+  setupLinks: SetupLinkStore
   /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
   organizations: OrganizationStore
   /** The domains organizations claim, and the codes that verify them (ADR 0065, "Verified domains"). */

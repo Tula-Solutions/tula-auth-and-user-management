@@ -96,7 +96,9 @@ function secrets(value: unknown, named = false): string[] {
 }
 
 /** Response fields whose value is a credential, in whole or in part. */
-const SECRET_KEYS = /token|secret|^key$|^codes?$|^uri$|binding|ticket|challenge|credential/i
+// `tokens` alone is the envelope of the SCIM token list (its entries hold dates and ids, and the
+// secret is `token`, still matched): read as a secret it would make the entries' times inputs.
+const SECRET_KEYS = /token(?!s$)|secret|^key$|^codes?$|^uri$|binding|ticket|challenge|credential/i
 
 function parseJson(text: string): unknown {
   try {
@@ -204,6 +206,19 @@ function claimsDomain(request: Request): boolean {
   )
 }
 
+/**
+ * The domains an SSO connection's body binds it to, by an administrator, an organization admin's own session or a setup link (ADR 0067): domains the organization has
+ * already claimed and verified, so public, and held to {@link DOMAIN_FIELDS} like a claim's.
+ */
+function boundDomains(request: Request, json: unknown): unknown[] {
+  const bound =
+    /\/v1\/(?:admin\/sso-connections|setup\/connections|client\/me\/organizations\/[^/]+\/sso-connections)(?:\/[^/]+)?\/?$/.test(
+      new URL(request.url).pathname
+    )
+  const domains = bound ? (json as { domains?: unknown } | undefined)?.domains : undefined
+  return Array.isArray(domains) ? domains : []
+}
+
 /** Whether a request body names a role by key: a role's definition, or a member's role. */
 function namesRole(request: Request): boolean {
   const { pathname } = new URL(request.url)
@@ -275,12 +290,13 @@ class Tap {
     const json = parseJson(body)
     const role = namesRole(request) && json && typeof json === 'object' ? json : undefined
     const domain = claimsDomain(request) ? (json as { domain?: unknown } | undefined)?.domain : null
+    const bound = boundDomains(request, json)
     for (const value of json === undefined ? parameters(body) : strings(json)) {
       // A role's key may be in the fields of ROLE_KEY_FIELDS, so it is held to that rule
       // there; everything else in the same body is an ordinary input.
       const key = (role as { key?: unknown; role?: unknown } | undefined)?.key
       const named = (role as { role?: unknown } | undefined)?.role
-      if (typeof domain === 'string' && value === domain) {
+      if ((typeof domain === 'string' && value === domain) || bound.includes(value)) {
         this.mayAppear.add(value)
       } else if (value === key || value === named) {
         // A built-in role's key is contract vocabulary and stays out of the set.
@@ -417,7 +433,7 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
 
   // The sweep above proves nothing if the tap is blind or the flows record nothing: this
   // runs the journeys the event contract was written for and says what was seen.
-  test('the tap sees the inputs of sign-up, sign-in, reset, admin create, settings and OAuth', async () => {
+  test('the tap sees the inputs of sign-up, sign-in, reset, admin create, settings, OAuth, SCIM and setup tokens', async () => {
     const named = [
       'sign-up',
       'sign-in',
@@ -425,6 +441,8 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
       'email code sign-in',
       'environment settings',
       'OAuth sign-up and sign-in',
+      'scim tokens: create, use, revoke',
+      'setup links: create, use, revoke',
     ]
     const runs = await Promise.all(
       named.map((name) => {
@@ -457,6 +475,8 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
       /^Conformance Suite/, // an app name an admin set
       /^tula_sk_/, // the secret key
       /^tula_rt_/, // a refresh token
+      /^tula_scim_/, // a SCIM token
+      /^tula_setup_/, // a setup link's token
       /^ey[\w-]+\.[\w-]+\.[\w-]+$/, // an access token
     ]) {
       const input = inputs.find((candidate) => kind.test(candidate))

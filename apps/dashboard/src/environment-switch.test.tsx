@@ -15,6 +15,8 @@ import {
   fakeOrganization,
   fakeProposal,
   fakeRole,
+  fakeScimToken,
+  fakeSsoConnection,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -1413,6 +1415,81 @@ describe('organizations and roles', () => {
       0
     )
     expect(api.callsTo('DELETE', `/v1/admin/organizations/${ORGANIZATION}`)).toHaveLength(0)
+  })
+
+  test('a typed client secret and the question about a connection do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.settings.settings.sso = { enabled: true }
+    for (const environmentId of [IDS.development, IDS.production]) {
+      api.state.ssoConnections.push(
+        fakeSsoConnection({ organizationId: ORGANIZATION, environmentId, enforced: true })
+      )
+    }
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Edit Okta' }))
+    const form = within(screen.getByRole('dialog'))
+    await user.type(form.getByLabelText('Client secret'), 'half-typed-secret')
+    await user.click(form.getByRole('switch', { name: 'Require this connection' }))
+    await user.click(form.getByRole('button', { name: 'Save changes' }))
+    await form.findByTestId('weakening')
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('heading', { level: 1, name: 'Acme Corp' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('half-typed-secret')).toBe(false)
+    expect(api.callsTo('PATCH', '/v1/admin/sso-connections')).toHaveLength(0)
+    expect(api.state.ssoConnections.every((entry) => entry.enforced)).toBe(true)
+  })
+
+  test('a SCIM token on screen and an open revocation do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.scimTokens.push(
+      fakeScimToken({
+        organizationId: ORGANIZATION,
+        name: 'Dev only',
+        environmentId: IDS.development,
+      })
+    )
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Create token' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Name'), 'Okta')
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Create token' })
+    )
+    const secret = (await screen.findByTestId('created-scim-token')).textContent ?? ''
+    expect(secret).toStartWith('tula_scim_')
+
+    // The dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('heading', { level: 1, name: 'Acme Corp' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('No SCIM tokens')
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(screen.queryByText('Dev only')).toBeNull()
+    expect(api.callsTo('DELETE', '/v1/admin/scim-tokens')).toHaveLength(0)
+  })
+
+  test('an open deletion of a connection does not survive a switch', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.settings.settings.sso = { enabled: true }
+    for (const environmentId of [IDS.development, IDS.production]) {
+      api.state.ssoConnections.push(
+        fakeSsoConnection({ organizationId: ORGANIZATION, environmentId })
+      )
+    }
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Delete Okta' }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('button', { name: 'Delete Okta' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.state.ssoConnections).toHaveLength(2)
   })
 
   test('an open change of a member’s role does not survive a switch', async () => {
