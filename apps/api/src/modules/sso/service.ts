@@ -327,7 +327,10 @@ export async function authorizationUrl(
 ): Promise<string> {
   const found = await asProviderError(discover(deps, connection), 'discovery')
   // The browser is sent here: https only, as for any address we call (`http` in the `local` tier).
-  const url = new URL(found.authorizationEndpoint)
+  const url = URL.parse(found.authorizationEndpoint)
+  if (!url) {
+    throw refused('discovery', 'authorization_endpoint_invalid', 'discovery_failed')
+  }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && deps.outbound.tier === 'local')) {
     throw refused('discovery', 'authorization_endpoint_not_https', 'discovery_failed')
   }

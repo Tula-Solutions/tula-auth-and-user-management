@@ -568,6 +568,37 @@ describe('create converges after a crash, and resources say where they are', () 
     expect(await members(retry.body.id)).toBe(1)
   })
 
+  test.each([
+    ['refused', () => async () => 'external_id_taken' as const],
+    [
+      'throws',
+      () => async () => {
+        throw new Error('crash')
+      },
+    ],
+  ])(
+    'a repaired account that belongs to another organization survives an insert that %s',
+    async (_name, impl) => {
+      const id = await provision('kept@acme.test')
+      const other = await Organizations.create(deps, TENANT, { name: 'B', slug: 'bee' }, TEST_ACTOR)
+      await Organizations.addMember(
+        deps,
+        TENANT,
+        other.id,
+        { userId: id, role: 'member' },
+        TEST_ACTOR
+      )
+      // The directory deletes her: kept for B, only the SCIM row goes.
+      expect((await scim('DELETE', `/Users/${id}`)).status).toBe(204)
+      const insert = spyOn(deps.scim, 'insertUser').mockImplementationOnce(impl() as never)
+      const retry = await scim('POST', '/Users', okta('kept@acme.test'))
+      insert.mockRestore()
+      expect(retry.status).not.toBe(201)
+      expect(await deps.users.findById(TENANT.environmentId, id)).not.toBeNull()
+      expect(await members(id)).toBe(1)
+    }
+  )
+
   test('a User and a Group carry meta.location under PUBLIC_URL', async () => {
     const id = await provision()
     const user = await scim('GET', `/Users/${id}`)

@@ -494,23 +494,10 @@ export async function run(
     return null
   }
   const report = outcome.value
-  const removed =
-    report.flowAttempts +
-    report.verificationTokens +
-    report.sessions +
-    report.pendingFactors +
-    report.passkeyChallenges +
-    report.instanceAuditLogs +
-    report.auditLogs +
-    report.webhookDeliveries +
-    report.events +
-    report.smsCodeCounts +
-    report.passwordHistory +
-    report.proposals +
-    report.hookCallCounts +
-    report.testUsers +
-    report.domainClaims +
-    report.setupLinks
+  // Every deleted-rows counter (`RetentionCounts`), so that a new one cannot be left out of the
+  // sum: the log line is the only lasting trace of a deletion. `environments` and `failed` are not.
+  const { environments: _environments, failed: _failed, ...counts } = report
+  const removed = Object.values(counts).reduce((sum, count) => sum + count, 0)
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

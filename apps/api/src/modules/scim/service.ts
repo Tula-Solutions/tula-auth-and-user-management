@@ -304,6 +304,9 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
   const now = deps.clock.now()
   let user: UserRecord
   let method: 'created' | 'linked'
+  // Only an account this call inserted is ours to delete again; `method` is the audit's word,
+  // and a repaired account is 'created' too but may belong to other organizations.
+  let inserted = false
   if (existing) {
     const hasRecord = await deps.scim.findUser(environmentId, ctx.organizationId, existing.id)
     if (existing.managedByDirectoryId === ctx.organizationId && !hasRecord) {
@@ -349,6 +352,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       throw uniqueness()
     }
     method = 'created'
+    inserted = true
   }
   const wanted = input.active ?? true
   const record: ScimUserRecord = {
@@ -377,8 +381,12 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       throw uniqueness()
     }
   } catch (error) {
-    if (method === 'created') {
-      await Users.remove(deps, ctx.tenant, user.id, ctx.actor)
+    if (inserted) {
+      try {
+        await Users.remove(deps, ctx.tenant, user.id, ctx.actor)
+      } catch {
+        // The cleanup failed too: the retry's repair branch finishes the job. Report the cause.
+      }
     }
     throw error
   }

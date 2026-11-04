@@ -161,6 +161,9 @@ export function organizationStore(client: TulaClient): OrganizationStore {
       const startedFor = currentSession(client)
       const created = await client.organizations.create(input)
       if (startedFor !== null && currentSession(client) === startedFor) {
+        // A fetch already on its way may have been answered before this creation: let it end,
+        // or the forced load below would join it and finish with the list without the new one.
+        await inFlight?.done
         await store.load(startedFor, { force: true })
       }
       return created

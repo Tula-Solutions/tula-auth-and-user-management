@@ -552,6 +552,13 @@ describe('the ID token', () => {
     )
   })
 
+  test('a discovery document with an authorization endpoint that is no URL is a provider error, not a 500', async () => {
+    idp.authorizationEndpoint = 'not a url'
+    const { sso } = await started()
+    expect(sso.status).not.toBe(500)
+    expect(((await sso.json()) as { code: string }).code).toBe('sso.provider_error')
+  })
+
   test('a token the provider will not give for a wrong PKCE verifier signs nobody in', async () => {
     const { sso } = await started()
     const url = new URL(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
