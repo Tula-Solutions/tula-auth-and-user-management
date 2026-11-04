@@ -54,6 +54,79 @@ the SwiftUI and the Compose one were compiled, the Expo one was not installed
 ([docs/quickstart.md](../../docs/quickstart.md#the-native-path),
 [what was not verified](../../docs/plans/phase-2-unverified.md)).
 
+## After it runs
+
+```sh
+cd my-app
+bun install                    # the web templates list the CLI, so `tula` now resolves
+bunx tula dev                  # migrations, seed, API, development keys in .env.local
+bun run dev                    # the example app
+bunx tula dev down             # stop the stack; the data is kept
+```
+
+`tula dev` prints the URLs of the API, its reference and Mailpit (the inbox that catches the
+emailed codes). `bunx tula dev --tunnel` serves the same stack at a public https address, for
+a phone ([docs/cli.md](../../docs/cli.md#tula-dev---tunnel)).
+
+## The name, exit codes and safety
+
+- The name is the directory, the package name and the Compose project name: lowercase
+  letters, digits, dashes and underscores.
+- Exit code 0 means the project was created; 1 means an error, and nothing was written.
+- **Back up `TULA_MASTER_KEY`** from `.env`: it opens the stored signing keys and provider
+  credentials.
+- `.gitignore` is written first and `.env` last, so the secrets are never on disk without the
+  file that keeps them out of git.
+- A symbolic link where a file or directory would be written, or as the project directory, is
+  refused before anything is written.
+- `--force` keeps an existing `.env` and `.env.local`, and an existing `.gitignore` keeps its
+  lines and gains the ones it lacks.
+
+## Which framework
+
+| `--framework` | Starts from | Needs |
+| --- | --- | --- |
+| `react-vite` | A Vite + React app built only from `@tula-tech/react` components. | npm packages only. |
+| `nextjs` | A Next.js App Router app on `@tula-tech/nextjs`: protected routes, a server-rendered page, a route handler. | npm packages only. |
+| `expo` | An Expo app on `@tula-tech/expo`. | `--tula-packages <repo>/.release` (not on npm yet). |
+| `swiftui` | An Xcode project using `TulaAuthUI`. | `--tula-repo <checkout>`. |
+| `compose` | A Gradle build using the Compose screens. | `--tula-repo <checkout>`. |
+
+Without `--framework` on a terminal it asks; without a terminal the option is required.
+
+## What the stack holds
+
+| Service | Where | Notes |
+| --- | --- | --- |
+| Tula API | `http://localhost:3003` (`--api-port`) | The reference is served at `/v1/docs` in the local tier. |
+| Mailpit | `http://localhost:8025` (`--mailpit-port`) | Catches every email the stack sends, such as sign-in codes. |
+| Postgres, Redis | Inside the Compose network | Pinned by digest in `compose.yaml`. |
+
+The settings live in `tula.config.ts`. Change them there and run `bunx tula diff`, then
+`bunx tula apply` ([docs/config.md](../../docs/config.md)); secrets appear in that file only
+as `env('NAME')`, never as values.
+
+## Re-running and changing your mind
+
+- Running it into a non-empty directory is refused unless you pass `--force`.
+- `--api-image` can be changed later by editing `TULA_API_IMAGE` in `.env`.
+- To start over, `bunx tula dev down --volumes` deletes the database; the files stay.
+
+## Reporting a problem
+
+The errors it prints say which step failed and what to change, and never repeat a secret.
+Issues go to the [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management/issues).
+
+## Requirements
+
+[Bun](https://bun.sh) 1.2 or later and Docker with Compose, for the stack `tula dev` starts.
+
+## Learn more
+
+- [docs/quickstart.md](../../docs/quickstart.md): the walk-through, web and native.
+- [docs/cli.md](../../docs/cli.md): `create-tula` and the `tula` commands.
+- [packages/cli](../cli/README.md): the `tula` executable.
+
 The app templates are copies of `examples/react-vite`, `examples/nextjs-app-router`,
 `examples/expo/app`, `examples/swiftui` and `examples/compose`, made by
 `bun run --filter create-tula templates:sync`; `bun run verify` fails when they drift.

@@ -2,6 +2,7 @@
   "name": "@tula-tech/expo-screens",
   "version": "0.2.0",
   "license": "Apache-2.0",
+  "author": "Tula Solutions",
   "private": true,
   "type": "module",
   "description": "Tula's native screens (SwiftUI, Compose) as Expo components, on the native clients: an Expo native module of its own, apart from the headless @tula-tech/expo, so that only an app that installs it compiles it.",
