@@ -160,6 +160,8 @@ export async function revokeApiKey(
   id: string,
   actor: Actor
 ): Promise<ApiKey> {
+  // z.uuid() accepts uppercase, ids are stored lowercase: compare like with like.
+  id = id.toLowerCase()
   if (id === tenant.apiKeyId) {
     throw new ConflictError({
       message: 'A key cannot revoke itself. Create a new key and revoke this one with it.',

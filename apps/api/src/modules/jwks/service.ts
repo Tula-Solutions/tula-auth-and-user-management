@@ -117,6 +117,23 @@ export async function ensureKeys(deps: KeyDeps, environmentId: string): Promise<
 const privateKeys = new Map<string, Promise<CryptoKey>>()
 
 /**
+ * Most imported private keys held at once. Rotated keys are never read again, so without a bound
+ * the map would grow by one key per rotation per environment for the life of the process; the
+ * oldest entry goes first (a Map iterates in insertion order), and an evicted key that is still
+ * active is simply decrypted again on its next use.
+ */
+export const MAX_CACHED_PRIVATE_KEYS = 256
+
+/**
+ * How many private keys the cache holds now.
+ *
+ * @returns The entry count, for tests.
+ */
+export function privateKeyCacheSize(): number {
+  return privateKeys.size
+}
+
+/**
  * The key to sign an environment's access tokens with, bootstrapping keys on first use.
  *
  * The private key is decrypted once per kid and held as a non-extractable `CryptoKey`.
@@ -151,6 +168,12 @@ export async function activeSigningKey(
         ])
       )
     privateKeys.set(cacheKey, privateKey)
+    if (privateKeys.size > MAX_CACHED_PRIVATE_KEYS) {
+      const oldest = privateKeys.keys().next().value
+      if (oldest !== undefined) {
+        privateKeys.delete(oldest)
+      }
+    }
     privateKey.catch(() => privateKeys.delete(cacheKey))
   }
   return { kid: id, privateKey: await privateKey }

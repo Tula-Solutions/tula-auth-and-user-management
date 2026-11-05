@@ -122,6 +122,12 @@ describe('preflight', () => {
     expect(allowOrigin(await preflight('/v1/admin/users', PROD_ORIGIN))).toBeNull()
   })
 
+  test('a group’s bare path, with no trailing slash, is still an admin path', async () => {
+    for (const path of ['/v1/admin', '/v1/instance', '/v1/agent']) {
+      expect(allowOrigin(await preflight(path, DEV_ORIGIN))).toBeNull()
+    }
+  })
+
   // The instance token is the deployment's, not an environment's: a tenant adding an origin to
   // its own settings must not make that origin able to call the instance routes from a browser.
   test('instance routes follow the deployment’s list only', async () => {
