@@ -104,11 +104,16 @@ export async function setupRequest<T>(
   }
   if (!response.ok) {
     const seconds = Number(response.headers.get('retry-after'))
-    throw fromEnvelope(
+    const failure = fromEnvelope(
       response.status,
       body,
       Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null
     )
+    // A link the server refuses is dead: stop holding (and sending) its token.
+    if (failure.code === 'auth.invalid_key') {
+      held = null
+    }
+    throw failure
   }
   return body as T
 }

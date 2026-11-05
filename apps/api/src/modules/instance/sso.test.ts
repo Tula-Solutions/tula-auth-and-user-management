@@ -160,6 +160,16 @@ describe('the sso_connections check', () => {
     expect((await sso(deps)).status).toBe('ok')
   })
 
+  test('probes the metadata address with GET (H-192)', async () => {
+    const deps = await setup()
+    metadataAnswers(200)
+    await connect(deps, { metadataUrl: `https://${CANARY_HOST}/metadata` })
+    await sso(deps)
+    const init = (Outbound.request as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]?.[2]
+    expect(init).toMatchObject({ method: 'GET' })
+  })
+
   test('fails for a certificate that has ended', async () => {
     const deps = await setup()
     await connect(deps, { endsInDays: -1 })

@@ -118,3 +118,15 @@ rules themselves are above and are not repeated).
   (`e2e/tests/dashboard/api-docs.spec.ts`: no violation, no request to another host).
 - **Static files:** `..`, encoded separators, a backslash, an absolute path, a NUL, a dot
   file and a link that leaves the directory; and a missing asset is a 404, not the app.
+- Decision (TULA-157, H-197): sign-out with a disallowed `Origin` cannot clear the cookie.
+  `DELETE /v1/instance/session` reads the session through `readDashboardSession`, which runs
+  `requireDashboardOrigin` first, so a foreign origin gets 403 `request.origin_not_allowed`,
+  no `Set-Cookie` and no audit entry (pinned by `session.test.ts`, "a state-changing request
+  from a foreign origin is refused before anything happens"). Recommendation: keep it; a
+  cross-site page forcing a sign-out is itself a CSRF. Reason: the cookie is `SameSite=Strict`,
+  so a legitimate sign-out is always same-site. No change.
+- Decision (TULA-157, H-198): `API_DOCS=off` hides `/v1/docs` but `/v1/openapi.json` is still
+  served, as `docs/self-host.md` says. Recommendation: keep it public; the document holds
+  routes and schemas, no secret, and the SDK generators and `tula doctor` read it. If an
+  operator wants it hidden, block the path at the proxy, or add an `OPENAPI` switch with the
+  docs row and a test. Reason: hiding it changes a documented public contract. Recorded only.

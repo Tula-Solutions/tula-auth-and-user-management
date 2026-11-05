@@ -529,6 +529,18 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    const user = this.#user(environmentId, userId)
+    if (user && user.managedByDirectoryId === organizationId) {
+      user.managedByDirectoryId = null
+    }
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,

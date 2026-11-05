@@ -3,6 +3,7 @@ import { messageFor } from '~/api/errors'
 import type { SsoConnection, SsoTestResult, SsoTestStart } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { Section } from '~/components/page'
+import { isHttpsUrl } from '~/lib/https-url'
 import { SETUP_TEST_CHANNEL, setupRequest } from './setup-api'
 
 /** How often the setup tab asks for the result of a test it started, in milliseconds. */
@@ -62,11 +63,18 @@ export function TestAndActivate({
     setFallback(null)
     // Opened on the click, before the request: a window opened after an await is blocked.
     const popup = window.open('about:blank', '_blank')
+    // Cut the page's link to the opener now; `noopener` would make open() return null.
+    if (popup) {
+      popup.opener = null
+    }
     setPending(true)
     try {
       const started = await setupRequest<SsoTestStart>(`/connections/${connection.id}/tests`, {
         method: 'POST',
       })
+      if (!isHttpsUrl(started.authorizationUrl)) {
+        throw new Error('The sign-in address was not an https address.')
+      }
       testId.current = started.testId
       if (popup) {
         popup.location.href = started.authorizationUrl

@@ -641,6 +641,13 @@ only reachable on a Docker network.
 > make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
 > proxy, clients can forge their address.
 
+> [!IMPORTANT]
+> **Keep setup links out of logs.** An SSO setup link carries its secret in the URL fragment
+> (`/dashboard/setup#token=…`) and the portal sends it in the `x-tula-setup-token` header. A
+> browser never sends a fragment, but a proxy, a log shipper or an analytics script that sees the
+> page's full address does: have your proxy and log pipeline redact the `x-tula-setup-token`
+> header and drop the `#token=` fragment, as you would an `Authorization` header.
+
 **A Next.js app in front (`@tula-tech/nextjs`).** With the Next.js SDK the browser talks to the
 app's own origin, and the app's server forwards to the API
 ([ADR 0029](adr/0029-nextjs-sdk.md)). Two settings follow. Add the **app's** origin to the

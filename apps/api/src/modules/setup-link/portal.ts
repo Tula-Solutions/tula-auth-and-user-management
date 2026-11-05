@@ -10,7 +10,7 @@ import type {
   SsoTestStart,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, NotFoundError } from '~/exceptions'
+import { AuthError, ConflictError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { publicBase } from '~/lib/public-base'
@@ -19,6 +19,9 @@ import * as ScimTokens from '~/modules/scim-token/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
 import { PORTAL_PATH } from './service'
+
+/** Most connections the portal page lists: an unbounded list is an unbounded response (H-056). */
+const MAX_PORTAL_CONNECTIONS = 50
 
 // What a setup link opens (ADR 0067, "Setup links"). Every function here takes the link's
 // organization from the middleware, never from the request, and calls the same connection and
@@ -94,7 +97,10 @@ export async function show(
     organization: { id: organization.id, name: organization.name },
     domains: domains.filter((one) => one.verifiedAt !== null).map((one) => one.domain),
     expiresAt: scope.expiresAt.toISOString(),
-    connections: await SsoConnections.list(deps, tenant, scope.organizationId),
+    connections: (await SsoConnections.list(deps, tenant, scope.organizationId)).slice(
+      0,
+      MAX_PORTAL_CONNECTIONS
+    ),
   }
 }
 
@@ -115,6 +121,11 @@ export async function createConnection(
   input: SetupConnectionCreate,
   actor: Actor
 ): Promise<SsoConnection> {
+  // The view shows 50, so a holder must not be able to build more than they can see.
+  const held = await SsoConnections.list(deps, tenant, scope.organizationId)
+  if (held.length >= MAX_PORTAL_CONNECTIONS) {
+    throw new ConflictError({ message: 'The organization holds the most connections allowed.' })
+  }
   return SsoConnections.create(
     deps,
     tenant,

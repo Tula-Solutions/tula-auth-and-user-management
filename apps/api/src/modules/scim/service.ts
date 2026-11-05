@@ -522,10 +522,14 @@ export async function list(
  * @throws ScimError `uniqueness` for an `externalId` another user has.
  */
 export async function replace(deps: Deps, ctx: ScimContext, userId: string, input: ScimUserInput) {
+  const active = input.active ?? true
+  // A deactivation must land even when the directory sends a userName that is not an email
+  // (a DOMAIN-user form): offboarding is never refused for an address it does not change.
+  const email = active ? emailOf(input).email : parseEmail(input.userName)?.email
   return apply(deps, ctx, userId, {
-    active: input.active ?? true,
+    active,
     externalId: input.externalId ?? null,
-    userName: emailOf(input).email,
+    ...(email !== undefined && { userName: email }),
     ...(input.name && { name: input.name }),
   })
 }
@@ -632,5 +636,7 @@ export async function remove(deps: Deps, ctx: ScimContext, userId: string) {
     await Users.remove(deps, ctx.tenant, userId, ctx.actor)
   } else {
     await deps.scim.deleteUser(environmentId, ctx.organizationId, userId)
+    // Kept for another organization: no longer ours, or a later POST would repair-adopt it.
+    await deps.users.releaseDirectory(environmentId, userId, ctx.organizationId)
   }
 }
