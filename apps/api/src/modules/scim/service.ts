@@ -96,7 +96,8 @@ async function hasMembership(deps: Deps, ctx: ScimContext, userId: string) {
  * Give or take back access. Deactivating removes the membership (the last manager of the
  * organization cannot be removed: 409) and, only for an account this directory created that
  * has no other membership, bans it, which signs it out and denylists its sessions.
- * Activating lifts only a ban of the directory's own deactivation (`mayUnban`), never an operator's.
+ * Activating lifts only a ban the directory itself placed (`banOrigin`), never an operator's,
+ * whichever came first.
  */
 async function setActive(
   deps: Deps,
@@ -121,9 +122,7 @@ async function setActive(
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
       await Roles.sync(deps, ctx, user.id)
     }
-    // shortcut: an operator ban placed while the directory already holds the user inactive is
-    // lifted on reactivation (who banned is not recorded); upgrade by recording the banner.
-    if (managed && mayUnban && user.bannedAt !== null) {
+    if (managed && mayUnban && user.banOrigin === 'directory') {
       await Users.unban(deps, ctx.tenant, user.id, ctx.actor)
     }
   } else {
@@ -131,7 +130,7 @@ async function setActive(
       await Organizations.removeMember(deps, ctx.tenant, ctx.organizationId, user.id, ctx.actor)
     }
     if (managed && user.bannedAt === null && !(await hasMembership(deps, ctx, user.id))) {
-      await Users.ban(deps, ctx.tenant, user.id, ctx.actor)
+      await Users.ban(deps, ctx.tenant, user.id, ctx.actor, undefined, 'directory')
     }
   }
   await deps.scim.updateUser(
@@ -349,6 +348,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       firstName: nameOf(input.name?.givenName),
       lastName: nameOf(input.name?.familyName),
       bannedAt: null,
+      banOrigin: null,
       lastSignInAt: null,
       createdAt: now,
       phoneNumber: null,

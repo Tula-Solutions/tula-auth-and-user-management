@@ -74,6 +74,7 @@ import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import * as Sms from '~/modules/sms/service'
 import * as Sso from '~/modules/sso/service'
+import { isManaged } from '~/modules/user/managed'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
@@ -433,6 +434,11 @@ const StateSchema = z.object({
    * password reset for one that had none.
    */
   decoy: z.boolean().optional(),
+  /**
+   * A decoy that mails nothing: the reset of a user an identity provider manages. The notice an
+   * unknown address gets would tell the mailbox holder nothing useful and only add noise.
+   */
+  silent: z.boolean().optional(),
   /** The first factors a sign-in was offered when it started. */
   strategies: z.array(FirstFactorStrategySchema).optional(),
   /**
@@ -1146,7 +1152,9 @@ async function issueCode(
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
     userId: options.userId,
-    ...(state.decoy && { deliver: ({ to }) => notice(deps, tenant, to) }),
+    ...(state.decoy && {
+      deliver: state.silent ? async () => {} : ({ to }) => notice(deps, tenant, to),
+    }),
     ...(options.charge && {
       onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
     }),
@@ -3305,7 +3313,9 @@ async function clearSignUp(
  * proving they own the address.
  *
  * An address on a domain enforced by single sign-on gets the decoy attempt of an unknown address,
- * so the answer does not tell it apart (DECISIONS 12).
+ * so the answer does not tell it apart (DECISIONS 12). So does the address of a user an identity
+ * provider manages (decision 11); a code issued before they became managed is refused later with
+ * `user.managed`.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -3335,8 +3345,17 @@ export async function startPasswordReset(
   // On an enforced domain only a break-glass member is mailed a code; everyone else gets the
   // decoy, so the answer is the same for any address (decision 12).
   const found = await deps.users.findByEmail(tenant.environmentId, identifier)
-  const user = found && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
-  const state: State = { ...asked(context), email, ...(!user && { decoy: true }) }
+  // A user an identity provider manages gets the decoy too: they cannot set a local password
+  // (decision 11), and and nothing at all is mailed to them.
+  const managed = !!found && (await isManaged(deps, tenant.environmentId, found))
+  const user =
+    found && !managed && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
+  const state: State = {
+    ...asked(context),
+    email,
+    ...(!user && { decoy: true }),
+    ...(managed && { silent: true }),
+  }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
     status: 'needs_new_password',

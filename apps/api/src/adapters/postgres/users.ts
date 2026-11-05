@@ -40,6 +40,7 @@ import * as logger from '~/lib/logger'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
+  BanOrigin,
   DependentAccounts,
   IdentityRecord,
   LinkGuard,
@@ -72,6 +73,7 @@ const columns = {
   firstName: users.firstName,
   lastName: users.lastName,
   bannedAt: users.bannedAt,
+  banOrigin: users.banOrigin,
   lastSignInAt: users.lastSignInAt,
   createdAt: users.createdAt,
   phoneNumber: users.phoneNumber,
@@ -749,7 +751,8 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    origin: BanOrigin = 'operator'
   ): Promise<UserRecord | null> {
     const activity = activityOf(recorded)
     const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
@@ -758,12 +761,23 @@ export class PostgresUserRepository implements UserRepository {
       // ban time, and neither a repeated ban nor a repeated unban is recorded twice.
       const [changed] = await tx
         .update(users)
-        .set({ bannedAt, updatedAt: at })
+        .set({ bannedAt, banOrigin: bannedAt === null ? null : origin, updatedAt: at })
         .where(and(isUser, bannedAt === null ? isNotNull(users.bannedAt) : isNull(users.bannedAt)))
         .returning(columns)
       if (changed) {
         await recordActivity(tx, activity ? [activity] : [])
         return changed
+      }
+      if (bannedAt !== null && origin === 'operator') {
+        // An operator's ban of a directory-banned user takes it over; nothing else changes.
+        const [taken] = await tx
+          .update(users)
+          .set({ banOrigin: 'operator' })
+          .where(and(isUser, eq(users.banOrigin, 'directory')))
+          .returning(columns)
+        if (taken) {
+          return taken
+        }
       }
       const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
       return unchanged ?? null

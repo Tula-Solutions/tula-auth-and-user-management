@@ -7,6 +7,7 @@ import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
+import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
@@ -987,6 +988,9 @@ describe('password reset', () => {
   async function signInWith(pw: string) {
     return password(await startSignIn(), pw)
   }
+  const stored = async () =>
+    (await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED))?.passwordHash ??
+    null
 
   test('emails a reset code and waits on the code and a new password', async () => {
     await registered()
@@ -1290,6 +1294,65 @@ describe('password reset', () => {
     expect(error.code).toBe('verification.invalid_code')
     expect(error.params).toEqual({ attemptsRemaining: 0 })
     expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+  })
+
+  describe.each([
+    ['connection', { managedByConnectionId: 'c1' }],
+    ['directory', { managedByDirectoryId: 'o1' }],
+  ] as const)('a user managed by a %s (decision 11)', (_kind, marks) => {
+    /** Make the user managed, as an identity provider's live connection or directory would. */
+    function manage() {
+      const spies: { mockRestore(): void }[] = [
+        spyOn(deps.ssoConnections, 'find').mockResolvedValue({} as never),
+        spyOn(deps.scim, 'listTokens').mockResolvedValue([{ revokedAt: null }] as never),
+      ]
+      for (const method of ['findByEmail', 'findById'] as const) {
+        const original = deps.users[method].bind(deps.users) as (...a: string[]) => Promise<never>
+        spies.push(
+          spyOn(deps.users, method).mockImplementation((async (...a: string[]) => {
+            const found = (await original(...a)) as object | null
+            return found && { ...found, ...marks }
+          }) as never)
+        )
+      }
+      return () => {
+        for (const s of spies) {
+          s.mockRestore()
+        }
+      }
+    }
+
+    test('a start sends no email at all and answers as it does for an unknown address', async () => {
+      await registered()
+      const unknown = await startReset('nobody@northline.app')
+      deps.clock.advance(Verification.RESEND_COOLDOWN)
+      const restore = manage()
+      try {
+        const sent = deps.mailer.outbox.length
+        const started = await startReset()
+        await Notices.settled()
+        expect(deps.mailer.outbox.length).toBe(sent)
+        expect(started.attempt.step.status).toBe(unknown.attempt.step.status)
+        expect(started.attempt.kind).toBe(unknown.attempt.kind)
+      } finally {
+        restore()
+      }
+    })
+
+    test('a code issued before the user became managed is refused and stores nothing', async () => {
+      await registered()
+      const { attempt } = await startReset()
+      const code = sentCode()
+      const before = await stored()
+      const restore = manage()
+      try {
+        expect((await rejection(reset(attempt, code))).code).toBe('user.managed')
+      } finally {
+        restore()
+      }
+      expect(await stored()).toBe(before)
+      expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    })
   })
 
   test('a malformed address is refused before anything is sent', async () => {

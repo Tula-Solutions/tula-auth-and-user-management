@@ -479,6 +479,19 @@ describe('changePassword on an account with no password', () => {
   })
 })
 
+describe('setPassword on a managed account (decision 11)', () => {
+  test('an administrator’s reset is the break-glass: it still sets the password', async () => {
+    const user = await create()
+    const found = await deps.users.findById(tenant.environmentId, user.id)
+    spyOn(deps.users, 'findById').mockResolvedValue(
+      found && { ...found, managedByConnectionId: 'c1' }
+    )
+    spyOn(deps.ssoConnections, 'find').mockResolvedValue({} as never)
+    await Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR)
+    expect(await Passwords.verify(await storedPassword(), NEW_PASSWORD)).toBe(true)
+  })
+})
+
 describe('changePassword on a managed account (decision 11)', () => {
   async function setup(managed: { managedByConnectionId?: string; managedByDirectoryId?: string }) {
     const user = await create()

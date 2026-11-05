@@ -42,6 +42,7 @@ import * as Settings from '~/modules/settings/service'
 import { requireNotManaged } from '~/modules/user/managed'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import {
+  type BanOrigin,
   InvalidUserDataError,
   type PasswordOutcome,
   type UserRecord,
@@ -246,6 +247,7 @@ export async function create(
     firstName,
     lastName,
     bannedAt: null,
+    banOrigin: null,
     lastSignInAt: null,
     createdAt: now,
     phoneNumber: null,
@@ -530,6 +532,8 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * @param proposal - When the ban carries out an agent's proposal a human approved (ADR
  *   0053): the proposal and who approved it, recorded in the entry beside the agent actor.
  *   Only `Proposals.approve` passes it.
+ * @param origin - `directory` when a directory's deprovisioning bans (ADR 0067), so only its
+ *   reactivation lifts it; an operator's ban by default.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -538,7 +542,8 @@ export async function ban(
   scope: Scope,
   userId: string,
   actor: Actor,
-  proposal?: { proposalId: string; approvedBy: ProposalApprover }
+  proposal?: { proposalId: string; approvedBy: ProposalApprover },
+  origin: BanOrigin = 'operator'
 ): Promise<User> {
   const now = deps.clock.now()
   const user = await deps.users.setBanned(
@@ -551,7 +556,8 @@ export async function ban(
       actor,
       target: { type: 'user', id: userId },
       data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
-    })
+    }),
+    origin
   )
   if (!user) {
     throw new NotFoundError()
@@ -697,7 +703,14 @@ function lastOrganizationManager(organizationIds: readonly string[]): AuthError 
 type PasswordDeps = RevocationDeps &
   Pick<
     Deps,
-    'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter' | 'secretBox'
+    | 'config'
+    | 'environmentSettings'
+    | 'breachChecker'
+    | 'mailer'
+    | 'rateLimiter'
+    | 'secretBox'
+    | 'ssoConnections'
+    | 'scim'
   >
 
 /**
@@ -758,6 +771,12 @@ async function replacePassword(
   expired?: { setAt: number }
 ): Promise<void> {
   const { email, emailNormalized } = user
+  if (method !== 'admin_reset') {
+    // The identity provider owns a managed account's password (decision 11). Here, in the one
+    // path that stores a user's own password, so reset, expired-password replacement and change
+    // all hold; an administrator's route is the break-glass and never asks.
+    await requireNotManaged(deps, scope.environmentId, user)
+  }
   if (email === null || emailNormalized === null) {
     // A password sign-in starts with an address. On an account that has none (made through X
     // or Facebook; ADR 0026) a password would be a credential nobody can use, and one that

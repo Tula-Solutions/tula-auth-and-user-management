@@ -289,6 +289,31 @@ describe('deactivation, reactivation and deletion', () => {
     expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).not.toBeNull()
   })
 
+  test('an operator ban placed while the directory holds the user inactive survives reactivation', async () => {
+    const id = await provision()
+    const patch = (active: boolean) =>
+      scim('PATCH', `/Users/${id}`, {
+        Operations: [{ op: 'replace', path: 'active', value: active }],
+      })
+    await patch(false)
+    await Users.ban(deps, TENANT, id, TEST_ACTOR)
+    const on = await patch(true)
+    expect(on.status).toBe(200)
+    expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).not.toBeNull()
+  })
+
+  test('an operator ban placed before the directory deactivates survives reactivation', async () => {
+    const id = await provision()
+    const patch = (active: boolean) =>
+      scim('PATCH', `/Users/${id}`, {
+        Operations: [{ op: 'replace', path: 'active', value: active }],
+      })
+    await Users.ban(deps, TENANT, id, TEST_ACTOR)
+    await patch(false)
+    await patch(true)
+    expect((await deps.users.findById(TENANT.environmentId, id))?.bannedAt).not.toBeNull()
+  })
+
   test('a create that repairs an operator-banned account does not lift the ban', async () => {
     const insert = spyOn(deps.scim, 'insertUser').mockImplementationOnce(async () => {
       throw new Error('crash')

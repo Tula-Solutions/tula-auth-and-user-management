@@ -7,6 +7,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
+  BanOrigin,
   DeleteUserOutcome,
   DependentAccounts,
   IdentityRecord,
@@ -207,6 +208,7 @@ export class MemoryUserRepository implements UserRepository {
       managedByConnectionId: record.managedByConnectionId ?? null,
       managedByDirectoryId: record.managedByDirectoryId ?? null,
       bannedAt: null,
+      banOrigin: null,
       lastSignInAt: null,
       phoneNumber: null,
       phoneNumberVerifiedAt: null,
@@ -486,7 +488,8 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     _at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    origin: BanOrigin = 'operator'
   ): Promise<UserRecord | null> {
     const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
@@ -496,7 +499,10 @@ export class MemoryUserRepository implements UserRepository {
     // Only a real change writes: a repeated ban keeps the original time and records nothing.
     if ((user.bannedAt === null) !== (bannedAt === null)) {
       user.bannedAt = bannedAt
+      user.banOrigin = bannedAt === null ? null : origin
       this.#activityLog.record(activity ? [activity] : [])
+    } else if (bannedAt !== null && origin === 'operator') {
+      user.banOrigin = 'operator'
     }
     return { ...user }
   }
