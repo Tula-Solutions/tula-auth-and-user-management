@@ -3516,8 +3516,9 @@ refused before the store is asked. No error made here holds a value.
 A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
 before it rejects: the token being written has already replaced the stored one on the
 server. After it has rejected, the same value is offered to the store twice more, later
-({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
-are asked once.
+({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A delete is tried again
+the same way as a write, so that a refusal does not leave a token on the device after a
+sign-out (stopped if a newer write came meanwhile). A read is asked once.
 
 A write that is *waiting* to be tried again, now or later, gives up when a newer write or
 a delete of the same entry was asked for meanwhile: a waiting try never undoes a sign-out

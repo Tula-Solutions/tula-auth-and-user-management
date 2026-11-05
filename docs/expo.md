@@ -1501,7 +1501,7 @@ run in a real Expo app.
 - **A store that fails is not "signed out".** A read, a write or a delete the secure store
   refuses is `storage.failed`, and the running app keeps its session.
 - **A write the store refuses is tried three times** (again after 50 ms and after 200 ms;
-  a read and a delete are asked once). The write that matters is the one after a refresh:
+  a delete is tried the same way, a read is asked once). The write that matters is the one after a refresh:
   the server has replaced the refresh token by then, and the store still holds the one it
   replaced. If all three fail:
   - the running app is still signed in and its tokens work. `session.refresh()`,
