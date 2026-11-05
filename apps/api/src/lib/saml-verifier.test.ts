@@ -22,6 +22,7 @@ const expected: SamlExpectations = {
   acsUrl: ACS,
   requestId: REQUEST,
   idpEntityId: IDP,
+  replayScope: 'env_1:conn_1',
   certificates: [MOCK_SAML_KEYS.a.certificate, MOCK_SAML_KEYS.b.certificate],
 }
 
@@ -154,6 +155,27 @@ describe('SAML response verifier', () => {
         const body = response({ now: deps.clock.now(), assertionId: '_fixed' })
         expect((await verify(deps, body, expected)).ok).toBe(true)
         expect(await verify(deps, body, expected)).toEqual({ ok: false, reason: 'replayed' })
+      })
+
+      test(`the same assertion id on another connection is not a replay (${name}, TULA-157, H-017)`, async () => {
+        const base = createTestDeps()
+        const deps = { ...base, proofReplay: make(base) }
+        const body = response({ now: deps.clock.now(), assertionId: '_shared' })
+        expect((await verify(deps, body, expected)).ok).toBe(true)
+        const other = { ...expected, replayScope: 'env_1:conn_2' }
+        expect((await verify(deps, body, other)).ok).toBe(true)
+      })
+
+      test(`refuses an assertion that lives longer than an hour (${name}, TULA-157, H-024)`, async () => {
+        const base = createTestDeps()
+        const deps = { ...base, proofReplay: make(base) }
+        const long = response({ now: deps.clock.now(), lifetimeMs: 365 * 86_400_000 })
+        expect(await verify(deps, long, expected)).toEqual({
+          ok: false,
+          reason: 'subject_confirmation_invalid',
+        })
+        const ok = response({ now: deps.clock.now(), lifetimeMs: 3_600_000 })
+        expect((await verify(deps, ok, expected)).ok).toBe(true)
       })
 
       test(`a refused response burns no id (${name})`, async () => {

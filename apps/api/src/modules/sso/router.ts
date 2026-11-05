@@ -82,7 +82,9 @@ router.get(
       UUID_PATTERN.test(environmentId ?? '') && UUID_PATTERN.test(connectionId ?? '')
         ? await c.get('deps').ssoConnections.find(environmentId as string, connectionId as string)
         : null
-    if (connection?.protocol !== 'saml') {
+    // A draft is served (the dashboard's setup hands this address to the IdP before activation);
+    // a disabled connection is gone to the outside (TULA-157, H-028).
+    if (connection?.protocol !== 'saml' || connection.status === 'disabled') {
       return c.json({ status: 404, code: 'not_found', detail: 'Not found.' }, 404)
     }
     const urls = samlUrls(c.get('deps').config, connection)

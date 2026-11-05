@@ -644,6 +644,7 @@ describe('the ID token', () => {
     ['a wrong issuer', { iss: 'https://evil.test' }],
     ['a wrong audience', { aud: 'someone-else' }],
     ['an azp that is not the client', { azp: 'someone-else' }],
+    ['several audiences and no azp (H-034)', { aud: [CLIENT_ID, 'other'] }],
     ['a nonce that is not the attempt’s', { nonce: 'not-the-nonce' }],
     ['no nonce', { nonce: undefined }],
     ['an expired token', { exp: 1 }],
@@ -675,17 +676,33 @@ describe('the ID token', () => {
     expect(back.fragment.get('tula_error')).toBe('sso.provider_error')
   })
 
+  test('several audiences with an azp that is the client are accepted (H-034)', async () => {
+    idp.claims = { aud: [CLIENT_ID, 'other'], azp: CLIENT_ID }
+    await signedIn()
+  })
+
   test('an unknown kid makes the key set be fetched again once, and a rotated key is taken', async () => {
     await signedIn()
     expect(idp.jwksFetches).toBe(1)
+    deps.clock.advance(60_000)
     idp.published = [0, 1]
     idp.signer = 1
     await signedIn()
     expect(idp.jwksFetches).toBe(2)
     // A key the fresh set does not have either: refused, with one more fetch and no more.
+    deps.clock.advance(60_000)
     idp.signer = 2
     expect(await codeOf()).toBe('sso.provider_error')
     expect(idp.jwksFetches).toBe(3)
+  })
+
+  test('an unknown kid cannot make the key set be fetched again within the cooldown (H-035)', async () => {
+    await signedIn()
+    expect(idp.jwksFetches).toBe(1)
+    idp.signer = 2
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(idp.jwksFetches).toBe(1)
   })
 
   test('the documents come from cache: one discovery and one key set for two sign-ins', async () => {
