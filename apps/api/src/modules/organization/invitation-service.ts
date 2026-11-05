@@ -588,6 +588,19 @@ async function acceptRecord(
   if (!role) {
     throw new AuthError('organization.invitation_role_gone')
   }
+  if (record.invitedBy) {
+    // The role is resolved by key, so it may have gained permissions since a member invited to
+    // it: hold it to the inviter's reach as of now (a member who left reaches nothing).
+    const inviter = await deps.organizations.findUserMembership(
+      tenant.environmentId,
+      record.organizationId,
+      record.invitedBy
+    )
+    const reach = inviter?.permissions ?? []
+    if (!role.permissions.every((permission) => reach.includes(permission))) {
+      throw new AuthError('organization.role_not_assignable')
+    }
+  }
   const now = deps.clock.now()
   const membershipId = deps.ids.next()
   const result = await deps.organizations.acceptInvitation(

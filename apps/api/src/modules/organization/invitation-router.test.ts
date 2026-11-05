@@ -1010,6 +1010,40 @@ describe('answering an invitation', () => {
     expect((await decline(ada.accessToken, token)).status).toBe(204)
   })
 
+  test('a role widened after a member invited to it is refused at acceptance, within the inviter’s reach', async () => {
+    const maya = await signUp('maya@northline.app')
+    const ada = await signUp('ada@northline.app')
+    const org = await makeOrganization()
+    await defineRole('inviter', ['org:sys:invitations:manage', 'org:billing:read'])
+    await defineRole('billing', ['org:billing:read'])
+    await join(org, maya.userId, 'inviter')
+    const sent = await client(
+      'POST',
+      `/me/organizations/${org.id}/invitations`,
+      inviteBody({ role: 'billing' }),
+      { token: maya.accessToken }
+    )
+    expect(sent.status).toBe(201)
+    const token = tokenOfLastInvitation()
+    const widened = await app.request('/v1/admin/organization-roles/billing', {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${SK}`,
+        'content-type': 'application/json',
+        'if-match': '"1"',
+      },
+      body: JSON.stringify({ permissions: ['org:billing:read', 'org:sys:memberships:manage'] }),
+    })
+    expect(widened.status).toBe(200)
+    const res = await accept(ada.accessToken, token)
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('organization.role_not_assignable')
+    const members = await json<OrganizationMembershipList>(
+      await admin('GET', `/${org.id}/memberships`)
+    )
+    expect(members.data.map((m) => m.userId)).toEqual([maya.userId])
+  })
+
   test('a user who is a member already is told so, and the invitation stays pending', async () => {
     const ada = await signUp('ada@northline.app')
     const org = await makeOrganization()
