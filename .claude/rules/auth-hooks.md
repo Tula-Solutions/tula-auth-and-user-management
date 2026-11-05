@@ -207,3 +207,12 @@ rules themselves are above and are not repeated).
   refuses leaves the factor absent, no backup code valid and no new session, and the user's
   earlier sessions ended and denylisted; a backup code used for a refused sign-in is spent
   (nine left).
+
+- **`before_sign_up` is not asked for an account an operator creates.** Admin `Users.create`
+  and a SCIM create are operator-authenticated acts and skip the hook by design. An
+  operator who uses `before_sign_up` as a policy gate (an allow-list of domains, say) must
+  enforce the same policy in what calls those routes. Test: `modules/hook/sign-up.test.ts`.
+- Decision (TULA-157, H-187): a hook's URL is judged twice, on purpose. Saving it calls
+  `Outbound.check`, which only resolves and judges the address and sends nothing; a call goes
+  through `Outbound.request`, which judges again at delivery, because DNS changes. A save-time
+  pass is never proof for delivery. `modules/hook/outbound-judging.test.ts` holds both.
