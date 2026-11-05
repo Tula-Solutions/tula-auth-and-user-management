@@ -471,6 +471,9 @@ export class PostgresUserRepository implements UserRepository {
           )
         )
         .limit(1)
+        // A hash upgrade takes this row and not the user's: without the lock this read could
+        // see the hash an upgrade in flight is replacing, and keep that cheaper form (H-081).
+        .for('update')
       const current = stored?.secret ?? null
       if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
         return 'stale'

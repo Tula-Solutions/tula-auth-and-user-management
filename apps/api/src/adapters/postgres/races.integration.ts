@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula-tech/contract'
 import {
   apiKeys,
+  credentials as credentialsTable,
   passwordHistory,
   proposals as proposalsTable,
   refreshTokens as refreshTokensTable,
@@ -151,6 +152,17 @@ async function overlapping<A, B>(
 /** Hold a user's row as a writer does: whoever reads it to lock it or changes it waits. */
 const userRow = (userId: string) => (tx: Transaction) =>
   tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for('update')
+
+/**
+ * Hold a user's credential rows. A hash upgrade writes the password credential and never the
+ * user's row, so this, not `userRow`, is the lock it shares with a password replacement.
+ */
+const credentialRows = (userId: string) => (tx: Transaction) =>
+  tx
+    .select({ id: credentialsTable.id })
+    .from(credentialsTable)
+    .where(eq(credentialsTable.userId, userId))
+    .for('update')
 
 describe('an emailed sign-in verifies an address while a password is being set', () => {
   const users = {
@@ -410,7 +422,7 @@ describe('two instances change one user’s password (ADR 0038)', () => {
       const user = await seeded()
       const { results, order } = await overlapping(
         round,
-        userRow(user.id),
+        credentialRows(user.id),
         () =>
           users
             .first()
