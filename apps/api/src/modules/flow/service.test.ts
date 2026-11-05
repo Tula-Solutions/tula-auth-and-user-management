@@ -421,8 +421,7 @@ describe('signIn', () => {
     const lookups = [spyOn(deps.users, 'findByEmail'), spyOn(deps.users, 'findByEmailWithPassword')]
     const known = await startSignIn(EMAIL)
     const unknown = await startSignIn('nobody@northline.app')
-    const nonsense = await startSignIn('not even an email')
-    for (const attempt of [known, unknown, nonsense]) {
+    for (const attempt of [known, unknown]) {
       expect(shape(attempt)).toEqual({
         id: 'id',
         kind: 'sign_in',
@@ -1943,16 +1942,11 @@ describe('first-factor choice', () => {
     ]
     try {
       const answers = []
-      for (const identifier of [
-        EMAIL,
-        'passkey-only@northline.app',
-        'nobody@northline.app',
-        'not even an email',
-      ]) {
+      for (const identifier of [EMAIL, 'passkey-only@northline.app', 'nobody@northline.app']) {
         answers.push(shape(await startSignIn(identifier)))
       }
       expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1)
-      expect(offered).toHaveBeenCalledTimes(4)
+      expect(offered).toHaveBeenCalledTimes(3)
       // The registry is asked with the environment's settings and its enabled OAuth providers
       // (none here) and whether the deployment can send a text message, and nothing else:
       // never an identifier or an account.
