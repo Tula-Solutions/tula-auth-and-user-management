@@ -185,6 +185,7 @@ export class MemoryUserRepository implements UserRepository {
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
     if (
+      this.#users.has(user.id) ||
       (user.emailNormalized !== null && this.#byEmail(user.environmentId, user.emailNormalized)) ||
       (oauthIdentity &&
         this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
