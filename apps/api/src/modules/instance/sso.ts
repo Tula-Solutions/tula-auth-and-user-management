@@ -59,6 +59,7 @@ export function noFindings(): SsoFindings {
 async function answers(deps: Pick<Deps, 'outbound'>, address: string): Promise<boolean> {
   try {
     const response = await Outbound.request(deps.outbound, address, {
+      method: 'GET', // a metadata endpoint may refuse the default POST
       timeoutMs: METADATA_TIMEOUT_MS,
       maxResponseBytes: METADATA_MAX_BYTES,
     })
