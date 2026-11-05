@@ -169,10 +169,9 @@ export async function requestMayUseSessionCookie<E extends AppEnv & { Variables:
  * preflight would otherwise say yes to a page the cookie check then refuses.
  */
 function isAdminPath(path: string): boolean {
-  return (
-    path.startsWith('/v1/admin/') ||
-    path.startsWith('/v1/instance/') ||
-    path.startsWith('/v1/agent/')
+  // Whole path segments: the bare group path (no trailing slash) is the group's too.
+  return ['/v1/admin', '/v1/instance', '/v1/agent'].some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
   )
 }
 
