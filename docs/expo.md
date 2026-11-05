@@ -97,6 +97,8 @@ device ([releasing.md](releasing.md)); the
 
 Create one client, outside any component. Creating it sends nothing and reads nothing.
 
+The client refuses plain `http` to another machine, which is what a computer's address on the network (`http://192.168.…:3003`) or the Android emulator's (`http://10.0.2.2:3003`) is. The example sets `allowInsecureHttp: __DEV__`, so that only a development build accepts one; a release build needs an `https` address.
+
 <!-- snippet: examples/expo/app/src/tula.ts#client -->
 ```ts
 function createClient(publishableKey: string, baseUrl: string) {
@@ -104,6 +106,9 @@ function createClient(publishableKey: string, baseUrl: string) {
     publishableKey,
     // The address of the Tula API as the phone reaches it: never `localhost` on a device.
     baseUrl,
+    // Plain http to a computer on the network (`http://192.168.…`, `http://10.0.2.2:3003`) is
+    // refused unless asked for: asked for in development only, never in a release build.
+    allowInsecureHttp: __DEV__,
     // The platform's passkey sheet (`react-native-passkey`) and the system browser's
     // authentication session (`expo-web-browser`). Both are optional: leave one out, with
     // its import and its package, and the app offers no passkey, or no provider.
