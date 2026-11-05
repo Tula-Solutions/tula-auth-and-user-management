@@ -28,7 +28,12 @@ export interface HookSuiteContext {
 export function describeHookStore(name: string, setup: () => Promise<HookSuiteContext>): void {
   const now = new Date('2026-01-01T00:00:00.000Z')
   const later = new Date('2026-01-02T00:00:00.000Z')
-  const strict = { enabled: true, failureMode: 'deny' } as const
+  const strict = {
+    url: 'https://app.example.com/tula/before-sign-up',
+    enabled: true,
+    deadlineMs: 2000,
+    failureMode: 'deny',
+  } as const
   let ctx: HookSuiteContext
 
   // The tenant of a real-server fixture carries helpers of its own: only its two ids are taken.
@@ -190,6 +195,8 @@ export function describeHookStore(name: string, setup: () => Promise<HookSuiteCo
     test.each([
       ['switched off meanwhile', { enabled: false }],
       ['set to allow on failure meanwhile', { failureMode: 'allow' }],
+      ['moved to another address meanwhile', { url: 'https://other.example.com/hook' }],
+      ['given another deadline meanwhile', { deadlineMs: 4000 }],
     ] as const)(
       'an update judged against a hook that was %s writes nothing and records nothing',
       async (_name, drift) => {
@@ -219,7 +226,7 @@ export function describeHookStore(name: string, setup: () => Promise<HookSuiteCo
         await ctx.store.delete(
           env,
           record.id,
-          { enabled: false, failureMode: 'deny' },
+          { ...strict, enabled: false },
           activity(ctx.a, 'hook.deleted', record.id)
         )
       ).toBe(true)

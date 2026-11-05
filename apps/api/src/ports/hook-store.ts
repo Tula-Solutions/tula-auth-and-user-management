@@ -43,12 +43,15 @@ export interface HookChanges {
 }
 
 /**
- * What of a hook a change was judged against: whether it was on and what a failure did. A
- * write that records whether it weakened the hook is made only over a row that still says
- * this, so the record is about the change that was actually made.
+ * What of a hook a change was judged against: its address, whether it was on, its deadline
+ * and what a failure did. A write is made only over a row that still says this, so the
+ * audit record (and its `weakened` flag) is about the change that was actually made, and a
+ * concurrent change of the address or the deadline is not overwritten unseen (H-178).
  */
 export interface HookExpectation {
+  url: string
   enabled: boolean
+  deadlineMs: number
   failureMode: HookFailureMode
 }
 
