@@ -102,7 +102,9 @@ describe('the docs site workflow', () => {
 
   test('the deploy job runs no code of the repository: it deploys the artifact and that is all', () => {
     const steps = job('deploy').steps
-    expect(steps).toEqual([{ id: 'deployment', uses: 'actions/deploy-pages@v5' }])
+    expect(steps).toHaveLength(1)
+    expect(steps[0]?.id).toBe('deployment')
+    expect(steps[0]?.uses).toMatch(/^actions\/deploy-pages@[0-9a-f]{40}$/)
     expect(job('deploy').environment).toEqual({
       name: 'github-pages',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a template
@@ -126,16 +128,16 @@ describe('the docs site workflow', () => {
     ])
   })
 
-  test('every action is pinned to a major version, as the other workflows pin theirs', () => {
+  test('every action is pinned to a commit SHA, as the other workflows pin theirs', () => {
     const uses = Object.values(workflow.jobs).flatMap((one) =>
       one.steps.map((step) => step.uses).filter((value): value is string => value !== undefined)
     )
-    expect(uses).toEqual([
-      'actions/checkout@v7',
-      'actions/checkout@v7',
-      'oven-sh/setup-bun@v2',
-      'actions/upload-pages-artifact@v5',
-      'actions/deploy-pages@v5',
+    expect(uses.map((value) => value.split('@')[0])).toEqual([
+      'actions/checkout',
+      'actions/checkout',
+      'oven-sh/setup-bun',
+      'actions/upload-pages-artifact',
+      'actions/deploy-pages',
     ])
   })
 

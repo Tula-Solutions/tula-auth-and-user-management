@@ -209,6 +209,19 @@ this file under "Area rules" and does not repeat it.
   `auth.step_up_required` and nothing else. `GeneralSection` runs the call through
   `useStepUp()` and says nothing when the user closes the step-up dialog. A new destructive
   organization route gets the same middleware.
+- Decision (TULA-157, H-122): **recommended, not built**: `requireRecentAuth()` on
+  `PATCH` and `DELETE /v1/client/me/organizations/:id/members/:userId` when the target is
+  another member (leaving stays free). Today both are `sessionAuth()` plus the permission and
+  `requireOutranks`, so a stolen live session of a manager can demote or remove members
+  without a step-up, which org delete and setup links now need. Left alone because the
+  React `MembersSection` and the Expo/native screens would each need `useStepUp()` around
+  the call in the same change, and a guard without them breaks the screens; do both together.
+- Decision (TULA-157, H-008): **recorded, no change**: refreshing the metadata of an active
+  SAML connection needs neither a step-up nor a re-test. Only a holder of `org:sys:sso:manage`
+  reaches it, the metadata URL is the one already saved (the request carries none), and the
+  same person can draft, test and reactivate to the same effect, so the step-up on
+  `ssoWeakenings` (H-002/H-007) is the guard that matters. Revisit if the URL becomes
+  editable in the same call.
 - **A page of members is looked up with `UserRepository.findByIds`**, never one `findById`
   per member.
 - **A manager acts only on members within their own permissions** (`requireOutranks` in

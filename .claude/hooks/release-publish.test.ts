@@ -570,6 +570,18 @@ describe('which command uploads', () => {
       '11.6.0',
       /NODE_AUTH_TOKEN is set/,
     ],
+    [
+      'an npm_config__authToken',
+      { ...oidc, npm_config__authToken: 'npm_x' },
+      '11.6.0',
+      /npm_config__authToken is set/,
+    ],
+    [
+      'a registry-scoped NPM_CONFIG token',
+      { ...oidc, 'NPM_CONFIG_//registry.npmjs.org/:_authToken': 'npm_x' },
+      '11.6.0',
+      /is set/,
+    ],
     ['no npm', oidc, null, /npm is not installed/],
     ['an npm before trusted publishing', oidc, '11.5.0', /npm 11\.5\.0 is older than 11\.5\.1/],
     ['an npm of an older major', oidc, '10.9.9', /npm 10\.9\.9 is older than 11\.5\.1/],
@@ -582,6 +594,22 @@ describe('which command uploads', () => {
     expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
     // What is said never repeats a value from the environment.
     expect(JSON.stringify(channel)).not.toMatch(/npm_x|opaque|example\.invalid/)
+  })
+
+  test.each<[string, string, boolean]>([
+    ['a literal token', '//registry.npmjs.org/:_authToken=npm_x\n', true],
+    ['a literal _auth', '_auth = abc\n', true],
+    [
+      'a placeholder setup-node writes',
+      '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n',
+      false,
+    ],
+    ['a comment', '; _authToken=npm_x\n', false],
+    ['no credential at all', 'registry=https://registry.npmjs.org/\n', false],
+  ])('in GitHub Actions, an .npmrc with %s', (_what, npmrc, forbidden) => {
+    const channel = chooseChannel(oidc, '11.6.0', [npmrc])
+    expect(channel.problems.length > 0).toBe(forbidden)
+    expect(JSON.stringify(channel)).not.toContain('npm_x')
   })
 
   // The code is one element of the argument vector, never part of a string a shell reads,

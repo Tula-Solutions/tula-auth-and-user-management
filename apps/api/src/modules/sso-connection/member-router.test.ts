@@ -408,6 +408,40 @@ describe('weakenings need a recent authentication', () => {
     expect(entry?.actor.type).toBe('user')
   })
 
+  test('activating and editing an active connection are refused when stale (H-002, H-007)', async () => {
+    const { maya, org, made } = await world()
+    const record = await deps.ssoConnections.find(TENANT.environmentId, made.id)
+    if (!record) {
+      throw new Error('missing')
+    }
+    await SsoConnections.markTested(
+      deps,
+      TENANT,
+      made.id,
+      SsoConnections.fingerprint(record),
+      TEST_ACTOR
+    )
+    const token = await aged(maya)
+    const activate = await client('PATCH', `${base(org)}/${made.id}`, { status: 'active' }, token)
+    expect(await codeOf(activate)).toBe('auth.step_up_required')
+    const stepped = await client(
+      'POST',
+      '/sessions/step-up',
+      { method: 'password', password: PASSWORD },
+      token
+    )
+    const fresh = (await json<{ accessToken: string }>(stepped)).accessToken
+    expect(
+      (await client('PATCH', `${base(org)}/${made.id}`, { status: 'active' }, fresh)).status
+    ).toBe(200)
+    // The pre-step-up token still carries the old auth_time.
+    const stale = token
+    for (const change of [{ issuer: 'https://evil.example.test' }, { clientSecret: 'other' }]) {
+      const res = await client('PATCH', `${base(org)}/${made.id}`, change, stale)
+      expect(await codeOf(res)).toBe('auth.step_up_required')
+    }
+  })
+
   test('a change that is not a weakening does not ask', async () => {
     const { maya, org, made } = await world()
     const token = await aged(maya)

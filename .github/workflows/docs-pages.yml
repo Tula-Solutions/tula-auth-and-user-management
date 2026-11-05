@@ -62,19 +62,19 @@ jobs:
     steps:
       # The two trees, side by side, whichever branch started the run, with their whole history:
       # a page's "last updated" date is read from it, and a shallow clone has none.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           path: release-src
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: develop
           path: next-src
           fetch-depth: 0
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version-file: next-src/package.json }
       - name: Build the released docs and the unreleased docs into one site
         shell: bash
@@ -131,7 +131,7 @@ jobs:
           # serve the files as they are.
           rm -rf "$site/.vite" "$site/next/.vite"
           touch "$site/.nojekyll"
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: site
           include-hidden-files: true
@@ -149,4 +149,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

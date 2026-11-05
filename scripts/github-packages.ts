@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registryTags } from './api-image'
-import { type Manifest, RELEASED_PACKAGES } from './publish-manifest'
+import {
+  leakedPackedFiles,
+  type Manifest,
+  RELEASED_PACKAGES,
+  stagedManifestProblems,
+} from './publish-manifest'
 
 // The copy of a release on GitHub Packages (.github/workflows/github-packages.yml): the
 // tarballs `bun run packages:check` wrote to `.release/`, the ones npm gets, published a
@@ -53,6 +58,24 @@ export function mirrorName(name: string): string {
     throw new Error(`"${name}" is not a package of this repository's release`)
   }
   return `${MIRROR_SCOPE}/${match[1] ?? match[2]}`
+}
+
+/**
+ * What is wrong with a release tarball read back from disk, by the rules the release
+ * itself applies when it packs: the copy is uploaded from a file that run only trusts
+ * because it wrote it.
+ *
+ * @param packed - The `package.json` out of the tarball.
+ * @param listing - What `tar -tzf` printed for it.
+ * @returns One sentence a problem; none for a tarball that can be copied.
+ */
+export function unpackedProblems(packed: Manifest, listing: string): string[] {
+  return [
+    ...stagedManifestProblems(packed),
+    ...leakedPackedFiles(listing).map(
+      (path) => `${packed.name}: the tarball holds what must not ship: ${path}`
+    ),
+  ]
 }
 
 /**
@@ -175,6 +198,14 @@ async function main(): Promise<void> {
       const packed = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as Manifest
       if (packed.name !== source.name || packed.version !== source.version) {
         throw new Error(`${tarball} holds ${packed.name}@${packed.version}, not ${source.name}`)
+      }
+      const contents = run(['tar', '-tzf', tarball], root)
+      if (contents.exitCode !== 0) {
+        throw new Error(`${tarball} could not be listed: ${contents.out.trim()}`)
+      }
+      const problems = unpackedProblems(packed, contents.out)
+      if (problems.length > 0) {
+        throw new Error(`${tarball} is not fit to copy:\n${problems.join('\n')}`)
       }
       await writeFile(
         join(directory, 'package.json'),

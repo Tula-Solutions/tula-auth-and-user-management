@@ -332,7 +332,7 @@ describe('only the released packages can be published', () => {
       publish
         .match(/\n {6}- (?:name: [^\n]*\n {8})?run: [^\n]*/g)
         ?.map((step) => step.trim().split('run: ')[1])
-    ).toEqual(['bun install --frozen-lockfile', 'bun run release:publish'])
+    ).toEqual(['bun install --frozen-lockfile --ignore-scripts', 'bun run release:publish'])
     expect(publish).not.toMatch(/continue-on-error|\benv:/)
   })
 
@@ -678,6 +678,28 @@ describe('what a packed manifest and a tarball may hold', () => {
       'a bin at the sources',
       { bin: { tula: './src/bin.ts' } },
       '@tula-tech/cli: the entry point ./src/bin.ts is not in dist/',
+    ],
+    ...[
+      'git+https://example.invalid/x.git',
+      'file:../x',
+      'link:../x',
+      'https://example.invalid/x.tgz',
+      'github:o/r',
+      'npm:other@1',
+    ].map((range): [string, Partial<Manifest>, string] => [
+      `a non-registry range ${range}`,
+      { optionalDependencies: { left: range } },
+      `@tula-tech/cli: optionalDependencies.left is "${range}", not a registry version`,
+    ]),
+    [
+      'bundled dependencies',
+      { bundledDependencies: ['left'] },
+      '@tula-tech/cli: the packed manifest has "bundledDependencies"',
+    ],
+    [
+      'the other spelling of bundled dependencies',
+      { bundleDependencies: true },
+      '@tula-tech/cli: the packed manifest has "bundleDependencies"',
     ],
   ])('%s is a problem', (_what, change, problem) => {
     expect(stagedManifestProblems({ ...sound, ...change })).toContain(problem)
