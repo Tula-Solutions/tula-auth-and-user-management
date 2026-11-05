@@ -232,6 +232,14 @@ this file under "Area rules" and does not repeat it.
   `organization_domains` row of the connection's own organization (`holdsDomain` in
   `modules/sso/service.ts`). Removing a domain (a takeover of a lapsed name included) unbinds it
   from the organization's connections in the same transaction, with an audit entry.
+- **An SSO sign-in re-syncs a member's role from their groups, and it does downgrade** (H-021;
+  `ensureMember` in `modules/sso/service.ts`, ADR 0067). Where the organization maps groups, every
+  sign-in sets the role to the first mapped group the user is in, or to the connection's
+  `defaultRole` when they are in none: leaving a group in the IdP removes its privileges. Two cases
+  keep the old role: an organization with **no mapping** (the role is given only when the
+  membership is created), and a change that `changeMemberRole` refuses, the last manager above
+  all (the sign-in succeeds, a warning with the fixed reason is logged). Never make the re-sync
+  skip the organization service, or the last-manager rule goes with it.
 
 ## Decisions awaiting review (TULA-157)
 
