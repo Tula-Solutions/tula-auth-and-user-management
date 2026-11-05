@@ -206,7 +206,9 @@ export interface OrganizationDomainStore {
   ): Promise<SetDomainModeOutcome>
 
   /**
-   * Remove a domain, pending or verified. Members who joined because of it stay.
+   * Remove a domain, pending or verified. Members who joined because of it stay. An SSO
+   * connection's binding to the name goes in the same transaction, each with an
+   * `sso_connection.updated` entry (`changed: ['domains']`).
    *
    * @param environmentId - The environment.
    * @param organizationId - The organization.

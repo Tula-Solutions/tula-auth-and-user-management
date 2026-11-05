@@ -272,3 +272,11 @@ the dashboard build, so that the organization's IT administrator sets up SSO wit
   `<OrganizationProfile>` for OIDC connections (list, add, turn on and off, require, delete).
   SAML, group roles and the test sign-in are not drawn there yet; the test is available to
   any client through `startTest` and `testResult`.
+
+## Addendum: the domain list is a filter (TULA-158)
+
+A connection's stored domains are never the proof. Finding a connection for an address and
+accepting an IdP's account both re-check a verified, unlapsed domain row of the connection's
+organization, so a lapse (which is time-based) or a lost name stops SSO at once. Removing a domain
+also deletes its binding to the organization's connections in the same transaction, audited as
+`sso_connection.updated` with `changed: ['domains']`.

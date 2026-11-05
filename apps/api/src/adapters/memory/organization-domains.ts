@@ -1,7 +1,8 @@
 import type { OrganizationDomainMode } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryOrganizationStore } from '~/adapters/memory/organizations'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import type { MemorySsoConnectionStore } from '~/adapters/memory/sso-connections'
+import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   ClaimOutcome,
   DomainClaim,
@@ -12,6 +13,20 @@ import type {
   VerifyDomainOutcome,
 } from '~/ports/organization-domain-store'
 
+/** The audit entry of a connection that lost a domain, from the entry of the removal that caused it. */
+function unboundEntry(
+  cause: Activity,
+  connection: { id: string; protocol: 'oidc' | 'saml'; status: string }
+): Activity {
+  return {
+    ...cause,
+    id: crypto.randomUUID(),
+    type: 'sso_connection.updated',
+    target: { type: 'sso_connection', id: connection.id },
+    data: { protocol: connection.protocol, changed: ['domains'], status: connection.status },
+  }
+}
+
 const DAY_MS = 86_400_000
 
 /** In-memory organization domains for tests. */
@@ -19,21 +34,26 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
   readonly #rows: Map<string, OrganizationDomainRecord>
   readonly #activityLog: MemoryActivityLog
   readonly #organizations: MemoryOrganizationStore | null
+  readonly #ssoConnections: MemorySsoConnectionStore | null
 
   /**
    * @param activityLog - Where activity is recorded; shared with the other memory stores.
    * @param organizations - The organizations these domains belong to. Given, a claim for one
    *   it does not hold is `gone` (as the foreign key says) and a deleted organization's
    *   domains go with it (as the cascade does). Left out, any organization id is accepted.
+   * @param ssoConnections - The connections whose domain list a removed domain leaves, as in
+   *   the database's one transaction. Left out, none is touched.
    */
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
   constructor(
     activityLog: MemoryActivityLog = new MemoryActivityLog(),
-    organizations: MemoryOrganizationStore | null = null
+    organizations: MemoryOrganizationStore | null = null,
+    ssoConnections: MemorySsoConnectionStore | null = null
   ) {
     this.#rows = new Map()
     this.#activityLog = activityLog
     this.#organizations = organizations
+    this.#ssoConnections = ssoConnections
     organizations?.onDelete((environmentId, organizationId) => {
       for (const [key, row] of this.#rows) {
         if (row.environmentId === environmentId && row.organizationId === organizationId) {
@@ -245,7 +265,11 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
       return false
     }
     this.#rows.delete(id)
-    this.#activityLog.record(activity ? [activity] : [])
+    const unbound = this.#ssoConnections?.unbindDomain(environmentId, organizationId, row.domain)
+    this.#activityLog.record([
+      ...(activity ? [activity] : []),
+      ...(activity ? (unbound ?? []).map((one) => unboundEntry(activity, one)) : []),
+    ])
     return true
   }
 

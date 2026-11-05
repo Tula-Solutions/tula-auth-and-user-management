@@ -1183,6 +1183,7 @@ export async function signIn(
     | 'oauthProviders'
     | 'sms'
     | 'ssoConnections'
+    | 'organizationDomains'
   >,
   tenant: Tenant,
   input: SignInStartRequest,

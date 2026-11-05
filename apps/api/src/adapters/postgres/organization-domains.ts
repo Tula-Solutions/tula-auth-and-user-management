@@ -3,13 +3,15 @@ import {
   type Database,
   organizationDomains,
   organizations,
+  ssoConnectionDomains,
+  ssoConnections,
   type Transaction,
   withTenant,
 } from '@tula-tech/db'
 import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   ClaimOutcome,
   DomainClaim,
@@ -19,6 +21,20 @@ import type {
   SetDomainModeOutcome,
   VerifyDomainOutcome,
 } from '~/ports/organization-domain-store'
+
+/** The audit entry of a connection that lost a domain, from the entry of the removal that caused it. */
+function unbound(
+  cause: Activity,
+  connection: { connectionId: string; protocol: 'oidc' | 'saml'; status: string }
+): Activity {
+  return {
+    ...cause,
+    id: Bun.randomUUIDv7(),
+    type: 'sso_connection.updated',
+    target: { type: 'sso_connection', id: connection.connectionId },
+    data: { protocol: connection.protocol, changed: ['domains'], status: connection.status },
+  }
+}
 
 const columns = {
   id: organizationDomains.id,
@@ -352,11 +368,40 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
                 )
           )
         )
-        .returning({ id: organizationDomains.id })
-      if (rows.length === 0) {
+        .returning({ id: organizationDomains.id, domain: organizationDomains.domain })
+      const removed = rows[0]
+      if (!removed) {
         return false
       }
-      await recordActivity(tx, activity ? [activity] : [])
+      // The organization no longer holds the name, so none of its connections may offer it
+      // (ADR 0065); sign-in re-checks the domain too, this keeps the stored list honest.
+      const bound = await tx
+        .select({
+          connectionId: ssoConnections.id,
+          protocol: ssoConnections.protocol,
+          status: ssoConnections.status,
+        })
+        .from(ssoConnectionDomains)
+        .innerJoin(ssoConnections, eq(ssoConnections.id, ssoConnectionDomains.connectionId))
+        .where(
+          and(
+            eq(ssoConnectionDomains.environmentId, environmentId),
+            eq(ssoConnectionDomains.domain, removed.domain),
+            eq(ssoConnections.organizationId, organizationId)
+          )
+        )
+      if (bound.length > 0) {
+        await tx.delete(ssoConnectionDomains).where(
+          inArray(
+            ssoConnectionDomains.connectionId,
+            bound.map((one) => one.connectionId)
+          )
+        )
+      }
+      await recordActivity(tx, [
+        ...(activity ? [activity] : []),
+        ...(activity ? bound.map((one) => unbound(activity, one)) : []),
+      ])
       return true
     })
   }

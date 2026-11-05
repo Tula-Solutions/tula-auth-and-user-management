@@ -26,6 +26,7 @@ import * as Audit from '~/modules/audit/service'
 import { escapeHtml } from '~/modules/email/templates'
 import * as Hooks from '~/modules/hook/service'
 import * as Organizations from '~/modules/organization/service'
+import { lapsed } from '~/modules/organization-domain/service'
 import * as Settings from '~/modules/settings/service'
 import { SECRET_PURPOSE, samlUrls, secretAad } from '~/modules/sso-connection/service'
 import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
@@ -84,7 +85,10 @@ const MAX_GROUP_LENGTH = 256
  * @returns The one active connection bound to the address's domain, or `null`.
  */
 export async function offered(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections'>,
+  deps: Pick<
+    Deps,
+    'environmentSettings' | 'config' | 'ssoConnections' | 'organizationDomains' | 'clock'
+  >,
   tenant: Pick<Tenant, 'environmentId'>,
   identifier: string
 ): Promise<SsoConnectionRecord | null> {
@@ -92,7 +96,32 @@ export async function offered(
   if (domain === '' || !(await Settings.current(deps, tenant)).sso.enabled) {
     return null
   }
-  return deps.ssoConnections.findActiveByDomain(tenant.environmentId, domain.toLowerCase())
+  const connection = await deps.ssoConnections.findActiveByDomain(
+    tenant.environmentId,
+    domain.toLowerCase()
+  )
+  return connection && (await holdsDomain(deps, connection, domain)) ? connection : null
+}
+
+/**
+ * Whether the connection's organization still holds `domain`: a verified, unlapsed row of its
+ * own (ADR 0065). The connection's stored list is only a filter; ownership is read here, on
+ * every use, because a lapse is a matter of time and no write marks it.
+ */
+async function holdsDomain(
+  deps: Pick<Deps, 'organizationDomains' | 'clock'>,
+  connection: SsoConnectionRecord,
+  domain: string
+): Promise<boolean> {
+  const row = await deps.organizationDomains.findVerified(
+    connection.environmentId,
+    domain.toLowerCase()
+  )
+  return (
+    row !== null &&
+    row.organizationId === connection.organizationId &&
+    !lapsed(row, deps.clock.now())
+  )
 }
 
 /**
@@ -111,7 +140,16 @@ export async function offered(
  * @returns `true` when the method is refused.
  */
 export async function refuses(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections' | 'users' | 'organizations'>,
+  deps: Pick<
+    Deps,
+    | 'environmentSettings'
+    | 'config'
+    | 'ssoConnections'
+    | 'users'
+    | 'organizations'
+    | 'organizationDomains'
+    | 'clock'
+  >,
   tenant: Pick<Tenant, 'environmentId'>,
   identifier: string,
   method: string
@@ -151,7 +189,16 @@ export async function refuses(
  * @throws AuthError `auth.method_disabled` when the domain is enforced.
  */
 export async function requireNotEnforced(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections' | 'users' | 'organizations'>,
+  deps: Pick<
+    Deps,
+    | 'environmentSettings'
+    | 'config'
+    | 'ssoConnections'
+    | 'users'
+    | 'organizations'
+    | 'organizationDomains'
+    | 'clock'
+  >,
   tenant: Pick<Tenant, 'environmentId'>,
   identifier: string,
   method: string
@@ -687,6 +734,7 @@ type AccountDeps = Pick<
   Deps,
   | 'users'
   | 'ssoConnections'
+  | 'organizationDomains'
   | 'organizations'
   | 'ids'
   | 'clock'
@@ -752,7 +800,12 @@ export async function resolveAccount(
     }
     const parsed = profile.email === null ? null : parseEmail(profile.email)
     const domain = parsed?.normalized.slice(parsed.normalized.lastIndexOf('@') + 1)
-    if (!parsed || domain === undefined || !connection.domains.includes(domain)) {
+    if (
+      !parsed ||
+      domain === undefined ||
+      !connection.domains.includes(domain) ||
+      !(await holdsDomain(deps, connection, domain))
+    ) {
       throw new AuthError('sso.email_domain_mismatch')
     }
     const now = deps.clock.now()

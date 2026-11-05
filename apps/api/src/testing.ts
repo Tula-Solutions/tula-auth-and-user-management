@@ -128,6 +128,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
   const users = overrides.users ?? new MemoryUserRepository(activityLog)
   const organizations = overrides.organizations ?? new MemoryOrganizationStore(activityLog, users)
+  const ssoConnections = new MemorySsoConnectionStore(activityLog, users)
   const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
   const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
   if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
@@ -182,11 +183,15 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
-    ssoConnections: new MemorySsoConnectionStore(activityLog, users),
+    ssoConnections,
     scim: new MemoryScimStore(activityLog),
     setupLinks: new MemorySetupLinkStore(activityLog),
     organizations,
-    organizationDomains: new MemoryOrganizationDomainStore(activityLog, organizations),
+    organizationDomains: new MemoryOrganizationDomainStore(
+      activityLog,
+      organizations,
+      ssoConnections
+    ),
     proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
