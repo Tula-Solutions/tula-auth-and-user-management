@@ -471,12 +471,15 @@ How a native provider sign-in ended.
   Go on with `flow`.
 - `cancelled`: the user dismissed the sheet, or nobody answered it in time. Not an error
   and not a sign-in: nothing was sent to prove anything, and the action works again.
+- `no_account`: the device has no account of the provider to sign in with (Google's
+  `noSavedCredentialFound`). Not a dismissal: offer another way in.
 
 ```ts
 export type IdTokenOutcome =
 | { readonly status: 'complete'; readonly flow: SignInFlow }
 | { readonly status: 'needs_step'; readonly flow: SignInFlow }
 | { readonly status: 'cancelled' }
+| { readonly status: 'no_account' }
 ```
 
 **Example**
@@ -521,10 +524,11 @@ export interface IdTokenSheet {
    * Show the sheet.
    *
    * @param request - The nonce to hand the provider, unchanged.
-   * @returns What the sheet handed over, or `null` when the user dismissed it. A rejection
-   *   is a failure.
+   * @returns What the sheet handed over, `null` when the user dismissed it, or `'no_account'`
+   *   when the device has no account of the provider to sign in with (not a dismissal: the
+   *   app can offer another way). A rejection is a failure.
    */
-  signIn(request: { nonce: string }): Promise<IdTokenCredential | null>
+  signIn(request: { nonce: string }): Promise<IdTokenCredential | null | 'no_account'>
 }
 ```
 
@@ -3512,8 +3516,9 @@ refused before the store is asked. No error made here holds a value.
 A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
 before it rejects: the token being written has already replaced the stored one on the
 server. After it has rejected, the same value is offered to the store twice more, later
-({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
-are asked once.
+({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A delete is tried again
+the same way as a write, so that a refusal does not leave a token on the device after a
+sign-out (stopped if a newer write came meanwhile). A read is asked once.
 
 A write that is *waiting* to be tried again, now or later, gives up when a newer write or
 a delete of the same entry was asked for meanwhile: a waiting try never undoes a sign-out

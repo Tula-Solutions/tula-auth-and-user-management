@@ -92,8 +92,10 @@ paths:
   memory only** (`undelivered`, a closure of the session manager; never storage, a cross-tab
   message, an error, a log line or `toJSON`) and the next `signOut()` presents it. Nothing
   else reads it: no refresh may present it, and the client stays signed out throughout. It is
-  forgotten when delivered, on a `session.*` answer to the sign-out and when a new session is
-  adopted; there is no timer (ADR 0021 says why). Keep the tests of all three.
+  forgotten when delivered, on a `session.*` answer to the sign-out; there is no timer (ADR 0021 says why). **A new
+  session does not forget it** (TULA-157, H-315): the memory is a short list (8), and a
+  `signOut()` presents every distinct token in it as well as the current one, so an earlier
+  session that never got its revoke is not left alive. Keep the tests of all three.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
   `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,

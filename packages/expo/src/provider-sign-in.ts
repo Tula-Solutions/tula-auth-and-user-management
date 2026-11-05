@@ -238,7 +238,7 @@ export async function retryProviderSignIn(client: TulaClient): Promise<ProviderO
   if (!host) {
     throw clientError('storage.failed')
   }
-  if (host.roundTrip) {
+  if (host.roundTrip || host.idTokenSheetOut) {
     throw clientError('flow.busy')
   }
   host.roundTrip = true

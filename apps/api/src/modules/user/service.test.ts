@@ -223,11 +223,12 @@ describe('ban / unban', () => {
     const user = await create()
     await Users.ban(deps, tenant, user.id, TEST_ACTOR)
     // A sign-in that passed its ban check just before the ban landed creates its session now.
-    const stray = await signIn(user.id)
+    // The session re-reads the ban after its insert and ends itself (H-095).
+    expect((await rejection(signIn(user.id))).code).toBe('auth.user_banned')
     await Users.unban(deps, tenant, user.id, TEST_ACTOR)
-    const err = await rejection(Sessions.refresh(deps, tenant, stray.refreshToken ?? ''))
-    expect(err.code).toBe('session.revoked')
-    expect(await deps.revokedSessions.has(stray.sessionId, deps.clock.now())).toBe(true)
+    expect(
+      await deps.sessions.listActiveByUser(tenant.environmentId, user.id, deps.clock.now())
+    ).toEqual([])
   })
 
   test.each([
@@ -251,6 +252,18 @@ describe('remove', () => {
     expect((await rejection(Users.get(deps, tenant, user.id))).status).toBe(404)
     // The address is free again.
     expect((await create()).id).not.toBe(user.id)
+  })
+
+  test('ends a session created between the revocation and the delete (H-229)', async () => {
+    const user = await create()
+    const del = deps.users.delete.bind(deps.users)
+    let stray: Awaited<ReturnType<typeof signIn>> | undefined
+    spyOn(deps.users, 'delete').mockImplementation(async (...args) => {
+      stray = await signIn(user.id)
+      return del(...args)
+    })
+    await Users.remove(deps, tenant, user.id, TEST_ACTOR)
+    expect(await deps.revokedSessions.has(stray?.sessionId ?? '', deps.clock.now())).toBe(true)
   })
 
   test('refuses the only manager of an organization before it ends any session', async () => {
@@ -729,12 +742,53 @@ describe('changePassword (own)', () => {
   })
 })
 
+describe('ban: a pending email addition (H-171)', () => {
+  test('banning consumes the outstanding code, so an unban does not revive it', async () => {
+    const user = await create()
+    const now = deps.clock.now()
+    await deps.verificationTokens.replace(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        userId: user.id,
+        flowAttemptId: null,
+        purpose: 'email_addition',
+        destination: 'new@northline.app',
+        codeHash: 'hash',
+        linkTokenHash: null,
+        maxAttempts: 5,
+        expiresAt: new Date(now.getTime() + 600_000),
+        createdAt: now,
+      },
+      now
+    )
+    await Users.ban(deps, tenant, user.id, TEST_ACTOR)
+    const pending = await deps.verificationTokens.findLatest(
+      tenant.environmentId,
+      'email_addition',
+      {
+        userId: user.id,
+      }
+    )
+    expect(pending?.consumedAt).not.toBeNull()
+  })
+})
+
 describe('me', () => {
   test('returns the signed-in user, or 404 if they were deleted', async () => {
     const user = await create()
     expect(await Users.me(deps, tenant, user.id)).toEqual({ ...user, hasPassword: true })
     await Users.remove(deps, tenant, user.id, TEST_ACTOR)
     expect((await rejection(Users.me(deps, tenant, user.id))).status).toBe(404)
+  })
+})
+
+describe('me: banned', () => {
+  test('a banned user’s still-valid access token reads nothing (H-165)', async () => {
+    const user = await create()
+    await Users.ban(deps, tenant, user.id, TEST_ACTOR)
+    expect((await rejection(Users.me(deps, tenant, user.id))).code).toBe('auth.user_banned')
   })
 })
 

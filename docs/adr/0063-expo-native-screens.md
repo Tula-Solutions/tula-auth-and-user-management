@@ -361,3 +361,13 @@ In short, in a scratch Expo SDK 57 app outside the repository:
   Swift and Kotlin clients', whose columns exist; what is new here is a bridge, and its
   tests are the package's own.
 - **The hooks over the native client.**
+
+## Decisions (TULA-157)
+
+- **Decision (TULA-157, H-317): keep `getToken` handing the access token to JavaScript;
+  do not add a native-only request path now.** The token lives about 60 seconds, the refresh
+  token never leaves the native client, and a JavaScript caller needs the token to call the
+  developer's own backend. The cost is that JavaScript-side injection, logging or an untrusted
+  over-the-air update can read it. Recommendation: document that cost (done here), tell apps
+  to sign over-the-air updates, and add a native `fetch`-style call that attaches the token
+  without returning it only if an app asks for one. No code changed.

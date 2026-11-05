@@ -232,3 +232,19 @@ this file under "Area rules" and does not repeat it.
   `organization_domains` row of the connection's own organization (`holdsDomain` in
   `modules/sso/service.ts`). Removing a domain (a takeover of a lapsed name included) unbinds it
   from the organization's connections in the same transaction, with an audit entry.
+
+## Decisions awaiting review (TULA-157)
+
+- **Decision (TULA-157, H-218): the shared per-environment invitation cap
+  (`INVITATIONS_PER_ENVIRONMENT_PER_DAY`, 1000) stays.** It bounds what a compromised member's key
+  can mail. Recommendation: make it a setting only when an operator asks; no code change.
+- **Decision (TULA-157, H-221): no per-recipient cap across organizations yet.** Each organization
+  already limits invitations per address; a cross-organization cap needs a keyed-hash counter on
+  the address in the limiter. Recommendation: add it if abuse is seen; recorded, code unchanged.
+
+- Decision (TULA-157, H-072): the organization claims (`claimsOf`, `fromMembership`) do not
+  check `bannedAt`; recommended and left as is. They are built only for a live session or a
+  token being issued, and a ban ends every session and refuses a refresh, a create and a
+  second step (`sessions.md`, "The ban window"), so a banned user reaches the claims at most
+  inside the access-token TTL, on a token that already holds them. A check there would add a
+  user read to every token build for no window the denylist does not already close.

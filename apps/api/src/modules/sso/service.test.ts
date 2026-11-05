@@ -20,6 +20,7 @@ import * as Sms from '~/modules/sms/service'
 import * as Sso from '~/modules/sso/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
+import * as Users from '~/modules/user/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -739,6 +740,15 @@ describe('IdP groups mapped to organization roles', () => {
       { group: 'eng', role: 'member' },
     ])
     expect(await roleOf((await signedIn()).step.userId)).toBe('admin')
+  })
+
+  test('a banned user’s sign-in is refused before their role is changed (H-004)', async () => {
+    const first = await signedIn()
+    await Users.ban(deps, TENANT, first.step.userId, TEST_ACTOR)
+    await mapGroups([{ group: 'ops', role: 'admin' }])
+    idp.claims = { groups: ['ops'] }
+    expect(await codeOf()).toBe('auth.user_banned')
+    expect(await roleOf(first.step.userId)).toBe('member')
   })
 
   test('a user in no mapped group gets the connection default role', async () => {

@@ -229,7 +229,9 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
   session manager and nowhere else (never storage, a cross-tab message, an error, a log line
   or `toJSON`), and only `signOut()` reads it: no refresh presents it, so the client stays
   signed out. It is forgotten when a sign-out is delivered, when the API answers the sign-out
-  with a `session.*` code (the session is over), and when a new session is adopted. It is
+  with a `session.*` code (the session is over). A new session being adopted no longer
+  forgets it (TULA-157, H-315): the memory is a list of at most 8 tokens and a sign-out
+  presents each, so an earlier session is not left alive by a later sign-in. It is
   kept for the client's lifetime otherwise, deliberately without a timer: the token is as
   live on the server whether the client remembers it or not, so forgetting it early protects
   nothing and only removes the one way this device has to revoke it. It does not survive the

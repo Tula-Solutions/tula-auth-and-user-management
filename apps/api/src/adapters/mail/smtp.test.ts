@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createTransport } from 'nodemailer'
-import { SmtpMailer, type SmtpTransport } from '~/adapters/mail/smtp'
+import { SmtpMailer, type SmtpTransport, transportOptions } from '~/adapters/mail/smtp'
 
 const message = {
   to: 'maya@northline.app',
@@ -100,5 +100,15 @@ describe('SmtpMailer', () => {
     // Nothing listens on port 1: constructing and closing must not connect.
     const mailer = new SmtpMailer({ url: 'smtp://127.0.0.1:1', from: 'a@b.test' })
     expect(() => mailer.close()).not.toThrow()
+  })
+})
+
+describe('transportOptions', () => {
+  test('requires STARTTLS on request, so a relay cannot be downgraded to clear text (H-225)', () => {
+    expect(transportOptions('smtp://relay.example.com:587', true)).toMatchObject({
+      url: 'smtp://relay.example.com:587',
+      requireTLS: true,
+    })
+    expect(transportOptions('smtp://127.0.0.1:1025', false).requireTLS).toBeUndefined()
   })
 })

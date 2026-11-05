@@ -826,6 +826,10 @@ export async function resolveAccount(
     )
     const knownUser = known && (await deps.users.findById(environmentId, known.userId))
     if (knownUser) {
+      // A ban stops the side effects too: no membership or role changes for a banned account.
+      if (knownUser.bannedAt !== null) {
+        throw new AuthError('auth.user_banned')
+      }
       await ensureMember(deps, tenant, connection, knownUser.id, profile, origin)
       return { user: knownUser, created: false }
     }

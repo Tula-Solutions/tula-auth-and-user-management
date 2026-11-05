@@ -1595,6 +1595,19 @@ describe('the reminder that a verification is about to lapse', () => {
     expect((await Reminders.remind(deps)).emails).toBe(1)
   })
 
+  test('a group nobody can be told about does not spend the environment’s daily allowance', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    const cap = Reminders.REMINDERS_PER_ENVIRONMENT_PER_DAY
+    const key = `organization_domain_reminders:${TENANT.environmentId}`
+    for (let i = 0; i < cap - 1; i += 1) {
+      await deps.rateLimiter.hit(key, cap, 86_400_000)
+    }
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, retried: 1 })
+    expect((await deps.rateLimiter.hit(key, cap, 86_400_000)).allowed).toBe(true)
+  })
+
   test('organizations switched off: no reminder is taken or sent', async () => {
     const { org } = await managed()
     await verifiedDomain(org.id)

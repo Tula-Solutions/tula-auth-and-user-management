@@ -183,6 +183,9 @@ final class ProviderTests: XCTestCase {
             ("https://evil.example/#tula_ticket=t&tula_attempt=att_1", "unexpectedReturn"),
             ("com.example.app://callback#tula_ticket=t&tula_attempt=att_other", "notStartedHere"),
             ("com.example.app://callback#tula_ticket=t", "notStartedHere"),
+            // The first of a name wins (TULA-157, H-326): a later duplicate cannot repair or override it.
+            ("com.example.app://callback#tula_ticket=t&tula_attempt=att_other&tula_attempt=att_1", "notStartedHere"),
+            ("com.example.app://callback#tula_error=oauth.access_denied&tula_error=oauth.other&tula_attempt=att_1", "error:oauth.access_denied"),
             ("com.example.app://callback#tula_error=oauth.access_denied&tula_attempt=att_1", "error:oauth.access_denied"),
             ("com.example.app://callback#tula_error=CANARY%20made%20up", "error:oauth.provider_error"),
         ]

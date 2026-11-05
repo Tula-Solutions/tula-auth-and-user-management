@@ -384,6 +384,26 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(world.api.count(Fixture.signOut), 2)
     }
 
+    func testANewSessionKeepsTheUndeliveredTokenAndTheNextSignOutEndsBoth() async throws {
+        let world = try await World.signedIn()
+        world.api.on(Fixture.signOut) { _ in throw URLError(.notConnectedToInternet) }
+        let session = world.session
+        _ = await thrownCode { try await session.signOut() }
+
+        try await session.adopt(
+            SessionTokens(
+                sessionId: "ses_2", accessToken: Fixture.accessToken("second"),
+                accessTokenExpiresAt: "2030-01-01T00:00:00.000Z", refreshToken: "refresh-second"))
+        world.api.always(Fixture.signOut) { _ in Reply(status: 204, json: "") }
+        try await session.signOut()
+        // The failed attempt, then the new session's token and the old one's, once each.
+        XCTAssertEqual(
+            world.api.requests(Fixture.signOut).map(refreshToken),
+            ["refresh-first", "refresh-second", "refresh-first"])
+        try await session.signOut()
+        XCTAssertEqual(world.api.count(Fixture.signOut), 3)
+    }
+
     func testASignOutTheServerRefusedForTheSessionIsNotKeptForARetry() async throws {
         let world = try await World.signedIn()
         world.api.always(Fixture.signOut) { _ in Reply.error(401, "session.revoked") }

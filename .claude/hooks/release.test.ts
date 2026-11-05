@@ -315,6 +315,7 @@ describe('only the released packages can be published', () => {
     expect(dryRun).not.toMatch(/\n {4}if:/)
     expect(dryRun).toContain('run: bun run release:dry-run')
     expect(dryRun).toContain('run: bun run packages:states')
+    expect(dryRun).toContain('run: bun run --filter create-tula generate:check')
     expect(dryRun).not.toMatch(/id-token|permissions:|release:publish|--publish/)
 
     const publish = job(workflow, 'publish')

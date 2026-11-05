@@ -135,10 +135,11 @@ export interface IdTokenSheet {
    * Show the sheet.
    *
    * @param request - The nonce to hand the provider, unchanged.
-   * @returns What the sheet handed over, or `null` when the user dismissed it. A rejection
-   *   is a failure.
+   * @returns What the sheet handed over, `null` when the user dismissed it, or `'no_account'`
+   *   when the device has no account of the provider to sign in with (not a dismissal: the
+   *   app can offer another way). A rejection is a failure.
    */
-  signIn(request: { nonce: string }): Promise<IdTokenCredential | null>
+  signIn(request: { nonce: string }): Promise<IdTokenCredential | null | 'no_account'>
 }
 
 /** A rejection that says only its `name`, as a browser's `DOMException` does. */

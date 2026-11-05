@@ -184,15 +184,20 @@ describe('the storage adapter', () => {
       SECURE_REWRITE_DELAYS_MS[0] as number,
     ])
 
-    // A read and a delete are asked once: a read that waited would hold a locked phone's
-    // first screen, and a delete has nothing a second try protects.
+    // A read is asked once: a read that waited would hold a locked phone's first screen.
+    // A delete is asked again like a write (H-322): a token left after sign-out is the harm.
     store.fail('get', busy, 1)
     store.fail('delete', busy, 1)
     const reads = asked('get')
     expect(await storage.get(CORE_KEY).catch((error: unknown) => error)).toBe(busy)
-    expect(await storage.remove(CORE_KEY).catch((error: unknown) => error)).toBe(busy)
+    expect(await storage.remove(CORE_KEY)).toBeUndefined()
     expect(asked('get') - reads).toBe(1)
-    expect(asked('delete')).toBe(1)
+    expect(asked('delete')).toBe(2)
+    store.fail('delete', busy)
+    const deletesBefore = asked('delete')
+    expect(await storage.remove(CORE_KEY).catch((error: unknown) => error)).toBe(busy)
+    expect(asked('delete') - deletesBefore).toBe(SECURE_WRITE_RETRY_DELAYS_MS.length + 1)
+    store.fail('delete', null)
     // The whole wait is far inside a refresh's own time limit.
     expect(SECURE_WRITE_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0)).toBeLessThan(1_000)
   })

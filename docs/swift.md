@@ -170,6 +170,11 @@ the device and must throw, never return `nil`, when it could not read.
 
 ### A session bound to a device key
 
+**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+delete it, on purpose: on a shared device the users who sign in one after another are bound
+to the same key. An app that must not carry a key over calls `client.removeDeviceKey()` when
+its user signs out.
+
 <!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#client-device-key -->
 ```swift
 let tula = try TulaClient(

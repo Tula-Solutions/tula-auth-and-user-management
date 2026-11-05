@@ -176,6 +176,15 @@ describe('EnvironmentSettingsSchema', () => {
     expect(accepts({ app: { supportEmail: 'help@acme.test' } })).toBe(true)
     expect(accepts({ app: { supportEmail: null } })).toBe(true)
     expect(issuePaths({ app: { supportEmail: 'not an address' } })).toEqual(['app.supportEmail'])
+    // The plain-text email puts supportEmail in unescaped; only this validation keeps a line
+    // break out of it (TULA-182, H-226).
+    for (const injected of [
+      'help@acme.test\nBcc: x@evil.test',
+      'help@acme.test\r\n',
+      ' help@acme.test',
+    ]) {
+      expect(accepts({ app: { supportEmail: injected } })).toBe(false)
+    }
   })
 
   test('the password section is a whole password policy', () => {

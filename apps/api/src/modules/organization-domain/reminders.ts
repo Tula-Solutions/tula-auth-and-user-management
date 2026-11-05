@@ -161,15 +161,6 @@ async function remindGroup(
   }
   report.domains += taken.length
   try {
-    const decision = await deps.rateLimiter.hit(
-      `organization_domain_reminders:${environmentId}`,
-      REMINDERS_PER_ENVIRONMENT_PER_DAY,
-      durationToMs('1d')
-    )
-    if (!decision.allowed) {
-      await giveBack()
-      return 'limited'
-    }
     const organization = await deps.organizations.find(environmentId, organizationId)
     if (!organization) {
       return 'done'
@@ -180,14 +171,32 @@ async function remindGroup(
       DOMAINS_MANAGE_PERMISSION,
       REMINDER_RECIPIENTS_PER_ORGANIZATION
     )
-    let sent = 0
+    const recipients: string[] = []
     for (const userId of managerIds) {
       const user = await deps.users.findById(environmentId, userId)
-      if (!user?.email || user.emailVerifiedAt === null || user.bannedAt !== null) {
-        continue
+      if (user?.email && user.emailVerifiedAt !== null && user.bannedAt === null) {
+        recipients.push(user.email)
       }
+    }
+    if (recipients.length === 0) {
+      // Nobody to tell costs nothing: charging the daily allowance here would let groups
+      // with no usable manager starve the organizations that have one (TULA-182, H-216).
+      await giveBack()
+      return 'done'
+    }
+    const decision = await deps.rateLimiter.hit(
+      `organization_domain_reminders:${environmentId}`,
+      REMINDERS_PER_ENVIRONMENT_PER_DAY,
+      durationToMs('1d')
+    )
+    if (!decision.allowed) {
+      await giveBack()
+      return 'limited'
+    }
+    let sent = 0
+    for (const address of recipients) {
       try {
-        await Email.send(deps, { environmentId }, user.email, {
+        await Email.send(deps, { environmentId }, address, {
           type: 'organization_domain_expiring',
           organizationName: organization.name,
           domains: taken.length,
