@@ -219,7 +219,7 @@ describe('the GitHub Packages workflow', () => {
   test('it copies what a release builds, and names no publish command of its own', () => {
     const runs = (workflow.jobs.mirror?.steps ?? []).map((step) => step.run).filter(Boolean)
     expect(runs).toEqual([
-      'bun install --frozen-lockfile',
+      'bun install --frozen-lockfile --ignore-scripts',
       'bun run packages:check',
       'bun run scripts/github-packages.ts --publish',
     ])

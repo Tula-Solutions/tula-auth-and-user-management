@@ -332,7 +332,7 @@ describe('only the released packages can be published', () => {
       publish
         .match(/\n {6}- (?:name: [^\n]*\n {8})?run: [^\n]*/g)
         ?.map((step) => step.trim().split('run: ')[1])
-    ).toEqual(['bun install --frozen-lockfile', 'bun run release:publish'])
+    ).toEqual(['bun install --frozen-lockfile --ignore-scripts', 'bun run release:publish'])
     expect(publish).not.toMatch(/continue-on-error|\benv:/)
   })
 
