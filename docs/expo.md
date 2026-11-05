@@ -764,6 +764,12 @@ sign-in makes a P-256 key the device keeps and does not hand out, the server bin
 session to it, and every refresh carries a proof signed by it. A refresh token copied off
 the phone is then of no use without the phone's key.
 
+**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+delete it, on purpose: the next sign-in finds it instead of making a new one. On a shared
+phone the users who sign in one after another are bound to the same key; a different
+person is told apart by the account, never by the key. An app that must not carry a key
+over calls `removeDeviceKey()` when its user signs out.
+
 The key store is the client's `deviceKeys` option, as in
 [the client above](#the-client-and-the-provider). `hardwareDeviceKeys`
 (`@tula-tech/expo/device-key`) is over `@pagopa/io-react-native-crypto`: the Secure Enclave on iOS,
@@ -1485,6 +1491,13 @@ run in a real Expo app.
 | A provider's ID token | Memory, from the sheet's answer to the one request that sends it. | Storage, a log line, an error. |
 | The binding of an [emailed link](#the-emailed-link) | Memory, for fifteen minutes at most: from the request that asked for the link to the one that presents it. | The secure store, AsyncStorage, a file, a log line, an error, a URL. |
 
+- **The entry is gated by the phone's lock, not by the person's face or fingerprint.**
+  The secure store is never created with `requireAuthentication` (TULA-157, H-333): a
+  refresh every minute would prompt for the face, fingerprint or passcode each time, and Expo Go
+  does not support it. So anyone who can use the unlocked phone as the same user, or reads
+  its storage on a rooted one, can read the token. The defence is the
+  [device key](#a-session-bound-to-a-device-key), which makes a copied token useless
+  elsewhere; there is no opt-in for a prompt per read.
 - **The entry stays on the device.** It is not synced and not restored to another phone:
   after a restore or a new phone the user signs in again.
 - **By default it can be read only while the phone is unlocked** (`when_unlocked`). An app

@@ -18,6 +18,10 @@ account screen says in words that passkeys cannot be created here. An app that o
 passes `SystemPasskeySheet()`, `SystemAppleSheet()` and `SystemBrowserSession()` and the
 entitlements they need ([docs/swift.md](../../docs/swift.md#passkeys)).
 
+**It cannot receive a provider's return** (TULA-157, H-338): the app wires no redirect URL
+and nothing that calls `BrowserReturn.returned()`. An app that offers a provider registers
+its URL scheme or universal link and passes the incoming URL to `BrowserReturn.returned()`.
+
 It is also what the screens' UI tests drive: `TulaExampleUITests` run the app in an iOS
 simulator against the real API.
 

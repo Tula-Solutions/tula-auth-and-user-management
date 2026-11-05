@@ -378,6 +378,9 @@ abstract class Flow internal constructor(
                 secret = null
             }
         }
+        // Adopted outside the lock on purpose (TULA-157, H-331): `adopt` suspends and writes
+        // storage, which a held monitor must not span. The `discarded` check above already
+        // ran under the lock, and a discard that follows it cannot take the session back.
         next.session?.let { context.session.adopt(it) }
         return next.step
     }
