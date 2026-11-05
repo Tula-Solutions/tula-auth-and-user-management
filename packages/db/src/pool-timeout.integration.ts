@@ -12,9 +12,17 @@ test('a lock holder whose work needs a second connection from an exhausted pool 
   const handle = createDatabase(runtimeUrl, { max: 1, connectionTimeoutMillis: 300 })
   try {
     const key: [number, number] = [ADVISORY_LOCK_NAMESPACE, 2_000_000 + (Date.now() % 1_000_000)]
-    await expect(
-      handle.withAdvisoryLock(key, () => handle.db.execute(sql`select 1`))
-    ).rejects.toThrow(/timeout/i)
+    const started = performance.now()
+    const failure = await handle
+      .withAdvisoryLock(key, () => handle.db.execute(sql`select 1`))
+      .then(
+        () => null,
+        (error: unknown) => error
+      )
+    // Drizzle wraps the driver's error ("Failed query: …"); the pool's timeout is its cause.
+    const cause = failure instanceof Error ? failure.cause : undefined
+    expect(cause instanceof Error ? cause.message : String(failure)).toMatch(/timeout/i)
+    expect(performance.now() - started).toBeLessThan(5000)
   } finally {
     await handle.close()
   }
