@@ -139,7 +139,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API: a scheme, a host and at most a port and a path. It is part of every access token's issuer, and the address the server requests to check itself (`tula doctor`). A user name, a password (any `@` before the host), a query or a fragment in it stops the boot. |
 | `PORT` | | `3003` | |
-| `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
+| `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. In `staging` and `prod` a plain `smtp://` relay must offer STARTTLS, or no mail is sent; use `smtps://` for a relay that speaks TLS from the start. |
 | `MAIL_FROM` | | `Tula Auth <no-reply@localhost>` | Sender of verification emails. |
 | `BREACH_CHECK` | | `offline` | `hibp` checks new passwords against Have I Been Pwned (only a 5-character hash prefix leaves the server). |
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
