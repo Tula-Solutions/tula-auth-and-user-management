@@ -1211,7 +1211,9 @@ export async function signIn(
   // identifier is the same whoever holds the account (TULA-157, H-032).
   const phone = parsePhoneNumber(input.identifier)
   const address = phone === null ? parseEmail(input.identifier, context.testAddress) : null
-  if (phone === null && address === null) {
+  // A reserved test address is answered at the start as any address is (ADR 0058: the start
+  // looks nothing up); it is refused where an email would be asked for.
+  if (phone === null && address === null && !isTestAddress(input.identifier.trim())) {
     throw new InvalidEmailError()
   }
   const strategies: FirstFactorStrategy[] = [
