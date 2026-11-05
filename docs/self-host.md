@@ -602,7 +602,9 @@ earlier major version wrote: a database made with the 17 image is moved with `pg
 - a **runtime** login for the API (`DATABASE_URL`) that is a member of `tula_app` and owns
   nothing. Tenant isolation is enforced by row-level security, which PostgreSQL does not apply
   to table owners or superusers. An API connected as the owner has no isolation between
-  projects.
+  projects, so the API and the webhook worker refuse to start on a login that is a superuser,
+  has `BYPASSRLS` or owns a table, and log that in fixed words. A worker whose database is
+  not answering yet waits for it and starts no delivery until the login has been checked.
 
 ```sql
 CREATE ROLE tula_app NOLOGIN;

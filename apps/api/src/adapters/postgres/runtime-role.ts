@@ -7,6 +7,17 @@ import { sql } from 'drizzle-orm'
 export const RUNTIME_ROLE_REFUSAL =
   'the API connects to the database as a role that bypasses row-level security (a superuser, a role with BYPASSRLS, or the owner of the tables); connect as the tula_api runtime role'
 
+/**
+ * The database answered, and the login bypasses row-level security. Apart from a failure to
+ * reach the database, so that a process that can wait for its database still refuses this.
+ */
+export class RuntimeRoleRefusedError extends Error {
+  constructor() {
+    super(RUNTIME_ROLE_REFUSAL)
+    this.name = 'RuntimeRoleRefusedError'
+  }
+}
+
 /** What `pg_roles` and `pg_tables` say about the login the pool uses. */
 export interface RuntimeRoleFacts {
   superuser: boolean
@@ -34,7 +45,8 @@ export function judgeRuntimeRole(facts: RuntimeRoleFacts | undefined): string | 
  * Check the pool's login on the real database. Postgres only: memory adapters have no role.
  *
  * @param db - The runtime database.
- * @throws Error with `RUNTIME_ROLE_REFUSAL` when the role would bypass row-level security.
+ * @throws RuntimeRoleRefusedError when the role would bypass row-level security; the driver's
+ * own error when the database cannot be reached.
  */
 export async function assertRuntimeRole(db: Database): Promise<void> {
   const result = (await db.execute(sql`
@@ -44,6 +56,6 @@ export async function assertRuntimeRole(db: Database): Promise<void> {
   `)) as { rows: RuntimeRoleFacts[] }
   const refusal = judgeRuntimeRole(result.rows[0])
   if (refusal) {
-    throw new Error(refusal)
+    throw new RuntimeRoleRefusedError()
   }
 }
