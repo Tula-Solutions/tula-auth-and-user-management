@@ -3362,8 +3362,9 @@ export async function startPasswordReset(
     !!found &&
     (await isManaged(deps, tenant.environmentId, found)) &&
     !(await Sso.isBreakGlass(deps, tenant, identifier))
-  const user =
-    found && !managed && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
+  // Asked for every address, so a decoy costs the same lookup as a real account (H-078).
+  const ssoRefuses = await Sso.refuses(deps, tenant, identifier, 'password')
+  const user = found && !managed && !ssoRefuses ? found : null
   const state: State = {
     ...asked(context),
     email,
