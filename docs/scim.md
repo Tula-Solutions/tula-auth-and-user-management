@@ -57,7 +57,9 @@ duplicate `userName` is 409 with `scimType: "uniqueness"`.
 
 ## Whose account it is, and what deactivation does
 
-A user the directory creates is **managed by the directory** and gets a membership. A user who
+A user the directory creates is **managed by the directory** and gets a membership. A new
+account is created only on a [verified domain](verified-domains.md) of the organization (not
+lapsed); on any other the create is a 400 `invalidValue` and nothing is created. A user who
 already exists is linked only when the address is on a [verified domain](verified-domains.md) of
 the organization; otherwise the create is a 409. The user's email is not changed by SCIM, and a
 managed user cannot change it from a client.

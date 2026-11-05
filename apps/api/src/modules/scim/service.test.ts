@@ -108,6 +108,8 @@ beforeEach(async () => {
   token = (
     await ScimTokens.create(deps, TENANT, { organizationId: orgId, name: 'Okta' }, TEST_ACTOR)
   ).token
+  // New accounts need a verified domain (TULA-162); most tests provision on this one.
+  await verifiedDomain(orgId, 'acme.test')
 })
 
 describe('SCIM Users: create, get, list', () => {
@@ -124,7 +126,7 @@ describe('SCIM Users: create, get, list', () => {
     })
     const user = await deps.users.findById(TENANT.environmentId, created.body.id)
     expect(user?.managedByDirectoryId).toBe(orgId)
-    expect(user?.emailVerifiedAt).toBeNull()
+    expect(user?.emailVerifiedAt).not.toBeNull()
     expect(await members(created.body.id)).toBe(1)
     const got = await scim('GET', `/Users/${created.body.id}`)
     expect(got.body.id).toBe(created.body.id)
@@ -210,9 +212,25 @@ describe('SCIM Users: create, get, list', () => {
   })
 })
 
+describe('creating a new account', () => {
+  test('is refused with 400 off the verified domains, and creates nothing', async () => {
+    const res = await scim('POST', '/Users', okta('new@unverified.test'))
+    expect(res.status).toBe(400)
+    expect(res.body).toMatchObject({ scimType: 'invalidValue' })
+    expect(await deps.users.findByEmail(TENANT.environmentId, 'new@unverified.test')).toBeNull()
+    const entries = (await deps.activityLog.listAudit(TENANT.environmentId, { page: 1, size: 100 }))
+      .entries
+    expect(entries.filter((entry) => entry.actor.type === 'directory')).toEqual([])
+  })
+
+  test('is allowed on a verified domain', async () => {
+    const res = await scim('POST', '/Users', okta('new@acme.test'))
+    expect(res.status).toBe(201)
+  })
+})
+
 describe('linking an existing account', () => {
   test('is allowed on a verified domain, and the account stays unmanaged', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const existing = await Users.create(
       deps,
       TENANT,
@@ -298,7 +316,6 @@ describe('deactivation, reactivation and deletion', () => {
   })
 
   test('an unmanaged user is never banned and keeps their sessions; delete leaves the account', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const lee = await Users.create(deps, TENANT, { email: 'lee@acme.test' }, TEST_ACTOR)
     await scim('POST', '/Users', okta('lee@acme.test'))
     const tokens = await sessionOf(lee.id)
@@ -429,7 +446,6 @@ describe('create is one unit, and a directory rename reaches the user', () => {
   })
 
   test('an account the directory only linked keeps its names', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const existing = await Users.create(
       deps,
       TENANT,
@@ -513,7 +529,6 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
   const emailOf = async (id: string) => (await deps.users.findById(TENANT.environmentId, id))?.email
 
   test('PUT and PATCH change it on a verified domain, audited without the address, sessions kept', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const id = await provision('maya@acme.test')
     const put = await scim('PUT', `/Users/${id}`, okta('maya.o@acme.test'))
     expect(put.status).toBe(200)
@@ -531,7 +546,6 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
   })
 
   test('off the verified domains it is a 400 and nothing changes; a taken address is a 409', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const id = await provision('maya@acme.test')
     await provision('lee@acme.test')
     const off = await scim('PUT', `/Users/${id}`, okta('maya@elsewhere.test'))
@@ -542,7 +556,6 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
   })
 
   test('a request refused for an externalId another user holds stores no new address', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const id = await provision('maya@acme.test')
     await provision('lee@acme.test')
     const res = await scim(
@@ -555,7 +568,6 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
   })
 
   test('a deactivation sent with an off-domain userName still takes effect', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const id = await provision('maya@acme.test')
     const res = await scim('PUT', `/Users/${id}`, okta('maya@elsewhere.test', { active: false }))
     expect(res.status).toBe(200)
@@ -565,7 +577,6 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
   })
 
   test('an account the directory only linked keeps its address', async () => {
-    await verifiedDomain(orgId, 'acme.test')
     const existing = await Users.create(
       deps,
       TENANT,
