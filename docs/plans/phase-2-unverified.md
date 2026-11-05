@@ -1746,3 +1746,4 @@ Run on 2026-10-23, by hand, on one Mac (arm64), Apple Swift 6.1.2, JDK 25, bun 1
 - The `swift` and `kotlin` columns of the list: the three scenarios went from `not_built` under TULA-121 to `journey`; `SWIFT_NOT_BUILT` is now `TULA-56: 1` and the Kotlin count `TULA-76: 1`.
 
 Not verified: nothing ran on iOS, in a simulator, on an emulator or on a device; no universal link or app link opened an app with an invitation, so `TulaInvitationLink` was only read from strings; no screen shows an organization (the screens are not built). The claims are read without verifying the token signature, on purpose, and are for drawing, never for deciding.
+- Swift Keychain remove retry (H-322, TULA-165): typechecked with swiftc, `KeychainTests` not run (no XCTest on the machine).

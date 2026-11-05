@@ -198,9 +198,17 @@ final class KeychainTests: XCTestCase {
         try await store(items).set("k", "one")
         try await store(items).remove("k")
         XCTAssertTrue(items.items.isEmpty)
+        // A refusal is asked again (H-322): a token left after sign-out is the harm.
+        try await store(items).set("k", "one")
         items.force("delete", errSecInteractionNotAllowed)
+        try await store(items).remove("k")
+        XCTAssertTrue(items.items.isEmpty)
+        try await store(items).set("k", "two")
+        let before = items.queries("delete").count
+        items.force("delete", errSecInteractionNotAllowed, errSecInteractionNotAllowed, errSecInteractionNotAllowed)
         let thrown = await status { try await self.store(items).remove("k") }
         XCTAssertEqual(thrown, errSecInteractionNotAllowed)
+        XCTAssertEqual(items.queries("delete").count - before, 3)
     }
 
     func testAKeychainErrorHoldsItsStatusAndNothingOfTheToken() async throws {
