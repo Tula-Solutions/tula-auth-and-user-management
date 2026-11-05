@@ -434,11 +434,6 @@ const StateSchema = z.object({
    * password reset for one that had none.
    */
   decoy: z.boolean().optional(),
-  /**
-   * A decoy that mails nothing: the reset of a user an identity provider manages. The notice an
-   * unknown address gets would tell the mailbox holder nothing useful and only add noise.
-   */
-  silent: z.boolean().optional(),
   /** The first factors a sign-in was offered when it started. */
   strategies: z.array(FirstFactorStrategySchema).optional(),
   /**
@@ -1153,7 +1148,7 @@ async function issueCode(
     flowAttemptId: attempt.id,
     userId: options.userId,
     ...(state.decoy && {
-      deliver: state.silent ? async () => {} : ({ to }) => notice(deps, tenant, to),
+      deliver: ({ to }) => notice(deps, tenant, to),
     }),
     ...(options.charge && {
       onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
@@ -3346,7 +3341,7 @@ export async function startPasswordReset(
   // decoy, so the answer is the same for any address (decision 12).
   const found = await deps.users.findByEmail(tenant.environmentId, identifier)
   // A user an identity provider manages gets the decoy too: they cannot set a local password
-  // (decision 11), and nothing at all is mailed to them.
+  // (decision 11), notice included, so timing and mail match an unknown address.
   // A break-glass member keeps the reset even when the connection manages the account (ADR 0067).
   const managed =
     !!found &&
@@ -3358,7 +3353,6 @@ export async function startPasswordReset(
     ...asked(context),
     email,
     ...(!user && { decoy: true }),
-    ...(managed && { silent: true }),
   }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',

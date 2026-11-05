@@ -1323,7 +1323,7 @@ describe('password reset', () => {
       }
     }
 
-    test('a start sends no email at all and answers as it does for an unknown address', async () => {
+    test('a start mails the unknown address decoy notice, with no code, and answers the same', async () => {
       await registered()
       const unknown = await startReset('nobody@northline.app')
       deps.clock.advance(Verification.RESEND_COOLDOWN)
@@ -1332,7 +1332,10 @@ describe('password reset', () => {
         const sent = deps.mailer.outbox.length
         const started = await startReset()
         await Notices.settled()
-        expect(deps.mailer.outbox.length).toBe(sent)
+        expect(deps.mailer.outbox.length).toBe(sent + 1)
+        const notice = deps.mailer.last()
+        expect(notice.subject).toBe('Tula password reset requested')
+        expect(`${notice.subject} ${notice.text} ${notice.html}`).not.toMatch(/\d{6}/)
         expect(started.attempt.step.status).toBe(unknown.attempt.step.status)
         expect(started.attempt.kind).toBe(unknown.attempt.kind)
       } finally {
