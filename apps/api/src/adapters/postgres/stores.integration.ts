@@ -106,6 +106,7 @@ describeUserRepository('PostgresUserRepository on a real server', async () => ({
   users: new PostgresUserRepository(db),
   factors: new PostgresFactorStore(db),
   passkeys: new PostgresPasskeyStore(db),
+  sessions: new PostgresSessionStore(db),
   log,
   ...(await tenants()),
 }))

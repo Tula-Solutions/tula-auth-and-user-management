@@ -1015,7 +1015,7 @@ describe('deleting a user takes their sessions and refresh tokens with them (H-1
       userId,
       FIXTURE
     )
-    expect(outcome).toEqual({ outcome: 'deleted' })
+    expect(outcome).toMatchObject({ outcome: 'deleted' })
     // Through the tenant: outside it RLS answers "no rows" for any table and would prove nothing.
     const left = await withTenant(database.first.db, tenant.environmentId, async (tx) => ({
       sessions: await tx.select().from(sessionsTable).where(eq(sessionsTable.id, id)),

@@ -502,7 +502,7 @@ function limitsNow(
  * leave a revoked session whose access token still works, and a retry (which finds nothing left
  * to revoke) would never repair it. Adding an entry twice is harmless.
  */
-async function denylist(
+export async function denylist(
   deps: Pick<Deps, 'revokedSessions'>,
   sessionIds: readonly string[],
   now: Date

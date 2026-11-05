@@ -900,7 +900,7 @@ export function describeOrganizationStore(
       const sole = await join(ctx.a, record, admin)
       expect((await ctx.deleteUser(ctx.a, sole.userId)).outcome).toBe('last_manager')
       const other = await join(ctx.a, record, admin)
-      expect(await ctx.deleteUser(ctx.a, sole.userId)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.deleteUser(ctx.a, sole.userId)).toMatchObject({ outcome: 'deleted' })
       expect(await ctx.store.findMembership(ctx.a.environmentId, record.id, sole.userId)).toBe(null)
       // The other is now the only manager.
       expect((await ctx.deleteUser(ctx.a, other.userId)).outcome).toBe('last_manager')
@@ -911,7 +911,7 @@ export function describeOrganizationStore(
           activity(ctx.a, 'organization.deleted', record.id)
         )
       ).toBe(true)
-      expect(await ctx.deleteUser(ctx.a, other.userId)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.deleteUser(ctx.a, other.userId)).toMatchObject({ outcome: 'deleted' })
     })
 
     test('a user who manages no organization is deleted as before', async () => {
@@ -919,9 +919,9 @@ export function describeOrganizationStore(
       const { admin, member } = await builtIns(ctx.a)
       await join(ctx.a, record, admin)
       const plain = await join(ctx.a, record, member)
-      expect(await ctx.deleteUser(ctx.a, plain.userId)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.deleteUser(ctx.a, plain.userId)).toMatchObject({ outcome: 'deleted' })
       const loner = await ctx.user(ctx.a)
-      expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.deleteUser(ctx.a, loner)).toMatchObject({ outcome: 'deleted' })
       expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'not_found' })
     })
 

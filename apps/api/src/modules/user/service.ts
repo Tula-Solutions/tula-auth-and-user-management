@@ -707,9 +707,9 @@ export async function remove(
   )
   switch (result.outcome) {
     case 'deleted':
-      // A sign-in that passed its checks before the first revocation may have stored a session
-      // since; the user is gone now, so no new one can follow this sweep.
-      await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
+      // The delete cascaded any session a sign-in stored after the first sweep, so a sweep now
+      // finds nothing; the store names the ones it ended and they are denylisted here (H-229).
+      await Sessions.denylist(deps, result.endedSessionIds, deps.clock.now())
       return
     case 'last_manager':
       throw lastOrganizationManager(result.organizationIds)

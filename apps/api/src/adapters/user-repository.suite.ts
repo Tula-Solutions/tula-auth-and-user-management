@@ -4,6 +4,7 @@ import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore } from '~/ports/factor-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
+import type { SessionStore } from '~/ports/session-store'
 import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
 import { comparable } from '~/testing/comparable'
 
@@ -22,6 +23,8 @@ export interface UserSuiteContext {
    */
   factors: FactorStore
   passkeys: PasskeyStore
+  /** The session store over the same data: a deletion cascades the user's sessions. */
+  sessions: SessionStore
   /** Reads back what the repository recorded. */
   log: ActivityLog
   a: UserSuiteTenant
@@ -1218,6 +1221,55 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
       })
 
+      test('deleting a user reports the sessions still active that the delete cascaded', async () => {
+        const user = await seeded()
+        const at = new Date('2030-01-01T00:00:00Z')
+        const later = new Date('2030-02-01T00:00:00Z')
+        const open = async (revoked: boolean) => {
+          const id = Bun.randomUUIDv7()
+          await ctx.sessions.create(
+            {
+              id,
+              ...ctx.a,
+              userId: user.id,
+              profile: 'web',
+              client: 'web',
+              userAgent: null,
+              ipAddress: null,
+              lastActiveAt: at,
+              idleExpiresAt: later,
+              absoluteExpiresAt: later,
+              createdAt: at,
+            },
+            {
+              id: Bun.randomUUIDv7(),
+              sessionId: id,
+              tokenHash: `hash-${id}`,
+              parentId: null,
+              expiresAt: later,
+              createdAt: at,
+            },
+            Audit.none('fixture')
+          )
+          if (revoked) {
+            await ctx.sessions.revoke(
+              ctx.a.environmentId,
+              id,
+              'revoked_by_admin',
+              at,
+              Audit.none('fixture')
+            )
+          }
+          return id
+        }
+        const active = await open(false)
+        await open(true)
+        expect(await ctx.users.delete(ctx.a.environmentId, user.id, Audit.none('fixture'))).toEqual(
+          { outcome: 'deleted', endedSessionIds: [active] }
+        )
+        expect(await ctx.sessions.findById(ctx.a.environmentId, active)).toBeNull()
+      })
+
       test('deleting a user deletes their previous passwords', async () => {
         const input = await seeded()
         const other = await seeded()
@@ -1226,7 +1278,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await change(ctx.a, other.id, 1)
         expect(
           await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))
-        ).toEqual({ outcome: 'deleted' })
+        ).toMatchObject({ outcome: 'deleted' })
         expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
         // Only the other user's one row is left for a purge to find.
         expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(1)
@@ -1568,6 +1620,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       await ctx.users.create(input, Audit.none('fixture'))
       expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
         outcome: 'deleted',
+        endedSessionIds: [],
       })
       expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
         outcome: 'not_found',

@@ -161,7 +161,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
-    sessions: new MemorySessionStore(activityLog),
+    sessions: new MemorySessionStore(activityLog, users),
     users,
     factors,
     passkeys,
