@@ -108,3 +108,14 @@ rules themselves are above and are not repeated).
   `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
   no response, audit entry, email or log line holds a public
   key or a credential id.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-144): `Settings.replace` has no guard against changing the `rpId`
+  while passkeys exist (the settings deps hold no passkey store); existing passkeys then stop
+  matching. Recommendation: refuse or weaken-flag a changed `rpId` when the environment has
+  passkeys. Recorded only.
+- Decision (TULA-157, H-157): `Passkey.remove` takes no `sign_in_methods` lock, while the OAuth
+  writers do, so a settings change can race a removal and leave no way to sign in.
+  Recommendation: take the lock in `Passkey.remove`. Recorded only (a locking change on a
+  user path, which the environment-lock rule keeps off user requests).

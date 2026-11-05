@@ -408,3 +408,19 @@ rules themselves are above and are not repeated).
   (`oauth.email_missing`); a name in the token (ignored) and a name beside it (a new
   account's, never an existing user's, never for Google); and no nonce, bundle ID or name in
   a log line, an audit entry, an event or an error.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-154): the mock provider's `postedByOwnPage` accepts a POST with
+  neither `Sec-Fetch-Site` nor `Origin`. Accepted: local tier and loopback only.
+- Decision (TULA-157, H-155): the `email_addition` budget (ADR 0059) can be spent by any
+  account without an address. Accepted; revisit if abuse shows up.
+- Decision (TULA-157, H-156): `oauth.ticket_invalid` versus `oauth.different_browser` is told
+  apart only after a ticket-hash match, so it is no pre-authentication oracle. Kept.
+- Decision (TULA-157, H-158): the OAuth nonce is burned (`oauthPhase` compare-and-set)
+  before the ID token is verified, so a failed attempt is not retried (ADR 0045). Kept.
+- Decision (TULA-157, H-159): arctic's token-exchange responses (Apple, GitHub) are bounded
+  by a deadline but not by a size cap. Recommendation: cap them. Recorded only: the hosts are
+  fixed provider hosts, the value is low.
+- Tests that pin H-160 and H-162: `adapters/oauth/nonce-opt-out.test.ts` (only LinkedIn uses
+  `NONCE_NOT_ECHOED`) and `modules/oauth/credentials-open.test.ts` (the sealed secret wins).
