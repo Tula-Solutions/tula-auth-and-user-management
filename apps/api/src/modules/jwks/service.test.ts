@@ -120,6 +120,22 @@ describe('activeSigningKey', () => {
   })
 })
 
+describe('the private key cache', () => {
+  test('stays within its bound however many environments sign', async () => {
+    for (let i = 0; i < Jwks.MAX_CACHED_PRIVATE_KEYS + 5; i++) {
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: deps.clock.now(),
+      })
+      await Jwks.activeSigningKey(deps, id)
+    }
+    expect(Jwks.privateKeyCacheSize()).toBeLessThanOrEqual(Jwks.MAX_CACHED_PRIVATE_KEYS)
+  })
+})
+
 describe('ciphertext binding', () => {
   test('a ciphertext copied into another environment’s row does not sign, even when cached', async () => {
     deps.environments.add({
