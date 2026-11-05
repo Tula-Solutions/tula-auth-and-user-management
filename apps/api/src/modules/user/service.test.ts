@@ -742,6 +742,39 @@ describe('changePassword (own)', () => {
   })
 })
 
+describe('ban: a pending email addition (H-171)', () => {
+  test('banning consumes the outstanding code, so an unban does not revive it', async () => {
+    const user = await create()
+    const now = deps.clock.now()
+    await deps.verificationTokens.replace(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        userId: user.id,
+        flowAttemptId: null,
+        purpose: 'email_addition',
+        destination: 'new@northline.app',
+        codeHash: 'hash',
+        linkTokenHash: null,
+        maxAttempts: 5,
+        expiresAt: new Date(now.getTime() + 600_000),
+        createdAt: now,
+      },
+      now
+    )
+    await Users.ban(deps, tenant, user.id, TEST_ACTOR)
+    const pending = await deps.verificationTokens.findLatest(
+      tenant.environmentId,
+      'email_addition',
+      {
+        userId: user.id,
+      }
+    )
+    expect(pending?.consumedAt).not.toBeNull()
+  })
+})
+
 describe('me', () => {
   test('returns the signed-in user, or 404 if they were deleted', async () => {
     const user = await create()

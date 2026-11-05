@@ -353,6 +353,7 @@ type ExecutionDeps = Pick<
   | 'config'
   | 'clock'
   | 'ids'
+  | 'verificationTokens'
 >
 
 /**

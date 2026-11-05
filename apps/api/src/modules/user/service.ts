@@ -522,7 +522,27 @@ async function importRow(
   }
 }
 
-type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
+type RevocationDeps = Pick<
+  Deps,
+  'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids' | 'verificationTokens'
+>
+
+/**
+ * Consume the user's outstanding `email_addition` code (ADR 0059): a ban or an admin-set
+ * address ends the claim to add another one, which an unban must not bring back.
+ */
+async function consumeEmailAddition(
+  deps: Pick<Deps, 'verificationTokens' | 'clock'>,
+  scope: Scope,
+  userId: string
+): Promise<void> {
+  const pending = await deps.verificationTokens.findLatest(scope.environmentId, 'email_addition', {
+    userId,
+  })
+  if (pending && !pending.consumedAt) {
+    await deps.verificationTokens.consume(scope.environmentId, pending.id, deps.clock.now())
+  }
+}
 
 /**
  * Ban a user: they can no longer sign in or refresh, and every session ends now.
@@ -567,6 +587,7 @@ export async function ban(
   if (!user) {
     throw new NotFoundError()
   }
+  await consumeEmailAddition(deps, scope, userId)
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   return toUser(user)
 }
@@ -927,7 +948,7 @@ async function replacePassword(
  * @throws ConflictError when another user of the environment has the address.
  */
 export async function setEmail(
-  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config'>,
+  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config' | 'verificationTokens'>,
   scope: Scope,
   userId: string,
   email: string,
@@ -968,6 +989,7 @@ export async function setEmail(
   if (stored === 'taken') {
     throw new ConflictError({ message: 'A user with this email already exists.' })
   }
+  await consumeEmailAddition(deps, scope, userId)
   return toUser(stored)
 }
 
