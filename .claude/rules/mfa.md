@@ -147,3 +147,8 @@ rules themselves are above and are not repeated).
   log line. Keep the tests that confirm an authenticator and add a passkey between the look
   and the write of `users.enableSmsFactor` (refused, nothing recorded), the suite's rows, and
   the tests of both orders of a dormant code.
+- **A banned user's second step verifies the code first, then refuses with `auth.user_banned`.**
+  Decision (TULA-157, H-143): not changed. Refusing before the verify would save the banned
+  user's backup or TOTP code, but then the ban could never be told to someone who proved the
+  factor, and a banned user would see "invalid code" for ever. No access is granted either way,
+  so telling the ban after proof wins; the spent code is the price.
