@@ -62,6 +62,9 @@ export const REFRESH_TIMEOUT_MS = 8_000
 export const REFRESH_RETRY_WINDOW_MS = 10_000
 
 /** The least time the retry of a refresh is given, however long the first try took. */
+/** How many tokens a failed sign-out remembers for the next one (H-315). */
+const MAX_UNDELIVERED = 8
+
 const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
 
 /**
@@ -456,11 +459,12 @@ export function createSessionManager(options: SessionOptions): SessionManager {
    * a retry would find nothing, ask nothing and report a session ended that the server still
    * holds. Memory only: never storage, a cross-tab message, an error, a log line or a
    * `toJSON`, and nothing but `signOut()` reads it (no refresh presents it). Forgotten once
-   * delivered, when the API answers that the session is over, and when a new session is
-   * adopted. It has no timer: the token is exactly as live on the server whether this client
+   * delivered and when the API answers that the session is over; a new session being adopted
+   * does not forget it (H-315), so every token that never reached the server is sent by a later
+   * `signOut()`, up to `MAX_UNDELIVERED`. It has no timer: the token is exactly as live on the server whether this client
    * remembers it or not, and forgetting it would only take away the one way to revoke it.
    */
-  let undelivered: string | null = null
+  let undelivered: string[] = []
   let channel: ChannelLike | undefined
   let channelOpened = false
   /**
@@ -864,8 +868,6 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       throw clientError('response.invalid', options.messages())
     }
     openChannel()
-    // A new session: an earlier one's sign-out is no longer this client's to retry.
-    undelivered = null
     const installed = commit(issued)
     const failure = await persist(issued)
     await settle(installed)
@@ -910,26 +912,33 @@ export function createSessionManager(options: SessionOptions): SessionManager {
         failure = clientError('storage.failed', options.messages(), cause)
       }
     }
-    const newest = orphan ?? presented ?? undelivered
+    const newest = orphan ?? presented
     orphan = null
-    if (web || newest) {
+    // Every distinct token this client still owes the server a revoke for, newest first.
+    const owed = [...new Set([newest, ...undelivered].filter((t): t is string => !!t))]
+    if (web) {
       try {
-        await withLock(() =>
-          transport.call('signOut', { body: newest ? { refreshToken: newest } : {} })
-        )
-        undelivered = null
+        await withLock(() => transport.call('signOut', { body: {} }))
       } catch (error) {
         // The server may still hold the session (and a browser its cookie): the caller must
-        // know, even though this client is signed out.
+        // know, even though this client is signed out. A browser's retry sends its cookie again.
         failure = error
-        // A browser's retry sends its cookie again. Any other client has just dropped the
-        // token, so it is held for the retry, unless the API said the session is over or a
-        // sign-in finished meanwhile (whose own token the next sign-out presents).
-        if (!web && generation === mine) {
+      }
+    } else {
+      const kept: string[] = []
+      for (const token of owed) {
+        try {
+          await withLock(() => transport.call('signOut', { body: { refreshToken: token } }))
+        } catch (error) {
+          failure = failure ?? error
+          // Held for the retry, unless the API said the session is over.
           const over = isTulaError(error) && error.code.startsWith('session.')
-          undelivered = over ? null : newest
+          if (!over) {
+            kept.push(token)
+          }
         }
       }
+      undelivered = kept.slice(0, MAX_UNDELIVERED)
     }
     if (failure) {
       throw failure

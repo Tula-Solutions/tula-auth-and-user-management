@@ -350,6 +350,10 @@ at `resumed()`. The client still judges the whole address it is handed.
 
 ## A session bound to a device key
 
+**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+delete it, on purpose: on a shared device the users who sign in one after another are bound
+to the same key. An app that must not carry a key over removes it when its user signs out.
+
 With `deviceKeys`, a sign-in carries a proof signed by a key the device keeps, the session
 is bound to that key, and every refresh carries a new proof. A copy of the stored refresh
 token is of no use on another device.

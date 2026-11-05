@@ -21,12 +21,36 @@ export interface SmtpOptions {
   url: string
   /** Sender, e.g. `Tula Auth <no-reply@example.com>`. */
   from: string
+  /**
+   * Refuse a relay that does not offer STARTTLS on a plain `smtp://` URL (`smtps://` is TLS
+   * from the first byte). Without it nodemailer upgrades only if the relay offers it, so
+   * someone on the path can strip the offer and read the credentials. On in `staging` and `prod`.
+   */
+  requireTls?: boolean
   /** Injected for tests; defaults to a pooled nodemailer transport for `url`. */
   transport?: SmtpTransport
 }
 
 /** How long to wait for the relay before failing the send; a request is waiting on it. */
 export const SMTP_TIMEOUT_MS = 10_000
+
+/**
+ * The nodemailer options for a relay.
+ *
+ * @param url - The relay's `smtp://` or `smtps://` URL.
+ * @param requireTls - Whether STARTTLS is mandatory on a plain `smtp://` URL.
+ * @returns The options `createTransport` takes.
+ */
+export function transportOptions(url: string, requireTls: boolean) {
+  return {
+    url,
+    pool: true,
+    connectionTimeout: SMTP_TIMEOUT_MS,
+    greetingTimeout: SMTP_TIMEOUT_MS,
+    socketTimeout: SMTP_TIMEOUT_MS,
+    ...(requireTls ? { requireTLS: true } : {}),
+  }
+}
 
 /** Sends mail through an SMTP relay (Mailpit locally, a real relay in staging and production). */
 export class SmtpMailer implements Mailer {
@@ -38,13 +62,7 @@ export class SmtpMailer implements Mailer {
     this.#from = options.from
     this.#transport =
       options.transport ??
-      createTransport({
-        url: options.url,
-        pool: true,
-        connectionTimeout: SMTP_TIMEOUT_MS,
-        greetingTimeout: SMTP_TIMEOUT_MS,
-        socketTimeout: SMTP_TIMEOUT_MS,
-      })
+      createTransport(transportOptions(options.url, options.requireTls ?? false))
   }
 
   /** @inheritdoc */

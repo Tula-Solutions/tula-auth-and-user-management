@@ -92,6 +92,9 @@ const val REFRESH_RETRY_WINDOW_MS: Long = 10_000
 /** The least time the repeat of a refresh is given, however long the first try took. */
 internal const val MIN_REFRESH_RETRY_TIMEOUT_MS: Long = 1_000
 
+/** How many tokens a failed sign-out remembers for the next one (TULA-157, H-315). */
+private const val MAX_UNDELIVERED = 8
+
 /**
  * The longest a `Retry-After` on a failed refresh makes [TulaSession.getToken] fail fast
  * without asking again. An explicit [TulaSession.refresh] always asks.
@@ -246,10 +249,10 @@ internal class SessionManager(
      * or one that was not about the session). The client is signed out and stays so; this is
      * kept only so that the next sign-out can send it. Memory only: never storage, an error or
      * a log line, and nothing but [signOut] reads it (no refresh presents it). Forgotten once
-     * delivered, when the API answers that the session is over, and when a new session is
-     * adopted.
+     * delivered and when the API answers that the session is over, never by a new session being
+     * adopted (TULA-157, H-315): [signOut] presents every distinct token here, at most eight.
      */
-    private var undelivered: String? = null
+    private var undelivered: List<String> = emptyList()
 
     private fun setState(next: AuthState) {
         if (next != current.value) {
@@ -501,7 +504,7 @@ internal class SessionManager(
             )
         } catch (error: TulaError) {
             if (generation == mine && !error.code.startsWith("session.")) {
-                undelivered = presented
+                undelivered = (undelivered + presented).distinct().takeLast(MAX_UNDELIVERED)
             }
         }
     }
@@ -606,8 +609,6 @@ internal class SessionManager(
             if (!isSessionTokens(issued)) {
                 throw transport.invalid()
             }
-            // A new session: an earlier one's sign-out is no longer this client's to retry.
-            undelivered = null
             val installed = commit(issued)
             val failure = persist(issued)
             settle(installed)
@@ -670,27 +671,27 @@ internal class SessionManager(
         } catch (error: TulaError) {
             failure = error
         }
-        val newest = orphan ?: presented ?: undelivered
+        val newest = orphan ?: presented
         orphan = null
-        if (newest != null) {
+        // Every distinct token still owed a revoke, newest first.
+        val kept = mutableListOf<String>()
+        for (token in listOfNotNull(newest).plus(undelivered).distinct()) {
             try {
                 transport.call(
                     TulaOperations.signOut,
-                    CallInput(body = encode(RefreshTokenRequest.serializer(), RefreshTokenRequest(newest))),
+                    CallInput(body = encode(RefreshTokenRequest.serializer(), RefreshTokenRequest(token))),
                 )
-                undelivered = null
             } catch (error: TulaError) {
                 // The server may still hold the session: the caller must know, even though
-                // this client is signed out.
-                failure = error
-                // The token has just been dropped, so it is held for the retry, unless the
-                // API said the session is over or a sign-in finished meanwhile (whose own
-                // token the next sign-out presents).
-                if (generation == mine) {
-                    undelivered = if (error.code.startsWith("session.")) null else newest
+                // this client is signed out. The token is held for the retry unless the API
+                // said the session is over.
+                failure = failure ?: error
+                if (!error.code.startsWith("session.")) {
+                    kept.add(token)
                 }
             }
         }
+        undelivered = kept.take(MAX_UNDELIVERED)
         // A device key that can never be had again would fail the next sign-in too: with
         // nobody signed in, what such a store keeps is removed. Any other store is left alone.
         proofs?.dropUnusableKey(refreshTimeoutMs)

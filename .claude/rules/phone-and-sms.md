@@ -343,3 +343,14 @@ rules themselves are above and are not repeated).
   and another purpose, the lockout's key and order, the method, SMS, the country and the
   sender each taken away mid-attempt, a banned holder, required two-step verification, the
   step-up refusal, and no number in a log line, an event or an audit entry.
+
+## Decisions awaiting review (TULA-157)
+
+- **Decision (TULA-157, H-217): provider spend caps are the operator's job; the shared budgets stay.**
+  A decoy sign-in for an unknown number spends the same per-destination and per-day budgets as a
+  real one, on purpose (no enumeration). Recommendation: document that the SMS provider's own
+  spend cap is the backstop against a drain; no code change (a per-environment cap that refuses
+  real users would turn a drain into an outage).
+- **Decision (TULA-157, H-220): the shared per-number cooldown is a bounded trade-off.** A third
+  party can delay a number's next code by one cooldown, no more. Recommendation: keep it; the
+  alternative (a cooldown per requester) lets one number be flooded.

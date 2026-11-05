@@ -117,4 +117,22 @@ class AccountTest {
         assertTrue(some.sheets.google)
         assertTrue(some.sheets.browser)
     }
+
+    @Test
+    fun `confirming a second factor returns its answer when the refresh after it cannot be made`() = runTest {
+        val bench = Bench()
+        bench.signIn()
+        val refresh = "/v1/client/sessions/refresh"
+        bench.engine.on("POST", "/v1/client/me/factors/totp/confirm") { ok("""{"codes":["aaaaa-bbbbb"]}""") }
+        bench.engine.on("POST", "/v1/client/me/factors/sms/confirm") {
+            ok("""{"totp":{"enabled":false,"confirmedAt":null},"backupCodes":{"remaining":0},"sms":{"enabled":true,"enabledAt":"2026-01-01T00:00:00.000Z","inUse":true,"available":true}}""")
+        }
+        bench.engine.on("POST", refresh) { answer(503, errorJson("service.unavailable", 503, "")) }
+        val before = bench.engine.sent(refresh).size
+
+        assertEquals(listOf("aaaaa-bbbbb"), bench.tula.factors.confirmTotp("123456"))
+        assertEquals(true, bench.tula.factors.confirmSms("123456").sms?.enabled)
+        // Each confirmation tried the refresh once, and neither failure reached the caller.
+        assertEquals(before + 2, bench.engine.sent(refresh).size)
+    }
 }

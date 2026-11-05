@@ -7909,10 +7909,11 @@ _fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/aut
 What puts a setup key or backup codes on the clipboard for the screens: as text marked
 sensitive, so that Android 13 and later do not show it in the clipboard's preview.
 
-It is called only when a person presses "Copy". **Android gives an app no way to make a clip
-expire or to take it back**: what was copied stays until something else is copied (some
-versions clear a clip by themselves after a time), and before Android 13 the mark is not read.
-The screens say "Copied." and nothing more.
+It is called only when a person presses "Copy". **Android has no expiry for a clip**, so after
+a minute the app clears the clipboard itself, but only when the clip is still the text it
+wrote (a later copy of the person's own is never lost). That timer lives in the process: if
+the process ends first, the copy stays until something else is copied (TULA-157, H-320). Before
+Android 13 the sensitive mark is not read. The screens say "Copied." and nothing more.
 
 @param context A context.
 @return The function a [dev.tula.auth.ui.TulaAuthModel] or a
