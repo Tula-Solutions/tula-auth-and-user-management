@@ -179,9 +179,11 @@ import { join } from 'node:path'
  * 19,820. The budget moved by exactly those, to 19,824.
  * The refresh that waits out a sign-out (TULA-188, H-285) added 6 bytes, to 19,826; the budget
  * moved by exactly those, to 19,830.
-
+ * One transport rule (TULA-187, H-313, H-314, H-296): plain http to another machine refused
+ * unless allowed, `redirect: 'manual'`, and a success body that is not an object refused,
+ * added 153 bytes, to 19,979; the budget moved by exactly those, to 19,983.
  */
-const GZIP_BUDGET_BYTES = 19_830
+const GZIP_BUDGET_BYTES = 19_983
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
