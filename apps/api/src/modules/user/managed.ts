@@ -20,16 +20,33 @@ export async function requireNotManaged(
   environmentId: string,
   user: Pick<UserRecord, 'managedByConnectionId' | 'managedByDirectoryId'>
 ): Promise<void> {
+  if (await isManaged(deps, environmentId, user)) {
+    throw new AuthError('user.managed')
+  }
+}
+
+/**
+ * Whether an active connection or directory manages the user (see {@link requireNotManaged}).
+ *
+ * @param deps - SSO connections and SCIM store.
+ * @param environmentId - The environment of the user.
+ * @param user - The user.
+ * @returns True while the manager is live.
+ */
+export async function isManaged(
+  deps: Pick<Deps, 'ssoConnections' | 'scim'>,
+  environmentId: string,
+  user: Pick<UserRecord, 'managedByConnectionId' | 'managedByDirectoryId'>
+): Promise<boolean> {
   if (
     user.managedByConnectionId &&
     (await deps.ssoConnections.find(environmentId, user.managedByConnectionId))
   ) {
-    throw new AuthError('user.managed')
+    return true
   }
   if (user.managedByDirectoryId) {
     const tokens = await deps.scim.listTokens(environmentId, user.managedByDirectoryId)
-    if (tokens.some((token) => token.revokedAt === null)) {
-      throw new AuthError('user.managed')
-    }
+    return tokens.some((token) => token.revokedAt === null)
   }
+  return false
 }

@@ -170,7 +170,9 @@ entry out of the stream.
   the default role of the organization's active connection (else the most recently tested, else `member`).
 - **Managed users are locked from the client.** While a user is managed by a connection or by a directory,
   client routes that change the email address or the password are refused with a contract code. Admin
-  routes still can.
+  routes still can. The guard sits in the one function that stores a user's own password, so a reset
+  finish and an expired-password replacement are refused too (`user.managed`, the reset code unspent);
+  a reset start for a managed user gets the decoy attempt of an unknown address and no code.
 - **Enforcement covers sign-up, verification and password reset.** On an enforced domain sign-up is
   refused (`auth.method_disabled`); a reset email goes only to a break-glass member, and the answers do
   not reveal which address exists.

@@ -697,7 +697,14 @@ function lastOrganizationManager(organizationIds: readonly string[]): AuthError 
 type PasswordDeps = RevocationDeps &
   Pick<
     Deps,
-    'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter' | 'secretBox'
+    | 'config'
+    | 'environmentSettings'
+    | 'breachChecker'
+    | 'mailer'
+    | 'rateLimiter'
+    | 'secretBox'
+    | 'ssoConnections'
+    | 'scim'
   >
 
 /**
@@ -758,6 +765,12 @@ async function replacePassword(
   expired?: { setAt: number }
 ): Promise<void> {
   const { email, emailNormalized } = user
+  if (method !== 'admin_reset') {
+    // The identity provider owns a managed account's password (decision 11). Here, in the one
+    // path that stores a user's own password, so reset, expired-password replacement and change
+    // all hold; an administrator's route is the break-glass and never asks.
+    await requireNotManaged(deps, scope.environmentId, user)
+  }
   if (email === null || emailNormalized === null) {
     // A password sign-in starts with an address. On an account that has none (made through X
     // or Facebook; ADR 0026) a password would be a credential nobody can use, and one that
