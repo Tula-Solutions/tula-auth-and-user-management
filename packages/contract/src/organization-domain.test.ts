@@ -125,6 +125,11 @@ describe('domainOfAddress', () => {
     ['ada@', null],
     ['@acme.com', null],
     ['nope', null],
+    // It only splits: it does not lower-case, strip a trailing dot or filter public domains, so a
+    // caller normalizes first and checks `domainRefusal` / `isPublicEmailDomain` after (H-075).
+    ['ada@ACME.com', 'ACME.com'],
+    ['ada@acme.com.', 'acme.com.'],
+    ['ada@gmail.com', 'gmail.com'],
   ])('%s gives %p', (address, expected) => {
     expect(domainOfAddress(address)).toBe(expected)
   })

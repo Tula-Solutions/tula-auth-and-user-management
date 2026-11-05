@@ -1,4 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   GroupRole,
@@ -22,12 +23,28 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
   constructor(
     activityLog: MemoryActivityLog = new MemoryActivityLog(),
-    users?: { clearManagedByConnection(environmentId: string, connectionId: string): void }
+    users?: { clearManagedByConnection(environmentId: string, connectionId: string): void },
+    organizations: MemoryOrganizationStore | null = null
   ) {
     this.#users = users
     this.#records = new Map()
     this.#identities = new Map()
     this.#activityLog = activityLog
+    // The foreign key cascades an organization's connections, identities and group roles.
+    organizations?.onDelete((environmentId, organizationId) => {
+      for (const [id, one] of this.#records) {
+        if (one.environmentId === environmentId && one.organizationId === organizationId) {
+          for (const [key, identity] of this.#identities) {
+            if (identity.connectionId === id) {
+              this.#identities.delete(key)
+            }
+          }
+          this.#users?.clearManagedByConnection(environmentId, id)
+          this.#records.delete(id)
+        }
+      }
+      this.#groupRoles.delete(`${environmentId}:${organizationId}`)
+    })
   }
 
   #own(environmentId: string, id: string): SsoConnectionRecord | null {

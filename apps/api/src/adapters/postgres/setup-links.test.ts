@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { organizations, setupLinks, withTenant } from '@tula-tech/db'
 import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula-tech/db/testing'
+import { and, eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresSetupLinkStore } from '~/adapters/postgres/setup-links'
 import {
@@ -42,6 +43,15 @@ describeSetupLinkStore('Postgres', async () => {
         .map((entry) => entry.type)
         .reverse(),
     organization,
+    deleteOrganization: async (tenant: SetupLinkSuiteTenant, id: string) => {
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx
+          .delete(organizations)
+          .where(
+            and(eq(organizations.id, id), eq(organizations.environmentId, tenant.environmentId))
+          )
+      )
+    },
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

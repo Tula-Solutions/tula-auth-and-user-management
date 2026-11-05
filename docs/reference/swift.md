@@ -1033,6 +1033,17 @@ or a user name.
 case invalidBaseURL
 ```
 
+#### `TulaConfigurationError.insecureBaseURL`
+
+_case_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
+
+The base URL is plain `http` to a machine other than this one, and `allowInsecureHTTP`
+was not set.
+
+```swift
+case insecureBaseURL
+```
+
 #### `TulaConfigurationError.invalidTimeout`
 
 _case_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
@@ -1188,7 +1199,8 @@ _init_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
 
 - Parameters:
   - publishableKey: The environment's publishable key (`tula_pk_…`).
-  - baseURL: The API's address, e.g. `https://auth.example.com`.
+  - baseURL: The API's address, e.g. `https://auth.example.com`. Plain `http` is for this
+    machine only (`localhost`, `127.0.0.1`, `[::1]`); any other host needs `allowInsecureHTTP`.
   - storage: Where the refresh token is kept. The Keychain by default; a test passes
     `MemoryTokenStorage`.
   - transport: What sends requests. A `URLSession` of the client's own by default.
@@ -1206,6 +1218,8 @@ _init_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
   - apple: The Sign in with Apple sheet; an app passes `SystemAppleSheet()`.
   - browser: The system's browser session for a provider sign-in; an app passes
     `SystemBrowserSession()`.
+  - allowInsecureHTTP: Allow a plain `http` `baseURL` to another machine (a private network
+    you trust). Off by default: the key and the session would cross it in the clear.
 - Throws: `TulaConfigurationError`.
 
 ```swift
@@ -1220,7 +1234,8 @@ public init(
     deviceKeys: (any TulaDeviceKeyStore)? = nil,
     passkeys: (any TulaPasskeySheet)? = nil,
     apple: (any TulaAppleSheet)? = nil,
-    browser: (any TulaBrowserSession)? = nil
+    browser: (any TulaBrowserSession)? = nil,
+    allowInsecureHTTP: Bool = false
 ) throws
 ```
 

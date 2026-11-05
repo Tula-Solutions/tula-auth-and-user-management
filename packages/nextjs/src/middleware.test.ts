@@ -118,6 +118,8 @@ describe('a token that must not be accepted', () => {
           .sign(new TextEncoder().encode(signer.jwk.x as string))
       },
     ],
+    ['with a typ of another kind of token', () => signer.sign({}, { typ: 'dpop+jwt' })],
+    ['with no typ', () => signer.sign({}, { typ: undefined })],
     ['with an unknown kid', () => signer.sign({}, { kid: 'key-9' })],
     ['with no kid', () => signer.sign({}, { kid: undefined })],
     ['signed by another key under the same kid', () => stranger.sign()],

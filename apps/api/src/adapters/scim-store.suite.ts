@@ -21,6 +21,8 @@ export interface ScimSuiteContext {
   recorded: () => Promise<string[]>
   /** Makes an organization of the tenant and returns its id. */
   organization: (tenant: ScimSuiteTenant) => Promise<string>
+  /** Deletes the organization as the database does: the cascade is what is under test. */
+  deleteOrganization: (tenant: ScimSuiteTenant, organizationId: string) => Promise<void>
   /** Makes a user of the tenant and returns its id. */
   user: (tenant: ScimSuiteTenant) => Promise<string>
   a: ScimSuiteTenant
@@ -437,6 +439,20 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
       expect((await ctx.store.findGroup(ctx.a.environmentId, org, record.id))?.memberIds).toEqual(
         []
       )
+    })
+
+    test('deleting the organization removes its tokens, users and groups', async () => {
+      const issued = token()
+      await ctx.store.insertToken(issued, entry(ctx.a, 'scim_token.created', issued.id))
+      const one = await member('gone')
+      await add(one)
+      const record = group([one.userId])
+      await ctx.store.insertGroup(record, entry(ctx.a, 'scim_group.created', record.id))
+      await ctx.deleteOrganization(ctx.a, org)
+      expect(await ctx.store.findTokenByHash(ctx.a.environmentId, issued.tokenHash)).toBeNull()
+      expect(await ctx.store.findGroup(ctx.a.environmentId, org, record.id)).toBeNull()
+      expect((await ctx.store.listUsers(ctx.a.environmentId, org, 1, 10)).total).toBe(0)
+      expect((await ctx.store.listGroups(ctx.a.environmentId, org, 1, 10)).total).toBe(0)
     })
   })
 }

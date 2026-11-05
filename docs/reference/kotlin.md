@@ -3229,7 +3229,8 @@ One client per API and environment for the life of the process: two clients over
 would each refresh the same token.
 
 @param publishableKey The environment's publishable key (`tula_pk_…`). Never a secret key.
-@param baseUrl The API's address, `https://…`; plain `http` is for a development server.
+@param baseUrl The API's address, `https://…`. Plain `http` is for this machine only (`localhost`,
+  `127.0.0.1`, `[::1]`): any other host needs [allowInsecureHttp].
 @param storage Where the refresh token is kept. There is no default on purpose: on a device
   it is `KeystoreTokenStorage`, and [MemoryTokenStorage] is a decision to forget the session
   when the process ends.
@@ -3249,6 +3250,9 @@ would each refresh the same token.
 @param deviceKeys Where the device's key is kept. `null` means no session of this client is
   bound to a key and no request carries a proof. With one, the six calls that start an
   attempt and every refresh carry a proof.
+@param allowInsecureHttp Allow a plain `http` [baseUrl] to another machine (an emulator's
+  `10.0.2.2`, a private network you trust). Off by default: the publishable key and the
+  session would cross the network in the clear.
 @throws IllegalArgumentException for options that can never work. Its message never repeats
   a value it was given.
 
@@ -3267,6 +3271,7 @@ class TulaClient internal constructor(
     browser: BrowserSession?,
     deviceKeys: DeviceKeyStore?,
     sheetCeilingMs: Long,
+    allowInsecureHttp: Boolean = false,
 ) : AutoCloseable
 ```
 
@@ -3288,9 +3293,10 @@ constructor(
     google: GoogleSheet? = null,
     browser: BrowserSession? = null,
     deviceKeys: DeviceKeyStore? = null,
+    allowInsecureHttp: Boolean = false,
 ) : this(
     publishableKey, baseUrl, storage, http, clock, timeoutMs, messages, sessionProfile,
-    passkeys, google, browser, deviceKeys, SHEET_CEILING_MS,
+    passkeys, google, browser, deviceKeys, SHEET_CEILING_MS, allowInsecureHttp,
 )
 ```
 

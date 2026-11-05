@@ -85,6 +85,24 @@ describe('createTulaClient options', () => {
     expect(() => createTulaClient(options)).toThrow(TypeError)
   })
 
+  test('plain http is for this machine only, unless it is allowed', () => {
+    for (const baseUrl of ['http://auth.example.com', 'http://10.0.0.5:3003']) {
+      expect(() => createTulaClient({ ...valid, baseUrl })).toThrow(/plain http/)
+    }
+    for (const baseUrl of [
+      'http://localhost:3003',
+      'http://127.0.0.1:3003',
+      'http://[::1]:3003',
+      'http://app.localhost',
+      'https://auth.example.com',
+    ]) {
+      expect(() => createTulaClient({ ...valid, baseUrl })).not.toThrow()
+    }
+    expect(() =>
+      createTulaClient({ ...valid, baseUrl: 'http://tula.internal', allowInsecureHttp: true })
+    ).not.toThrow()
+  })
+
   test('an error about a secret key does not repeat the key', () => {
     try {
       createTulaClient({ ...valid, publishableKey: 'tula_sk_dev_very-secret-value' })

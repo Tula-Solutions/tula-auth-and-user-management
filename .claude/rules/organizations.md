@@ -249,6 +249,36 @@ this file under "Area rules" and does not repeat it.
   inside the access-token TTL, on a token that already holds them. A check there would add a
   user read to every token build for no window the denylist does not already close.
 
+- Decision (TULA-157, H-066): deleting a custom role is refused only while a membership holds it
+  (`organization.role_in_use`); a pending invitation, an SSO connection's `default_role` /
+  `break_glass_role` and an `organization_group_roles` row refer to the role by **key**, on
+  purpose, and stay deletable. Recommended and left as is: an invitation to a deleted role is
+  refused at acceptance (`organization.invitation_role_gone`), a group mapping to one is skipped
+  at sign-in, and blocking the delete on them would let any pending invitation pin a role for
+  its 7 days. Recorded; code unchanged. A follow-up could list those references in the 409's
+  `params` so the operator sees them.
+- Decision (TULA-157, H-069): the per-organization invitation counter is charged before the
+  environment's daily cap, and stays so. Charging the day cap first would let one organization
+  spend the environment's shared budget with sends that its own limit then refuses. The fixed
+  window has no undo, so a refused send still costs its organization one hit. Recorded; code
+  unchanged.
+- Decision (TULA-157, H-070): `claim` accepting `mode: 'auto_join'` on a pending domain stays.
+  It is inert (matching needs a verified, unlapsed domain: `matchOf`) and the weakening is
+  audited when the domain verifies. Rejecting it in `setMode` alone would be inconsistent with
+  `claim` and needs a new contract error code. Recorded; code unchanged.
+- Decision (TULA-157, H-071): the fixed-window boundary burst on invitation send limits (up to
+  twice the nominal count across a boundary) is accepted. The daily environment cap and the
+  per-address limit bound it; a sliding window needs a new limiter primitive for no change in
+  the worst case per day. Recorded; code unchanged.
+- Decision (TULA-157, H-073): no database constraint for the last-manager invariant yet. It is
+  checked in the application, inside the write, in `organization-role/service.ts` and the
+  member service; a constraint over "some member holds a role with `organization.members.manage`"
+  is a deferred constraint trigger across three tables, which the schema conventions avoid.
+  Recommendation: add it only if a second writer path appears. Recorded; code unchanged.
+- Decision (TULA-157, H-074): the coarse per-IP limit on the client domain routes stays. Behind a
+  shared NAT it can refuse honest users, but verification is also backed by the lockout and the
+  per-code guess counter, so the IP limit is not what protects the secret. Recorded; code
+  unchanged.
 - Decision (TULA-157, H-017): **changed**. The SAML replay key is
   `saml:sha256(environmentId:connectionId \0 idpEntityId \0 assertionId)` (`replayScope` in
   `SamlExpectations`), so one IdP serving two connections, or two environments, cannot burn
