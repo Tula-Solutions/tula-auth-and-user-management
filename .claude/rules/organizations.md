@@ -356,3 +356,28 @@ this file under "Area rules" and does not repeat it.
   when that member is removed or loses `org:sys:sso:manage`, from the member service, and show
   the creator in the link list. Not built: it changes the portal's access and spans
   `modules/setup-link`, which another ticket (TULA-171) is working in.
+- Decision (TULA-157, H-047): **changed**: `Portal.createConnection` refuses a 51st connection
+  for the organization with a 409 (`MAX_PORTAL_CONNECTIONS`), so a link holder cannot build more
+  than the portal shows. The admin path keeps no cap.
+- Decision (TULA-157, H-049): **recorded, no change**: SCIM `POST /Users` answers 409 for an
+  address held anywhere in the environment because RFC 7644 asks for uniqueness, and the caller
+  already holds an organization's SCIM token. Recommended, if the probe matters: refuse a
+  `userName` outside the organization's verified domains with a uniform 400. Not built: it
+  changes what directories may send.
+- Decision (TULA-157, H-050): **recorded, no change**: SCIM tokens minted through a setup link
+  outlive the link. They are capped (`MAX_LIVE_TOKENS`) and an organization admin lists and
+  revokes them; a directory must keep syncing after the 30-day link ends. Recommended: show
+  "created through a setup link" in the token list.
+- Decision (TULA-157, H-051): **recorded, no change**: SCIM group role changes are put back by a
+  compensating second round of writes, not atomically. A crash mid-commit can leave partial
+  role changes. Recommended: a batch role change on the organization store, when one exists.
+- Decision (TULA-157, H-058): **recorded, no change**: revoking a link leaves the tokens,
+  connections and sealed secrets made through it, as the route description says. Recommended:
+  an opt-in `cascade` on revoke, a contract change.
+- Decision (TULA-157, H-059): **recorded, no change**: the portal has no connection delete, so
+  drafts stay until an operator removes them. They are bounded by the 50-connection cap (H-047).
+  Recommended: a portal delete for connections that are not enforced; a new route, so a contract
+  change.
+- Decision (TULA-157, H-060): **recorded, no change**: the portal lists mappings to privileged
+  roles as locked, which shows the group names. Moot once a setup-link token cannot apply a
+  privileged role (TULA-156); until then the names are the holder's own directory's groups.

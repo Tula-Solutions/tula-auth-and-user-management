@@ -4,6 +4,7 @@ import { createApp } from '~/index'
 import * as Organizations from '~/modules/organization/service'
 import * as Portal from '~/modules/setup-link/portal'
 import * as SetupLinks from '~/modules/setup-link/service'
+import * as SsoConnections from '~/modules/sso-connection/service'
 import {
   createInstanceTestDeps,
   seedApiKey,
@@ -48,12 +49,12 @@ describe('setup portal hardening (TULA-171)', () => {
       clientId: 'c1',
       clientSecret: 'shh-secret',
     }
+    // The admin path has no cap, so it can build the 51 the portal view must still cut to 50.
     for (let i = 0; i < 51; i++) {
-      await Portal.createConnection(
+      await SsoConnections.create(
         deps,
         TENANT,
-        scope,
-        { ...input, name: `Okta ${i}` } as never,
+        { ...input, name: `Okta ${i}`, organizationId: org.id, defaultRole: 'member' } as never,
         TEST_ACTOR
       )
     }
@@ -104,5 +105,57 @@ describe('setup portal hardening (TULA-171)', () => {
         / (sso\.disabled|sso\.connection_not_found|validation\.failed)$/
       )
     }
+  })
+})
+
+describe('setup portal per-link limits (TULA-171)', () => {
+  test('H-048: one link exhausting its SCIM-token budget leaves another link in the environment untouched', async () => {
+    const mint = async (slug: string) => {
+      const org = await Organizations.create(deps, TENANT, { name: slug, slug }, TEST_ACTOR)
+      return SetupLinks.create(
+        deps,
+        TENANT,
+        { organizationId: org.id, name: 'IT', expiresInDays: 7 } as never,
+        TEST_ACTOR
+      )
+    }
+    const [a, b] = [await mint('a'), await mint('b')]
+    const post = (token: string) =>
+      createApp(deps).request('/v1/setup/scim-tokens', {
+        method: 'POST',
+        headers: { [SETUP_LINK_HEADER]: token, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Okta' }),
+      })
+    const statuses: number[] = []
+    for (let i = 0; i < 14; i++) {
+      statuses.push((await post(a.token)).status)
+    }
+    expect(statuses).toContain(429)
+    expect((await post(b.token)).status).not.toBe(429)
+  })
+})
+
+describe('setup portal connection cap (TULA-171)', () => {
+  test('H-047: a link holder cannot create more than 50 connections for the organization', async () => {
+    const org = await Organizations.create(deps, TENANT, { name: 'a', slug: 'a' }, TEST_ACTOR)
+    const scope = { organizationId: org.id, expiresAt: new Date(deps.clock.now().getTime() + 1e6) }
+    const input = {
+      name: 'Okta',
+      issuer: 'https://idp.example.test',
+      clientId: 'c1',
+      clientSecret: 'shh-secret',
+    }
+    for (let i = 0; i < 50; i++) {
+      await Portal.createConnection(
+        deps,
+        TENANT,
+        scope,
+        { ...input, name: `Okta ${i}` } as never,
+        TEST_ACTOR
+      )
+    }
+    await expect(
+      Portal.createConnection(deps, TENANT, scope, input as never, TEST_ACTOR)
+    ).rejects.toMatchObject({ status: 409 })
   })
 })

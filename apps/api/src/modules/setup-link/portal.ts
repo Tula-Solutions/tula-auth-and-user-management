@@ -10,7 +10,7 @@ import type {
   SsoTestStart,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, NotFoundError } from '~/exceptions'
+import { AuthError, ConflictError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { publicBase } from '~/lib/public-base'
@@ -121,6 +121,11 @@ export async function createConnection(
   input: SetupConnectionCreate,
   actor: Actor
 ): Promise<SsoConnection> {
+  // The view shows 50, so a holder must not be able to build more than they can see.
+  const held = await SsoConnections.list(deps, tenant, scope.organizationId)
+  if (held.length >= MAX_PORTAL_CONNECTIONS) {
+    throw new ConflictError({ message: 'The organization holds the most connections allowed.' })
+  }
   return SsoConnections.create(
     deps,
     tenant,
