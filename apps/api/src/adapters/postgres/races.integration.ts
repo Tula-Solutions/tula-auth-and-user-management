@@ -4,9 +4,12 @@ import {
   apiKeys,
   passwordHistory,
   proposals as proposalsTable,
+  refreshTokens as refreshTokensTable,
+  sessions as sessionsTable,
   type Transaction,
   userFactors,
   users as usersTable,
+  withTenant,
 } from '@tula-tech/db'
 import { eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -942,5 +945,55 @@ describe('an approval of a proposal, against another approval and against the re
         approvedById: null,
       })
     }
+  })
+})
+
+describe('deleting a user takes their sessions and refresh tokens with them (H-111)', () => {
+  // `rejectBanned` answers "not banned" for a user who is gone, which is safe only because the
+  // foreign keys cascade: a schema change that dropped the cascade would leave live sessions.
+  test('no session or refresh token of a deleted user remains', async () => {
+    const userId = await tenant.user()
+    const sessions = new PostgresSessionStore(database.first.db)
+    const id = Bun.randomUUIDv7()
+    await sessions.create(
+      {
+        id,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        userId,
+        profile: 'web',
+        client: 'web',
+        userAgent: 'Mozilla/5.0',
+        ipAddress: '203.0.113.7',
+        lastActiveAt: now,
+        idleExpiresAt: later(7 * DAY),
+        absoluteExpiresAt: later(30 * DAY),
+        createdAt: now,
+      },
+      {
+        id: Bun.randomUUIDv7(),
+        sessionId: id,
+        tokenHash: `hash-${Bun.randomUUIDv7()}`,
+        parentId: null,
+        expiresAt: later(7 * DAY),
+        createdAt: now,
+      },
+      FIXTURE
+    )
+    const outcome = await new PostgresUserRepository(database.first.db).delete(
+      tenant.environmentId,
+      userId,
+      FIXTURE
+    )
+    expect(outcome).toEqual({ outcome: 'deleted' })
+    // Through the tenant: outside it RLS answers "no rows" for any table and would prove nothing.
+    const left = await withTenant(database.first.db, tenant.environmentId, async (tx) => ({
+      sessions: await tx.select().from(sessionsTable).where(eq(sessionsTable.id, id)),
+      tokens: await tx
+        .select()
+        .from(refreshTokensTable)
+        .where(eq(refreshTokensTable.sessionId, id)),
+    }))
+    expect(left).toEqual({ sessions: [], tokens: [] })
   })
 })

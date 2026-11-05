@@ -711,6 +711,15 @@ through Redis and are immediate.
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
 
+**How long a revoked or banned user's access token still works.** An access token is a
+signed JWT checked without a database lookup, so it is valid until it expires (60 seconds by
+default, at most 15 minutes by a profile's `accessTokenTtl`). Ending a session puts its id on
+the revoked-session list for that longest lifetime, and the API checks the list, so a revoked
+session is refused at once. A server that verifies tokens offline (`@tula-tech/nextjs`'s
+interceptor, or your own JWKS check) does not read the list: for it, a ban, a deletion or a
+revocation takes effect when the token expires. Use a stateful session profile where that
+window is too long.
+
 ### The webhook worker as its own service
 
 By default webhook deliveries are made inside the API instances (`WEBHOOK_WORKER=api`): one
