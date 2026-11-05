@@ -112,6 +112,25 @@ describe('tula audit export', () => {
     )
   })
 
+  test('keeps a CSV row whose quoted cell holds a newline', async () => {
+    const row = (n: number, userAgent: string) =>
+      `0198f4a0-0000-7000-8000-00000000000${n},2026-01-02T03:04:0${n}.000Z,${userAgent}`
+    const body = `id,occurredAt,userAgent\n${[row(1, 'a'), row(2, '"line1\nline2"'), row(3, 'b')].join('\n')}\n`
+    const run = await tula(
+      ['audit', 'export', '--format', 'csv'],
+      SECRET_KEY,
+      async () => new Response(body, { headers: { 'content-type': 'text/csv' } })
+    )
+    expect(run.stdout).toBe(body)
+    expect(run.stderr).toContain('3 entries exported')
+    expect(cursorOf(row(3, 'b'), 'csv')).toBe(
+      auditExportCursor({
+        id: '0198f4a0-0000-7000-8000-000000000003',
+        occurredAt: '2026-01-02T03:04:03.000Z',
+      })
+    )
+  })
+
   test('csv has a header row and one row per entry', async () => {
     await seed(3)
     const run = await tula(['audit', 'export', '--format', 'csv', '--action', 'user.deleted'])
