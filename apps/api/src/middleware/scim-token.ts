@@ -21,7 +21,7 @@ export const SCIM_IP_RATE_LIMIT = 1200
 
 /** What `scimToken()` adds to the context: the organization the token provisions for. */
 export interface ScimVariables {
-  scim: { organizationId: string; tokenId: string }
+  scim: { organizationId: string; tokenId: string; viaSetupLink: boolean }
 }
 
 /**
@@ -82,7 +82,11 @@ export function scimToken() {
         environmentId: record.environmentId,
         apiKeyId: record.id,
       })
-      c.set('scim', { organizationId: record.organizationId, tokenId: record.id })
+      c.set('scim', {
+        organizationId: record.organizationId,
+        tokenId: record.id,
+        viaSetupLink: record.viaSetupLink,
+      })
       await next()
     }
   )

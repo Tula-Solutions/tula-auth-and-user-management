@@ -14,6 +14,7 @@ import { setupLink } from '~/middleware/setup-link'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import * as OrganizationRoles from '~/modules/organization-role/service'
+import * as ScimTokens from '~/modules/scim-token/service'
 import * as Portal from '~/modules/setup-link/portal'
 import * as SetupLinks from '~/modules/setup-link/service'
 import * as Sso from '~/modules/sso/service'
@@ -662,6 +663,64 @@ describe('setup portal SCIM token', () => {
     expect((await create(made.token)).status).toBe(409)
     await SetupLinks.revoke(deps, TENANT, o.id, made.id, TEST_ACTOR)
     expect((await create(made.token)).status).toBe(401)
+  })
+
+  describe('a directory push that would make a member privileged', () => {
+    async function pushOwners(token: string, organizationId: string) {
+      const scim = (method: string, path: string, value?: unknown) =>
+        createApp(deps).request(`/v1/scim/v2${path}`, {
+          method,
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/scim+json' },
+          ...(value !== undefined && { body: JSON.stringify(value) }),
+        })
+      await verified(organizationId, 'acme.test')
+      await deps.ssoConnections.replaceGroupRoles(
+        { ...TENANT, organizationId, mappings: [{ group: 'Owners', role: 'admin' }] },
+        deps.clock.now(),
+        Audit.none('fixture')
+      )
+      const user = await scim('POST', '/Users', {
+        schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+        userName: 'eve@acme.test',
+        emails: [{ value: 'eve@acme.test', primary: true }],
+        active: true,
+      })
+      expect(user.status).toBe(201)
+      const userId = ((await user.json()) as { id: string }).id
+      const group = await scim('POST', '/Groups', {
+        schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+        displayName: 'Owners',
+        members: [{ value: userId }],
+      })
+      const role = (
+        await deps.organizations.findMembership(TENANT.environmentId, organizationId, userId)
+      )?.roleKey
+      return { group, role, listed: await (await scim('GET', '/Groups')).json() }
+    }
+
+    test('a token a setup link minted is refused, and no role changes', async () => {
+      const o = await org()
+      const made = await link(o.id)
+      const { token } = (await (await create(made.token)).json()) as { token: string }
+      const { group, role, listed } = await pushOwners(token, o.id)
+      expect(group.status).toBe(400)
+      expect(((await group.json()) as { scimType: string }).scimType).toBe('invalidValue')
+      expect(role).toBe('member')
+      expect((listed as { totalResults: number }).totalResults).toBe(0)
+    })
+
+    test('a token an operator minted still applies a privileged mapping', async () => {
+      const o = await org()
+      const { token } = await ScimTokens.create(
+        deps,
+        TENANT,
+        { organizationId: o.id, name: 'Okta' },
+        TEST_ACTOR
+      )
+      const { group, role } = await pushOwners(token, o.id)
+      expect(group.status).toBe(201)
+      expect(role).toBe('admin')
+    })
   })
 
   test('the new token opens its own organization’s directory', async () => {

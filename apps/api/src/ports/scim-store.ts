@@ -11,6 +11,8 @@ export interface ScimTokenRecord {
   prefix: string
   /** SHA-256 of the token. */
   tokenHash: string
+  /** Minted by a setup link's portal, which may not hand out a privileged role. */
+  viaSetupLink: boolean
   lastUsedAt: Date | null
   revokedAt: Date | null
   createdAt: Date

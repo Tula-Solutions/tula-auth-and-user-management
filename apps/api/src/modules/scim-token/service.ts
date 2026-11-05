@@ -129,6 +129,7 @@ export async function create(
     name: input.name,
     prefix: token.slice(0, PREFIX_LENGTH),
     tokenHash: sha256Hex(token),
+    viaSetupLink: actor.type === 'setup_link',
     lastUsedAt: null,
     revokedAt: null,
     createdAt: activity.occurredAt,

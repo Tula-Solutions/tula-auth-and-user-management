@@ -25,6 +25,8 @@ export interface ScimContext {
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>
   organizationId: string
   actor: Actor
+  /** The token was minted by a setup link: it may not apply a privileged role. */
+  viaSetupLink: boolean
 }
 
 function resource(deps: Deps, user: UserRecord, record: ScimUserRecord): ScimUserResource {
@@ -297,7 +299,8 @@ async function applyEmail(
  * @param ctx - The environment, the organization and the actor.
  * @param input - The User the directory sent.
  * @returns The resource.
- * @throws ScimError `uniqueness` (409) for a taken `userName` or `externalId`.
+ * @throws ScimError `uniqueness` (409) for a taken `userName` or `externalId`; `invalidValue`
+ *   (400) for a new account on a domain the organization has not verified.
  */
 export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput) {
   const { environmentId } = ctx.tenant
@@ -332,6 +335,10 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       method = 'linked'
     }
   } else {
+    // Otherwise a directory could squat an address on a domain its organization never proved.
+    if (!verifiedDomain) {
+      throw invalidValue('userName is not on a domain this organization has verified.')
+    }
     user = {
       id: deps.ids.next(),
       projectId: ctx.tenant.projectId,
