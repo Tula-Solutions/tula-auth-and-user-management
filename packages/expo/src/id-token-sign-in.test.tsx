@@ -53,7 +53,13 @@ function routes(w: World) {
 
 /** A sheet whose answer a test gives, and which records what it was asked with. */
 function fakeSheet(
-  answer: (nonce: string) => Promise<IdTokenCredential | null> | IdTokenCredential | null = () => ({
+  answer: (
+    nonce: string
+  ) =>
+    | Promise<IdTokenCredential | null | 'no_account'>
+    | IdTokenCredential
+    | null
+    | 'no_account' = () => ({
     idToken: ID_TOKEN,
   }),
   available: () => boolean | Promise<boolean> = () => true
@@ -220,6 +226,17 @@ describe('signInWithIdToken', () => {
     expect(w.api.calls(START)).toHaveLength(2)
     expect(asked).toHaveLength(2)
     expectNothingKept(w)
+  })
+
+  test('a device with no account of the provider is no_account, not a dismissal', async () => {
+    const { sheet } = fakeSheet(() => 'no_account')
+    const w = world({ client: { google: sheet } })
+    routes(w)
+    expect(await signInWithIdToken(w.client, { provider: 'google' })).toEqual({
+      status: 'no_account',
+    })
+    expect(w.api.calls(EXCHANGE)).toEqual([])
+    expect(w.client.state.status).not.toBe('signed-in')
   })
 
   test.each<[string, () => Promise<IdTokenCredential | null>]>([

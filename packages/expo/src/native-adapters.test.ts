@@ -75,7 +75,7 @@ describe('Sign in with Apple’s sheet over expo-apple-authentication', () => {
       familyName: undefined,
     })
     const none = apple(async () => ({ identityToken: 'apple.id.token', fullName: null }))
-    expect((await none.sheet.signIn({ nonce: 'n' }))?.idToken).toBe('apple.id.token')
+    expect(await none.sheet.signIn({ nonce: 'n' })).toMatchObject({ idToken: 'apple.id.token' })
   })
 
   test('a dismissed sheet is null, never a failure', async () => {
@@ -205,7 +205,6 @@ describe('Google’s sheet over react-native-nitro-google-signin', () => {
 
   test.each([
     ['cancelled as an answer', async () => ({ type: 'cancelled', data: null })],
-    ['no saved credential', async () => ({ type: 'noSavedCredentialFound', data: null })],
     [
       'cancelled as a rejection',
       async () => {
@@ -214,6 +213,11 @@ describe('Google’s sheet over react-native-nitro-google-signin', () => {
     ],
   ])('%s is null, never a failure', async (_name, present) => {
     expect(await google(present).sheet.signIn({ nonce: 'n' })).toBeNull()
+  })
+
+  test('no saved credential is its own answer, not a dismissal', async () => {
+    const sheet = google(async () => ({ type: 'noSavedCredentialFound', data: null })).sheet
+    expect(await sheet.signIn({ nonce: 'n' })).toBe('no_account')
   })
 
   test.each([

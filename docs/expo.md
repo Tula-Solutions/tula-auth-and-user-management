@@ -732,7 +732,7 @@ value.
   call made anyway is refused with `storage.failed` before any request; like the emailed
   link's, that message is written for another case, so do not show it for this one.
 - **A dismissed sheet is not an error and not a sign-in**: `dismissed` is `true`, `error`
-  stays `null`, no token was sent, and the button works again (the outcome `cancelled`).
+  stays `null`, no token was sent, and the button works again (the outcome `cancelled`). A device with no Google account to sign in with is the outcome `no_account`: offer another way in.
   The next try starts an attempt of its own: an attempt takes one token.
 - **The nonce is the package's business.** The server makes a nonce for every attempt and
   accepts the token only with it. Google's sheet is handed the nonce as it is. Apple's is

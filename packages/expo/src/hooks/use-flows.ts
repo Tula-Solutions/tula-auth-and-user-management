@@ -10,6 +10,7 @@ import {
 import { useCallback, useMemo } from 'react'
 import { useTula } from '../context'
 import { isEmailLink, openEmailLink, requestEmailLink } from '../email-link'
+import { clientError } from '../errors'
 import { requireFreeSheet } from '../host'
 import { type IdTokenSignInInput, signInWithIdToken } from '../id-token-sign-in'
 import {
@@ -434,6 +435,10 @@ export function useSignIn(): UseSignInResult {
         const outcome = await signInWithIdToken(client, input)
         if (outcome.status === 'cancelled') {
           throw CALLED_OFF
+        }
+        if (outcome.status === 'no_account') {
+          // Same code as a sheet that cannot be shown: the hook reports the way is not usable here.
+          throw clientError('storage.failed')
         }
         return outcome.flow
       }),
