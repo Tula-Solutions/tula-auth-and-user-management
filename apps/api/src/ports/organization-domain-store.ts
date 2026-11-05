@@ -208,7 +208,9 @@ export interface OrganizationDomainStore {
   /**
    * Remove a domain, pending or verified. Members who joined because of it stay. An SSO
    * connection's binding to the name goes in the same transaction, each with an
-   * `sso_connection.updated` entry (`changed: ['domains']`).
+   * `sso_connection.updated` entry (`changed: ['domains']`). A lapse is only computed at read
+   * time (nothing writes it), so sign-in's `holdsDomain` check is the defence there; another
+   * organization's takeover of the name also arrives here.
    *
    * @param environmentId - The environment.
    * @param organizationId - The organization.

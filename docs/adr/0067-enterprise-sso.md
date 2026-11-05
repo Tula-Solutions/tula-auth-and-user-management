@@ -283,3 +283,5 @@ accepting an IdP's account both re-check a verified, unlapsed domain row of the 
 organization, so a lapse (which is time-based) or a lost name stops SSO at once. Removing a domain
 also deletes its binding to the organization's connections in the same transaction, audited as
 `sso_connection.updated` with `changed: ['domains']`.
+A lapse is never written (the reminders job only emails), so the sign-in check is the defence for
+it; an organization taking over a name ends the old claim through the same removal.

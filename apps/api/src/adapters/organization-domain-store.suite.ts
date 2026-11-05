@@ -3,11 +3,51 @@ import type { OrganizationDomainMode } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { DomainClaim, OrganizationDomainStore } from '~/ports/organization-domain-store'
+import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 
 /** A tenant for the suite. */
 export interface OrganizationDomainSuiteTenant {
   projectId: string
   environmentId: string
+}
+
+/**
+ * A draft SSO connection of an organization bound to `domains`, for an adapter's `connect`.
+ *
+ * @param tenant - The environment it belongs to.
+ * @param organizationId - Its organization.
+ * @param domains - The domains it is bound to.
+ * @returns The record to insert.
+ */
+export function connectionRecord(
+  tenant: OrganizationDomainSuiteTenant,
+  organizationId: string,
+  domains: string[]
+): SsoConnectionRecord {
+  const id = Bun.randomUUIDv7()
+  const at = new Date(0)
+  return {
+    id,
+    projectId: tenant.projectId,
+    environmentId: tenant.environmentId,
+    organizationId,
+    protocol: 'oidc',
+    saml: null,
+    name: `Okta ${id}`,
+    status: 'draft',
+    issuer: 'https://idp.example.com',
+    clientId: 'client-1',
+    clientSecretSealed: 'sealed',
+    attributeMapping: null,
+    defaultRole: 'member',
+    enforced: false,
+    breakGlassRole: null,
+    trustIdpMfa: false,
+    domains,
+    testedFingerprint: null,
+    createdAt: at,
+    updatedAt: at,
+  }
 }
 
 /** What the store under test provides. */
@@ -19,6 +59,14 @@ export interface OrganizationDomainSuiteContext {
   organization: (tenant: OrganizationDomainSuiteTenant) => Promise<string>
   /** Delete an organization the way the organization store does; its domains must go with it. */
   deleteOrganization: (tenant: OrganizationDomainSuiteTenant, id: string) => Promise<void>
+  /** Make a draft SSO connection of an organization bound to `domains`; returns its id. */
+  connect: (
+    tenant: OrganizationDomainSuiteTenant,
+    organizationId: string,
+    domains: string[]
+  ) => Promise<string>
+  /** The domains an SSO connection is bound to now. */
+  connectionDomains: (tenant: OrganizationDomainSuiteTenant, id: string) => Promise<string[]>
   a: OrganizationDomainSuiteTenant
   b: OrganizationDomainSuiteTenant
 }
@@ -579,6 +627,49 @@ export function describeOrganizationDomainStore(
       // Free again for another organization.
       const other = await ctx.organization(ctx.a)
       await pending(ctx.a, other)
+    })
+
+    test("removing a domain unbinds it from the organization's connections, keeping their other domains, and records each", async () => {
+      const org = await ctx.organization(ctx.a)
+      const otherOrg = await ctx.organization(ctx.a)
+      const done = await verified(ctx.a, org)
+      const two = await ctx.connect(ctx.a, org, ['acme.test', 'other.test'])
+      const one = await ctx.connect(ctx.a, org, ['acme.test'])
+      const elsewhere = await ctx.connect(ctx.a, otherOrg, ['acme.test'])
+      const before = (await ctx.recorded()).filter((type) => type === 'sso_connection.updated')
+      expect(before).toHaveLength(0)
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          org,
+          done.id,
+          activity(ctx.a, 'organization_domain.removed', done.id)
+        )
+      ).toBe(true)
+      expect(await ctx.connectionDomains(ctx.a, two)).toEqual(['other.test'])
+      expect(await ctx.connectionDomains(ctx.a, one)).toEqual([])
+      // Another organization's connection is not this organization's to change.
+      expect(await ctx.connectionDomains(ctx.a, elsewhere)).toEqual(['acme.test'])
+      const recorded = await ctx.recorded()
+      expect(recorded.filter((type) => type === 'sso_connection.updated')).toHaveLength(2)
+      expect(recorded.filter((type) => type === 'organization_domain.removed')).toHaveLength(1)
+    })
+
+    test('a removal that deletes nothing unbinds nothing', async () => {
+      const org = await ctx.organization(ctx.a)
+      const done = await verified(ctx.a, org)
+      const held = await ctx.connect(ctx.a, org, ['acme.test'])
+      // A lapsed-only removal of a row that has not lapsed deletes nothing.
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          org,
+          done.id,
+          activity(ctx.a, 'organization_domain.removed', done.id),
+          now
+        )
+      ).toBe(false)
+      expect(await ctx.connectionDomains(ctx.a, held)).toEqual(['acme.test'])
     })
 
     test('deleting the organization deletes its domains', async () => {

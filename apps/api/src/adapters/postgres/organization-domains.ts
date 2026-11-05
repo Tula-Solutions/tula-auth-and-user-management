@@ -391,10 +391,14 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
           )
         )
       if (bound.length > 0) {
+        // Only this name: a connection's other domains stay bound.
         await tx.delete(ssoConnectionDomains).where(
-          inArray(
-            ssoConnectionDomains.connectionId,
-            bound.map((one) => one.connectionId)
+          and(
+            eq(ssoConnectionDomains.domain, removed.domain),
+            inArray(
+              ssoConnectionDomains.connectionId,
+              bound.map((one) => one.connectionId)
+            )
           )
         )
       }
