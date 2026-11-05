@@ -16,6 +16,35 @@ let deps: TestDeps
 let orgId: string
 let token: string
 
+async function verifiedDomain(organizationId: string, domain: string) {
+  const id = Bun.randomUUIDv7()
+  const none = Audit.none('fixture')
+  const now = deps.clock.now()
+  await deps.organizationDomains.claim(
+    {
+      id,
+      ...TENANT,
+      organizationId,
+      domain,
+      mode: 'suggest',
+      codeHash: 'h',
+      codeExpiresAt: new Date(now.getTime() + 60_000),
+      at: now,
+      limit: 10,
+    },
+    none
+  )
+  await deps.organizationDomains.verify(
+    TENANT.environmentId,
+    organizationId,
+    id,
+    'h',
+    now,
+    new Date(now.getTime() + 86_400_000),
+    none
+  )
+}
+
 async function scim(method: string, path: string, body?: unknown) {
   const res = await createApp(deps).request(`/v1/scim/v2${path}`, {
     method,
@@ -74,6 +103,7 @@ beforeEach(async () => {
   token = (
     await ScimTokens.create(deps, TENANT, { organizationId: orgId, name: 'Okta' }, TEST_ACTOR)
   ).token
+  await verifiedDomain(orgId, 'acme.test')
 })
 
 describe('SCIM Groups: CRUD, Okta shape', () => {
