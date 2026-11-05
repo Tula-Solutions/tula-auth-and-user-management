@@ -688,8 +688,8 @@ What the load balancer has to do:
   cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry, so
   `TRUST_PROXY` assumes **exactly one** trusted proxy hop: with none a client writes its own
   address, with two every client shows the inner proxy's address and they share one rate-limit
-  bucket (the API logs a warning at boot when it is on outside `local`). A request whose
-  address cannot be resolved at all is refused with `service.unavailable` in `staging` and
+  bucket (the API logs a warning at boot when it is on outside `local`). With `TRUST_PROXY` on, a request whose
+  address cannot be resolved (the proxy sent none) is refused with `service.unavailable` in `staging` and
   `prod` rather than counted in one shared bucket. That holds
   for the edge proxy, the one clients connect to: a proxy that itself sits behind another
   (a CDN, a cloud load balancer) sees only that one's address and scheme, so there use its
