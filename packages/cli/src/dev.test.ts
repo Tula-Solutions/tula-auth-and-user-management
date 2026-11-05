@@ -458,7 +458,7 @@ describe('tula dev', () => {
 
     const noPort = await tula(['dev'], {
       host: fakeHost({
-        answer: (command) => (command.join(' ').includes('port api') ? { code: 1 } : undefined),
+        answer: (command) => (command.join(' ').includes('port -- api') ? { code: 1 } : undefined),
       }).host,
     })
     expect(noPort.code).toBe(1)
@@ -510,7 +510,7 @@ describe('tula dev', () => {
   test('survives what is optional: no Mailpit port, no git, an API that is slow to answer', async () => {
     const fake = fakeHost({
       answer: (command) =>
-        command.join(' ').includes('port mailpit') || command[0] === 'git'
+        command.join(' ').includes('port -- mailpit') || command[0] === 'git'
           ? Object.assign(new Error('missing'), { code: 'ENOENT' })
           : undefined,
     })

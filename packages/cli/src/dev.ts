@@ -135,6 +135,14 @@ export function withoutDevBlock(text: string): string {
   return `${text.slice(0, found.start)}${after}`
 }
 
+/** Whether `text` holds a C0 control character (a newline included) or DEL. */
+function hasControlCharacter(text: string): boolean {
+  return [...text].some((char) => {
+    const code = char.charCodeAt(0)
+    return code < 0x20 || code === 0x7f
+  })
+}
+
 /**
  * A file's contents with the block `tula dev` manages set to `vars`: replaced where it is, or
  * added at the end. Lines outside the block are never changed.
@@ -142,6 +150,7 @@ export function withoutDevBlock(text: string): string {
  * @param text - The file's contents (`''` for a new file).
  * @param vars - The block's variables.
  * @returns The new contents.
+ * @throws UsageError when a name is not `NAME_LIKE` or a value holds a control character.
  *
  * @example
  * ```ts
@@ -151,7 +160,7 @@ export function withoutDevBlock(text: string): string {
 export function withDevBlock(text: string, vars: Readonly<Record<string, string>>): string {
   for (const [name, value] of Object.entries(vars)) {
     // A newline would end the line and start another variable in the user's file.
-    if (!/^[A-Z][A-Z0-9_]*$/.test(name) || /[\u0000-\u001f\u007f]/.test(value)) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(name) || hasControlCharacter(value)) {
       throw new UsageError(
         `The dev block cannot hold ${name}: a name must be NAME_LIKE and a value has no newline or control character.`
       )
@@ -478,7 +487,10 @@ async function publishedUrl(
   port: string
 ): Promise<string | null> {
   const result = await options.host
-    .run(compose(options, 'port', '--', service, port), { cwd: options.io.cwd, timeoutMs: QUICK_MS })
+    .run(compose(options, 'port', '--', service, port), {
+      cwd: options.io.cwd,
+      timeoutMs: QUICK_MS,
+    })
     .catch(() => null)
   const match = /:(\d{1,5})\s*$/.exec(result?.code === 0 ? result.stdout.trim() : '')
   return match ? `http://localhost:${match[1]}` : null
