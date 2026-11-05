@@ -5,7 +5,7 @@ import {
   type Versions,
 } from '~/adapters/cache/versioned'
 import type { Clock } from '~/ports/clock'
-import type { SigningKeyStore } from '~/ports/signing-key-store'
+import { RETIRED_KEY_RETENTION_MS, type SigningKeyStore } from '~/ports/signing-key-store'
 
 /**
  * A marker per environment, shared by every API instance, that changes whenever the
@@ -43,6 +43,8 @@ export type { SharedInvalidation }
  * @param ttlMs - How long a fetched key set is reused.
  * @param shared - The cross-instance marker and how often to check it; omit for one instance.
  * @returns A store with the same interface.
+ * @throws Error when `ttlMs` reaches the retired-key retention window: a cache hit cannot tell
+ * that a key has left its verification window, so only a shorter TTL keeps the key set honest.
  */
 export function cacheSigningKeys(
   store: SigningKeyStore,
@@ -50,6 +52,9 @@ export function cacheSigningKeys(
   ttlMs: number,
   shared?: SharedInvalidation
 ): SigningKeyStore {
+  if (ttlMs >= RETIRED_KEY_RETENTION_MS) {
+    throw new Error('signing key cache TTL must be shorter than the retired-key retention window')
+  }
   const cache = createVersionedCache<Jwk[]>({
     clock,
     ttlMs,

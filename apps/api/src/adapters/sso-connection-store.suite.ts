@@ -162,6 +162,27 @@ export function describeSsoConnectionStore(
       expect(await ctx.store.findActiveByDomain(ctx.b.environmentId, 'acme.test')).toBeNull()
     })
 
+    test('another environment cannot update or delete a connection, nor touch its domains (H-236)', async () => {
+      const record = connection(ctx.a, org)
+      await insert(record)
+      const outcome = await ctx.store.update(
+        ctx.b.environmentId,
+        record.id,
+        { domains: [] },
+        later,
+        activity(ctx.b, 'sso_connection.updated', record.id)
+      )
+      expect(outcome).toBe('missing')
+      expect(
+        await ctx.store.delete(
+          ctx.b.environmentId,
+          record.id,
+          activity(ctx.b, 'sso_connection.deleted', record.id)
+        )
+      ).toBe('missing')
+      expect((await ctx.store.find(ctx.a.environmentId, record.id))?.domains).not.toEqual([])
+    })
+
     test('a name is one per organization', async () => {
       await insert(connection(ctx.a, org))
       expect(await insert(connection(ctx.a, org, { domains: [] }))).toBe('name_taken')

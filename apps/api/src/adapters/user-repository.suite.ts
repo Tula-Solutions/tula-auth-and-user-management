@@ -850,6 +850,17 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(results.filter(Boolean)).toHaveLength(1)
     })
 
+    test('refuses a duplicate id and leaves the first user unchanged (H-239)', async () => {
+      const first = user(ctx.a)
+      const clash = user(ctx.a, { id: first.id })
+      expect(await ctx.users.create(first, Audit.none('fixture'))).toBe(true)
+      expect(await ctx.users.create(clash, Audit.none('fixture'))).toBe(false)
+      expect((await ctx.users.findById(ctx.a.environmentId, first.id))?.emailNormalized).toBe(
+        first.emailNormalized
+      )
+      expect(await ctx.users.findByEmail(ctx.a.environmentId, clash.emailNormalized)).toBeNull()
+    })
+
     test('the same email can exist in another environment', async () => {
       const first = user(ctx.a)
       const twin = user(ctx.b, { email: first.email, emailNormalized: first.emailNormalized })

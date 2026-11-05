@@ -629,6 +629,22 @@ export function describeSessionStore(
       expect((await ctx.store.findTokenById(ctx.a.environmentId, root.id))?.usedAt).toBeNull()
     })
 
+    test('a token cannot be rotated into another session’s family (H-237)', async () => {
+      const { root } = await seed(ctx.a)
+      const { session: other } = await seed(ctx.a)
+      const child = token(other.id, { parentId: root.id })
+      expect(
+        await ctx.store.rotate(ctx.a.environmentId, {
+          parentId: root.id,
+          child,
+          at: later(2_000),
+          idleExpiresAt: later(8 * DAY),
+        })
+      ).toBe(false)
+      expect(await ctx.store.findToken(ctx.a.environmentId, child.tokenHash)).toBeNull()
+      expect((await ctx.store.findTokenById(ctx.a.environmentId, root.id))?.usedAt).toBeNull()
+    })
+
     test('revoke records the reason once', async () => {
       const { session: s } = await seed(ctx.a)
       expect(

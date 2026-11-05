@@ -604,7 +604,9 @@ CREATE ROLE tula_app NOLOGIN;
 CREATE ROLE tula_api LOGIN PASSWORD '<a strong password>' IN ROLE tula_app;
 ```
 
-The Compose file's passwords (`tula` / `tula_api`) are for local use only.
+The Compose file's passwords (`tula` / `tula_api`, also set in `docker/postgres/init.sql`) are
+public defaults for local use only. Never run them in production: create `tula_api` with your
+own strong password, as above, and put the same one in `DATABASE_URL` (H-234).
 
 **Migrations.** Run them before starting a new version, as the owner:
 
