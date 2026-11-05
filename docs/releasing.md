@@ -399,6 +399,13 @@ releases into `main` while a run of the first is still going.
 The image is not signed and carries no SBOM of its own beyond what the build attaches;
 `:latest` moves, so pin `<version>` (a new project does) or a digest where it matters.
 
+Decision (TULA-157, H-342): the image stays unsigned for now; the recommendation is a build
+provenance attestation (`actions/attest-build-provenance`, pushed to the registry by digest) in
+the `tag` job, which needs `id-token: write` and `attestations: write` there and a new row in
+`.claude/hooks/api-image.test.ts`'s permission rules. It is recorded and not made: it widens the
+permissions of a workflow held to a small set, and the owner should approve that. Until then pin
+a digest where it matters.
+
 ## The copy on GitHub Packages
 
 `.github/workflows/github-packages.yml` also runs on every push to `main`, and publishes
@@ -477,6 +484,14 @@ test being changed too:
    `npm-publish` environment (`main` only; it has no required reviewer, so a merge to `main` publishes). Check it by hand
    whenever the repository's settings change.
 4. The script refuses to upload from a GitHub Actions job that holds a token.
+5. Decision (TULA-157, H-343): every `uses:` in `.github/workflows/` is pinned to a commit SHA
+   with its version as a trailing comment (Dependabot keeps them moving), and every checkout sets
+   `persist-credentials: false`. Installs in the publish path use `--ignore-scripts`.
+   `.claude/hooks/workflow-supply-chain.test.ts` fails for a floating tag.
+6. The packed manifest of each package is checked again on the unpacked tarball before the copy to
+   GitHub Packages (`unpackedProblems`), a dependency that is not a registry version or a
+   `bundledDependencies` entry is refused, and `chooseChannel` refuses an `npm_config_*` token
+   variable or an npm configuration file that holds a literal token (`scripts/npm-config.ts`).
 
 ## First release
 

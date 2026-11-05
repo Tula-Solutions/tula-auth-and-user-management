@@ -223,7 +223,16 @@ export function stagedManifestProblems(manifest: Manifest): string[] {
     for (const [name, range] of Object.entries(ranges)) {
       if (String(range).startsWith('workspace:')) {
         problems.push(`${manifest.name}: ${field}.${name} is still "${range}"`)
+      } else if (/^(?:[a-z][a-z0-9+.-]*:|[\w.-]+\/[\w.-]+$)/i.test(String(range))) {
+        // A URL, a path, a git host shorthand or an alias would pull code that is not on
+        // the registry's name for it.
+        problems.push(`${manifest.name}: ${field}.${name} is "${range}", not a registry version`)
       }
+    }
+  }
+  for (const field of ['bundledDependencies', 'bundleDependencies']) {
+    if (manifest[field] !== undefined) {
+      problems.push(`${manifest.name}: the packed manifest has "${field}"`)
     }
   }
   for (const field of ['scripts', 'devDependencies', 'publishConfig']) {

@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { readNpmConfigFiles } from './npm-config'
 import {
   HELD_PACKAGES,
   leakedPackedFiles,
@@ -340,7 +341,8 @@ async function main(argv: readonly string[]): Promise<number> {
   const after = await treeState()
   const channel = chooseChannel(
     process.env,
-    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null
+    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null,
+    await readNpmConfigFiles(process.env, process.cwd())
   )
   const plan = planRelease(
     staged,
