@@ -12,6 +12,7 @@ import {
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
+import { allowedFields } from '~/lib/event-payload'
 import {
   type Activity,
   type AuditEntry,
@@ -103,6 +104,18 @@ export function none(reason: UnrecordedReason): Unrecorded {
   return unrecordedFor(reason)
 }
 
+/**
+ * The entry's data limited to the keys its type's contract schema names, the same allow-list
+ * an event payload uses: a key added at a call site without a decision in the contract is
+ * stored but never listed or exported (H-172). Keys only: values were checked when written.
+ */
+function allowedMetadata(record: AuditEntry): Record<string, unknown> {
+  const fields = allowedFields(record.type as ActivityType)
+  return Object.fromEntries(
+    Object.entries(record.data).filter(([key]) => Object.hasOwn(fields, key))
+  )
+}
+
 function toAuditLog(record: AuditEntry): AuditLog {
   return {
     id: record.id,
@@ -111,7 +124,7 @@ function toAuditLog(record: AuditEntry): AuditLog {
     target: record.target,
     ipAddress: record.ipAddress,
     userAgent: record.userAgent,
-    metadata: record.data,
+    metadata: allowedMetadata(record),
     occurredAt: record.occurredAt.toISOString(),
   }
 }

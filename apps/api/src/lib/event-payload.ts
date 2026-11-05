@@ -28,7 +28,7 @@ export type EventPayload = {
 }
 
 /** The fields of `data` the type's schema allows, each with its own schema. */
-function allowedFields(type: ActivityType): Record<string, z.ZodType> {
+export function allowedFields(type: ActivityType): Record<string, z.ZodType> {
   // `hasOwn`: a type this version does not know (a cast, a row of another version) allows
   // nothing, rather than reading a schema off the prototype.
   return Object.hasOwn(EVENT_DATA_SCHEMAS, type) ? EVENT_DATA_SCHEMAS[type].shape : {}

@@ -37,18 +37,41 @@ describe('csvCell (H-173)', () => {
 describe('the metadata cell (H-176)', () => {
   test('is written through csvCell: quoted, with its quotes doubled', async () => {
     const activity = Audit.entry(deps, TEST_TENANT, {
-      type: 'user.deleted',
+      type: 'user.imported',
       actor: ACTOR,
       target: { type: 'user', id: ACTOR.id },
-      data: { note: '=cmd|x' } as never,
+      data: { emailVerified: true },
     })
     await deps.activityLog.append(activity)
     const res = await app.request('/v1/admin/audit-logs/export', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${SK}` },
-      body: JSON.stringify({ format: 'csv', action: 'user.deleted' }),
+      body: JSON.stringify({ format: 'csv', action: 'user.imported' }),
     })
     const row = (await res.text()).split('\r\n')[1] ?? ''
-    expect(row).toContain('"{""note"":""=cmd|x""}"')
+    expect(row).toContain('"{""emailVerified"":true}"')
+  })
+})
+
+describe('audit metadata allow-list (H-172)', () => {
+  test('a key the contract does not name never reaches the list or an export', async () => {
+    const activity = Audit.entry(deps, TEST_TENANT, {
+      type: 'user.imported',
+      actor: ACTOR,
+      target: { type: 'user', id: ACTOR.id },
+      data: { emailVerified: true, leaked: 'secret-value' } as never,
+    })
+    await deps.activityLog.append(activity)
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${SK}` }
+    const list = await app.request('/v1/admin/audit-logs?action=user.imported', { headers })
+    const listed = await list.text()
+    expect(listed).toContain('emailVerified')
+    expect(listed).not.toContain('secret-value')
+    const res = await app.request('/v1/admin/audit-logs/export', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ format: 'ndjson', action: 'user.imported' }),
+    })
+    expect(await res.text()).not.toContain('secret-value')
   })
 })
