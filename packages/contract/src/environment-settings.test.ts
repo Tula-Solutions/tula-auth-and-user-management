@@ -284,6 +284,12 @@ describe('WebOriginSchema', () => {
     ['another scheme', 'ftp://app.example.com', false],
     ['the literal null origin', 'null', false],
     ['an empty string', '', false],
+    ['brackets around no address at all', 'https://[::::::::]', false],
+    ['brackets around dots', 'https://[....]', false],
+    ['brackets around a lone colon pair of hex junk', 'https://[abcde::1]', false],
+    ['brackets with a single colon', 'https://[a:b]', false],
+    ['brackets around an IPv4 address', 'https://[1.2.3.4]', false],
+    ['a compressed IPv6 host', 'https://[fe80::1]:8443', true],
   ])('%s', (_, origin, ok) => {
     expect(WebOriginSchema.safeParse(origin).success).toBe(ok)
   })
