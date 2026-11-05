@@ -57,6 +57,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   for an identity and for a passkey alike. The admin factor reset is the one exception (it
   removes every passkey, on purpose), and it reports the outcome by the same rule: the
   `x-tula-can-still-sign-in` response header and `canStillSignIn` on the audit entry.
+- **Removing a passkey ends the user's other sessions** (`Passkeys.remove`, reason
+  `mfa_changed`, the current session kept), before the notice. Decision (TULA-157, H-093):
+  the existing reason is reused instead of a new `SessionRevokeReason` value, which would move
+  `openapi.json`; a passkey is a credential and the nearest reason is the factor change.
 
 ## What to test
 

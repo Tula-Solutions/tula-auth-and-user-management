@@ -967,8 +967,9 @@ export async function setEmail(
  * Set a user's password from a server or the dashboard (an admin reset). A user who has no
  * password gets their first one.
  *
- * Every session of the user ends: whoever knew the old password is signed out everywhere. The
- * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
+ * Every session of the user ends, before the new hash is stored and again after it (a sweep
+ * that fails first leaves the old password in force; H-096): whoever knew the old password is
+ * signed out everywhere. The sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
  * The user is emailed that an administrator set their password (ADR 0023).
  *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
@@ -1157,6 +1158,9 @@ export async function replaceExpiredPassword(
  * about the caller's own account only (the user id comes from their access token), so it tells
  * nobody anything about anyone else; it is given before the lockout is counted, since nothing
  * was guessed.
+ *
+ * The other sessions are swept before the store and again after it, and the lockout is
+ * cleared last, only once the change succeeded (H-096, H-170).
  *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
  *   clock.

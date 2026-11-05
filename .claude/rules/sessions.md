@@ -42,6 +42,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
   `amr` is a set: never compare it as an ordered array (scenarios use `{ "$set": [...] }`).
+- **A credential removed ends the other sessions.** Removing a passkey and unlinking an
+  OAuth identity call `Sessions.revokeOthers` with reason `mfa_changed`. Decision (TULA-157,
+  H-093): `SessionRevokeReason` gets no new value, because that moves `openapi.json` and every
+  SDK; the nearest existing reason is reused. Add a value if a client ever needs to tell them apart.
 
 ## What to test
 
