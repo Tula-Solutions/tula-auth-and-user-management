@@ -130,3 +130,17 @@ rules themselves are above and are not repeated).
   routes and schemas, no secret, and the SDK generators and `tula doctor` read it. If an
   operator wants it hidden, block the path at the proxy, or add an `OPENAPI` switch with the
   docs row and a test. Reason: hiding it changes a documented public contract. Recorded only.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-123): a dashboard session is a stateless signed cookie and cannot be
+  revoked before it expires. Recommendation: keep its lifetime short and, if early revocation
+  is needed, add a denylist of session ids checked in `dashboard-session` (as `sessionAuth`
+  does for user sessions). Reason: a store, a middleware change and a logout route are more
+  than this audit's scope. Recorded only.
+- Decision (TULA-157, H-132): the API reference's CSP keeps `style-src 'unsafe-inline'`
+  (`lib/api-docs.ts`). Scalar writes inline styles at run time, so a nonce or hash cannot
+  cover them; scripts, the dangerous part, stay `'self'` only. Recommendation: revisit when
+  the reference renderer supports a nonce. Recorded only.
+- Decision (TULA-157, H-134): the dashboard already drops a created key after its one-time
+  display (`gcTime: 0` and `create.reset()` in `features/keys/api-keys-screen.tsx`). No change.
