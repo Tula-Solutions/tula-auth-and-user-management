@@ -3680,10 +3680,9 @@ export async function submitSecondFactor(
     await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   }
   const user = await deps.users.findById(tenant.environmentId, userId)
-  // Refuse before the lockout, the charge or the verifier: a banned user's code must not be
-  // spent. The answer stays generic, so the ban is told to nobody who has not proved the factor.
+  // Refuse before the lockout, the charge or the verifier: a banned user's code must not be spent.
   if (user?.bannedAt) {
-    throw new AuthError('mfa.invalid_code')
+    throw new AuthError('auth.user_banned')
   }
   if (proof.method === 'sms_code') {
     // The texted second factor switched off, text messages off or the number's country
