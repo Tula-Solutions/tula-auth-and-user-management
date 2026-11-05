@@ -822,7 +822,7 @@ says both. A dismissal remains a decision of its own.
 
 ## Decision (TULA-157, H-175): agent keys keep seeing `ip` and `userAgent` in the audit log
 
-Recommendation: keep them. An agent key is read-only on `GET /v1/admin/*` and exists so an agent
+Recommendation: keep them. On `/v1/admin/*` an agent key is let through for `GET` and `HEAD` only, and it exists so an agent
 can investigate (a suspicious sign-in is diagnosed by its address and device), and the key is
 minted by the same operator who can read the log. Scoping the fields out would need a second
 response shape per route and would make the agent's diagnoses worse; the cost is that a leaked
