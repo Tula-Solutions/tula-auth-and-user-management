@@ -888,7 +888,7 @@ async function finish(
     client: state.client,
     profile: await Sessions.profileNameFor(deps, tenant, state),
     amr: mergeAuthMethods([], state.amr ?? []),
-    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    signUp: state.accountCreated === true,
     ipAddress: cleanOrigin(context).ipAddress,
   })
   const tokens = await Sessions.create(deps, tenant, {
@@ -923,7 +923,7 @@ async function finish(
     })
     throw new AuthError('flow.invalid_step')
   }
-  if (attempt.kind === 'sign_up' || state.accountCreated === true) {
+  if (state.accountCreated === true) {
     // A verified address on an `auto_join` domain of an organization (ADR 0065, "Verified
     // domains"): the membership, its audit entry and its event are written here, as part of
     // the sign-up, and never for a sign-in. Cannot throw: a sign-up that has a session is
@@ -3254,7 +3254,17 @@ export async function verifyEmail(
     ...required,
     passwordExpired: false,
   })
-  return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
+  // `accountCreated` is what `finish` reads for "this attempt made the account", for every kind.
+  return advance(
+    deps,
+    tenant,
+    attempt,
+    { ...proven(state, 'email'), accountCreated: true },
+    userId,
+    next,
+    required,
+    context
+  )
 }
 
 /**
