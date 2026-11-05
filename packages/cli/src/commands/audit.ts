@@ -23,18 +23,22 @@ function instant(flag: string, value: unknown): string | undefined {
 }
 
 /**
- * Split streamed text into whole records. A record ends at a line break outside a CSV quote;
- * NDJSON has no raw line break inside a record, so the same rule serves both.
+ * Split streamed text into whole records. A CSV record ends at a line break outside a quote;
+ * NDJSON has no raw line break inside a record, so every newline ends one (a stray `"` in a
+ * JSON string must not join records).
  */
-function takeRecords(buffer: string): { records: string[]; rest: string } {
+function takeRecords(
+  buffer: string,
+  format: AuditExportFormat
+): { records: string[]; rest: string } {
   const records: string[] = []
   let start = 0
   let quotes = 0
   for (let i = 0; i < buffer.length; i += 1) {
     const char = buffer[i]
-    if (char === '"') {
+    if (char === '"' && format === 'csv') {
       quotes += 1
-    } else if (char === '\n' && quotes % 2 === 0) {
+    } else if (char === '\n' && (format === 'ndjson' || quotes % 2 === 0)) {
       records.push(buffer.slice(start, i).replace(/\r$/, ''))
       start = i + 1
     }
@@ -106,11 +110,11 @@ async function drain(
   try {
     const decoder = new TextDecoder()
     for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-      const taken = takeRecords(buffer + decoder.decode(chunk, { stream: true }))
+      const taken = takeRecords(buffer + decoder.decode(chunk, { stream: true }), format)
       buffer = taken.rest
       emit(taken.records)
     }
-    emit(takeRecords(`${buffer}\n`).records.filter(Boolean))
+    emit(takeRecords(`${buffer}\n`, format).records.filter(Boolean))
   } catch {
     failed = true
   }
