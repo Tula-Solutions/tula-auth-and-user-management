@@ -147,3 +147,9 @@ What the section above does not say (moved from `sdk.md`).
   `session.signOut()` that refreshes the router after the request has reached the server. Do
   not call `router.refresh()` for a sign-out before then: the cookies are still there.
 - A new page of the example gets an axe check in both colour schemes in `e2e/tests/nextjs/`.
+- Decision (TULA-157, H-295): the middleware's exemption of the route handler's path compares
+  the raw `nextUrl.pathname` to `config.path`, not `canonicalPath`. `nextUrl` already resolves
+  dot segments, so the only paths that differ are encoded or doubled-slash spellings
+  (`/api/%74ula/…`); those are not exempt and are protected like any route, which fails
+  closed. Widening the exemption to the canonical form would exempt spellings the router may
+  not send to the handler. A test pins it.
