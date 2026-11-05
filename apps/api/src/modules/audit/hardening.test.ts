@@ -75,3 +75,34 @@ describe('audit metadata allow-list (H-172)', () => {
     expect(await res.text()).not.toContain('secret-value')
   })
 })
+
+describe('concurrent exports (H-168)', () => {
+  test('a third export waits while two are open, and a finished one frees its slot', async () => {
+    // An empty log ends at the first pull, which a stream makes on creation: seed entries so
+    // the exports stay open until they are read.
+    for (let i = 0; i < 3; i++) {
+      await deps.activityLog.append(
+        Audit.entry(deps, TEST_TENANT, {
+          type: 'user.deleted',
+          actor: ACTOR,
+          target: { type: 'user', id: ACTOR.id },
+        })
+      )
+    }
+    const start = () =>
+      app.request('/v1/admin/audit-logs/export', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${SK}` },
+        body: JSON.stringify({ format: 'ndjson' }),
+      })
+    const open = [await start(), await start()]
+    expect(open.map((r) => r.status)).toEqual([200, 200])
+    const refused = await start()
+    expect(refused.status).toBe(429)
+    await open[0]?.text()
+    const again = await start()
+    expect(again.status).toBe(200)
+    await again.body?.cancel()
+    await open[1]?.body?.cancel()
+  })
+})
