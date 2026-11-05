@@ -756,7 +756,7 @@ describe('approving', () => {
     const maya = await createUser()
     const proposal = await propose(maya.id)
     const error = spyOn(logger, 'error').mockImplementation(() => undefined)
-    const finish = spyOn(deps.proposals, 'finish').mockRejectedValueOnce(new Error('down'))
+    const finish = spyOn(deps.proposals, 'finish').mockRejectedValue(new Error('down'))
     try {
       const res = await approve(proposal)
       expect(res.status).toBe(200)
