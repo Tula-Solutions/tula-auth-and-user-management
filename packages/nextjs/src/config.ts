@@ -198,6 +198,9 @@ function forwardedFor(hops: number): (request: Request) => string | null {
   }
 }
 
+/** Above this many trusted proxies, `trustedProxyHops` is more likely a mistake than a chain. */
+const MAX_PLAUSIBLE_PROXY_HOPS = 5
+
 function proxyHops(option: number | undefined): number {
   const variable = env('TULA_TRUSTED_PROXY_HOPS')
   const hops =
@@ -319,6 +322,15 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
   const hops = proxyHops(options.trustedProxyHops)
   const warn = warnOnce(options.onWarning)
+  if (hops > MAX_PLAUSIBLE_PROXY_HOPS) {
+    // Too many hops reads an entry the visitor wrote themselves (the header grows from the
+    // left), so the per-IP limit can be dodged. Said, not refused: a long chain is possible.
+    warn(
+      'large-proxy-hops',
+      `trustedProxyHops is ${hops}: that many proxies in front of this server is unusual, and ` +
+        'a count above the real one reads an address the visitor wrote. Check it.'
+    )
+  }
   // NODE_ENV, not a tier of ours: it is the one thing a Next.js server knows about where it
   // runs, and it only decides whether to say this. In development it would be noise.
   if (hops === 0 && !options.clientIp && env('NODE_ENV') === 'production') {

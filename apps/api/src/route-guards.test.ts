@@ -90,9 +90,6 @@ const NO_OWN_LIMIT: Record<string, string> = {
     'ends the session a refresh token or session cookie names: 256 random bits, so nothing can ' +
     'be guessed, and the only effect is the caller’s own sign-out. It must also keep working ' +
     'when a limiter is saturated: a user who cannot sign out stays signed in.',
-  'POST /v1/client/sessions/revoke-others':
-    'authenticated by the caller’s access token and takes no credential or body; it ends ' +
-    'sessions of the caller alone and is idempotent, so repeating it gains nothing.',
   'DELETE /v1/client/sessions/:sessionId':
     'authenticated by the caller’s access token and takes no credential; the id is a UUID of ' +
     'the caller’s own sessions (another user’s is the same 404), so nothing is guessable.',

@@ -302,6 +302,17 @@ describe('POST /v1/client/sessions/revoke-others', () => {
   })
 })
 
+describe('POST /v1/client/sessions/revoke-others rate limit', () => {
+  test('answers 429 past the per-IP limit', async () => {
+    const current = await signIn()
+    let last = 200
+    for (let i = 0; i <= STEP_UP_RATE_LIMIT; i++) {
+      last = (await call('POST', '/revoke-others', { accessToken: current.accessToken })).status
+    }
+    expect(last).toBe(429)
+  })
+})
+
 describe('client route group', () => {
   test('every /v1/client route shares the per-IP limit ahead of key resolution', async () => {
     for (let i = 0; i < CLIENT_RATE_LIMIT; i++) {
