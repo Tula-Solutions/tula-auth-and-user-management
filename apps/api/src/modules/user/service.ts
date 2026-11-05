@@ -135,6 +135,7 @@ export async function get(
  * @param userId - The access token's subject.
  * @returns The user, and whether they have a password (never the credential itself).
  * @throws NotFoundError when the account was deleted while its access token was still valid.
+ * @throws AuthError `auth.user_banned` when the account is banned.
  */
 export async function me(
   deps: Pick<Deps, 'users'>,
@@ -142,6 +143,10 @@ export async function me(
   userId: string
 ): Promise<CurrentUser> {
   const user = await requireUser(deps, scope, userId)
+  // A ban's revocation can fail after the ban is stored; this read must not outlive it.
+  if (user.bannedAt) {
+    throw new AuthError('auth.user_banned')
+  }
   const found = await Passwords.ofUser(deps, scope.environmentId, user)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
@@ -517,7 +522,27 @@ async function importRow(
   }
 }
 
-type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
+type RevocationDeps = Pick<
+  Deps,
+  'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids' | 'verificationTokens'
+>
+
+/**
+ * Consume the user's outstanding `email_addition` code (ADR 0059): a ban or an admin-set
+ * address ends the claim to add another one, which an unban must not bring back.
+ */
+async function consumeEmailAddition(
+  deps: Pick<Deps, 'verificationTokens' | 'clock'>,
+  scope: Scope,
+  userId: string
+): Promise<void> {
+  const pending = await deps.verificationTokens.findLatest(scope.environmentId, 'email_addition', {
+    userId,
+  })
+  if (pending && !pending.consumedAt) {
+    await deps.verificationTokens.consume(scope.environmentId, pending.id, deps.clock.now())
+  }
+}
 
 /**
  * Ban a user: they can no longer sign in or refresh, and every session ends now.
@@ -562,6 +587,7 @@ export async function ban(
   if (!user) {
     throw new NotFoundError()
   }
+  await consumeEmailAddition(deps, scope, userId)
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   return toUser(user)
 }
@@ -681,6 +707,9 @@ export async function remove(
   )
   switch (result.outcome) {
     case 'deleted':
+      // A sign-in that passed its checks before the first revocation may have stored a session
+      // since; the user is gone now, so no new one can follow this sweep.
+      await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
       return
     case 'last_manager':
       throw lastOrganizationManager(result.organizationIds)
@@ -919,7 +948,7 @@ async function replacePassword(
  * @throws ConflictError when another user of the environment has the address.
  */
 export async function setEmail(
-  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config'>,
+  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config' | 'verificationTokens'>,
   scope: Scope,
   userId: string,
   email: string,
@@ -960,6 +989,7 @@ export async function setEmail(
   if (stored === 'taken') {
     throw new ConflictError({ message: 'A user with this email already exists.' })
   }
+  await consumeEmailAddition(deps, scope, userId)
   return toUser(stored)
 }
 
