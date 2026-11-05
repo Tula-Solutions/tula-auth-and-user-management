@@ -1322,17 +1322,16 @@ describe('password reset', () => {
       }
     }
 
-    test('a start sends no code and answers as it does for an unknown address', async () => {
+    test('a start sends no email at all and answers as it does for an unknown address', async () => {
       await registered()
       const unknown = await startReset('nobody@northline.app')
-      const unknownSubject = deps.mailer.last().subject
       deps.clock.advance(Verification.RESEND_COOLDOWN)
       const restore = manage()
       try {
+        const sent = deps.mailer.outbox.length
         const started = await startReset()
         await Notices.settled()
-        expect(deps.mailer.last().subject).toBe(unknownSubject)
-        expect(deps.mailer.last().text).not.toMatch(/\b\d{6}\b/)
+        expect(deps.mailer.outbox.length).toBe(sent)
         expect(started.attempt.step.status).toBe(unknown.attempt.step.status)
         expect(started.attempt.kind).toBe(unknown.attempt.kind)
       } finally {
