@@ -58,8 +58,6 @@ const idp = {
   namedIssuer: null as string | null,
   /** The authorization endpoint its discovery document names; its own `/authorize` when `null`. */
   authorizationEndpoint: null as string | null,
-  tokenEndpoint: null as string | null,
-  jwksUri: null as string | null,
   keys: [] as { privateKey: CryptoKey; jwk: JWK }[],
   /** Index of the key that signs. */
   signer: 0,
@@ -99,8 +97,8 @@ beforeAll(async () => {
         return Response.json({
           issuer: idp.namedIssuer ?? idp.base,
           authorization_endpoint: idp.authorizationEndpoint ?? `${idp.base}/authorize`,
-          token_endpoint: idp.tokenEndpoint ?? `${idp.base}/token`,
-          jwks_uri: idp.jwksUri ?? `${idp.base}/jwks`,
+          token_endpoint: `${idp.base}/token`,
+          jwks_uri: `${idp.base}/jwks`,
         })
       }
       if (pathname === '/jwks') {
@@ -185,8 +183,6 @@ beforeEach(async () => {
   Object.assign(idp, {
     namedIssuer: null,
     authorizationEndpoint: null,
-    tokenEndpoint: null,
-    jwksUri: null,
     signer: 0,
     published: [0],
     jwksFetches: 0,
@@ -664,18 +660,6 @@ describe('the ID token', () => {
       'sso.provider_error'
     )
   })
-
-  test.each([
-    ['token_endpoint', 'tokenEndpoint'],
-    ['jwks_uri', 'jwksUri'],
-  ] as const)(
-    'a discovery document whose %s is on another origin is refused (TULA-157, H-209)',
-    async (_n, field) => {
-      idp[field] = 'https://evil.test/x'
-      const { sso } = await started()
-      expect(((await sso.json()) as { code: string }).code).toBe('sso.provider_error')
-    }
-  )
 
   test('a discovery document with an authorization endpoint that is no URL is a provider error, not a 500', async () => {
     idp.authorizationEndpoint = 'not a url'

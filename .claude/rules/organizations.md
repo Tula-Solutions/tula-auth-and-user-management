@@ -264,10 +264,11 @@ this file under "Area rules" and does not repeat it.
 - Decision (TULA-157, H-006) / H-246: nothing to build. `env.ts` already requires
   `REDIS_URL` outside the `local` tier, and the replay guard is run against FakeRedis and
   real Redis by `adapters/proof-replay.suite.ts`.
-- Decision (TULA-157, H-209): **changed**. Discovery's `token_endpoint` and `jwks_uri` must
-  share the issuer's origin. Caveat: an IdP that serves them elsewhere (Google Workspace:
-  `accounts.google.com` vs `oauth2.googleapis.com`) is refused as `discovery_failed`; use
-  its OAuth provider entry, or relax the rule if that connection type is wanted.
+- Decision (TULA-157, H-209): **not pinned**. Discovery's `token_endpoint` and `jwks_uri` are
+  not required to share the issuer's origin: Google Workspace serves them on `googleapis.com`
+  under the issuer `accounts.google.com`, and a strict rule would refuse it. The endpoints are
+  set by an administrator and fetched only through `Outbound`. If a pin is ever needed, add
+  a per-connection allow-list of origins, not a same-origin rule.
 - Decision (TULA-157, H-034): **changed**. An ID token with several audiences needs an
   `azp` equal to the client id (OIDC Core 3.1.3.7).
 - Decision (TULA-157, H-035): **changed**. An unknown `kid` refetches the key set only if

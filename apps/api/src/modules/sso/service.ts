@@ -369,12 +369,6 @@ async function discover(
   ) {
     throw refused('discovery', 'document', 'discovery_failed')
   }
-  // The server calls these with a secret and trusts keys from them: they stay where the issuer is.
-  // The authorization endpoint is only a redirect for the browser, so it may live elsewhere.
-  const origin = URL.parse(issuer)?.origin
-  if (!origin || URL.parse(t)?.origin !== origin || URL.parse(j)?.origin !== origin) {
-    throw refused('discovery', 'endpoint_origin', 'discovery_failed')
-  }
   return { issuer: named, authorizationEndpoint: a, tokenEndpoint: t, jwksUri: j }
 }
 
