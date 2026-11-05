@@ -596,6 +596,7 @@ export async function verifySaml(
     acsUrl,
     requestId,
     idpEntityId: saml.idpEntityId,
+    replayScope: `${connection.environmentId}:${connection.id}`,
     certificates: saml.certificates.map((c) => c.pem),
   })
   if (!verdict.ok) {

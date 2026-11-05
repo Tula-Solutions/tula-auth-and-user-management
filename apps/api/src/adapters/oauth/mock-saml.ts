@@ -51,6 +51,8 @@ export interface MockSamlOptions {
   key?: keyof typeof MOCK_SAML_KEYS
   /** The assertion's `ID`; fixed by a test that replays one. */
   assertionId?: string
+  /** How long the assertion lives, in ms; default 5 minutes. A test of the longest life accepted. */
+  lifetimeMs?: number
   failure?: MockSamlFailure
 }
 
@@ -98,7 +100,7 @@ export function buildMockSamlResponse(options: MockSamlOptions): string {
   const now = options.now.getTime()
   const e = escapeHtml
   const notBefore = f === 'not_yet_valid' ? now + 600_000 : now - 60_000
-  const notOnOrAfter = f === 'expired' ? now - 600_000 : now + 300_000
+  const notOnOrAfter = f === 'expired' ? now - 600_000 : now + (options.lifetimeMs ?? 300_000)
   const requestId = f === 'wrong_in_response_to' ? '_other' : options.requestId
   const inResponseTo =
     requestId && f !== 'missing_in_response_to' ? ` InResponseTo="${e(requestId)}"` : ''
