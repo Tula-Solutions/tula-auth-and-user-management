@@ -15,7 +15,7 @@ import {
   testSignInAllowed,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
+import { AuthError, InternalError, RateLimitError, ServiceException } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { captureMail, type MailCapture } from '~/lib/captured-mail'
 import { randomToken } from '~/lib/crypto'
@@ -243,10 +243,14 @@ async function admit(deps: Deps, tenant: Tenant, actor: Actor): Promise<void> {
   if (!(await allowed(deps, tenant))) {
     throw new AuthError('auth.forbidden', { reason: 'test_sign_in_disabled' })
   }
+  // Every route admits an authenticated credential: a missing id would put all of them in one bucket.
+  if (!actor.id) {
+    throw new InternalError({ internalMessage: 'sign-in test actor has no id' })
+  }
   const hour = 3_600_000
   const limits: [key: string, limit: number, windowMs: number][] = [
     // The credential that asked: a key's id, or a dashboard session's. Ids only.
-    [`sign_in_test:by:${actor.type}:${actor.id ?? 'none'}`, SIGN_IN_TESTS_PER_KEY_PER_HOUR, hour],
+    [`sign_in_test:by:${actor.type}:${actor.id}`, SIGN_IN_TESTS_PER_KEY_PER_HOUR, hour],
     [`sign_in_test:env:${tenant.environmentId}`, SIGN_IN_TESTS_PER_ENVIRONMENT_PER_HOUR, hour],
     [`sign_in_test:run:${tenant.environmentId}`, 1, SIGN_IN_TEST_RUN_WINDOW_MS],
   ]

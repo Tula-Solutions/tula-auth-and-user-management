@@ -63,6 +63,12 @@ describe('parseEnv', () => {
     expect(env.TRUST_PROXY).toBe(true)
   })
 
+  test('rejects a CORS_ORIGINS entry that is not an origin', () => {
+    for (const bad of ['*', 'https://a.test/', 'https://a.test/app', 'HTTPS://A.TEST']) {
+      expect(() => parseEnv({ ...base, CORS_ORIGINS: bad })).toThrow()
+    }
+  })
+
   test('requires ENVIRONMENT instead of defaulting to local', () => {
     expect(invalidVars({ ...base, ENVIRONMENT: undefined })).toEqual(['ENVIRONMENT'])
   })

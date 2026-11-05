@@ -1,3 +1,4 @@
+import { WebOriginSchema } from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** Deployment tiers. Real side effects (email, breach API) are gated on these, never on NODE_ENV. */
@@ -28,6 +29,13 @@ const list = z
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
   )
+
+/**
+ * `CORS_ORIGINS`: a list of origins. An entry a browser's `Origin` header could never equal
+ * (a path, a trailing slash, a wildcard, uppercase) would silently allow nothing, or be read
+ * as something wider than meant, so boot fails instead (same rule as `urls.allowedOrigins`).
+ */
+const originList = list.pipe(z.array(WebOriginSchema))
 
 /** `true` / `1` / `yes` (any case) is true; anything else, including unset, is false. */
 const flag = z
@@ -198,7 +206,7 @@ const fields = z.object({
    * Browser origins, comma-separated. They are allowed for `/v1/admin/*`, and are the default
    * `urls.allowedOrigins` of an environment that has saved no settings of its own (ADR 0018).
    */
-  CORS_ORIGINS: list,
+  CORS_ORIGINS: originList,
   /**
    * Trust `X-Forwarded-For` for the client IP. Enable only behind a proxy that overwrites the
    * header: otherwise any client can pick its own rate-limit bucket.

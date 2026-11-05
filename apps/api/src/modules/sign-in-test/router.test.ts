@@ -10,7 +10,7 @@ import {
 } from '@tula-tech/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import type { Tenant } from '~/dependencies'
-import { ServiceUnavailableError } from '~/exceptions'
+import { InternalError, ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import * as Flows from '~/modules/flow/service'
@@ -609,6 +609,17 @@ describe('a step that fails', () => {
     expect(signUp).not.toHaveBeenCalled()
     reportEntry.mockRestore()
     signUp.mockRestore()
+  })
+})
+
+describe('an actor with no id', () => {
+  test('is refused rather than sharing one rate-limit bucket', async () => {
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    await expect(
+      SignInTests.run(deps, tenantOf(DEV, agentKeyId), { ...TEST_ACTOR, id: null })
+    ).rejects.toBeInstanceOf(InternalError)
+    expect(hit).not.toHaveBeenCalled()
+    hit.mockRestore()
   })
 })
 

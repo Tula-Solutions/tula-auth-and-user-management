@@ -685,7 +685,12 @@ What the load balancer has to do:
 - **No stickiness is needed.** Any request may go to any instance: sessions and attempts are in
   the database, limits and revocations in Redis.
 - **Overwrite `X-Forwarded-For`** with the address it saw (or append to a header it has
-  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry. That holds
+  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry, so
+  `TRUST_PROXY` assumes **exactly one** trusted proxy hop: with none a client writes its own
+  address, with two every client shows the inner proxy's address and they share one rate-limit
+  bucket (the API logs a warning at boot when it is on outside `local`). With `TRUST_PROXY` on, a request whose
+  address cannot be resolved (the proxy sent none) is refused with `service.unavailable` in `staging` and
+  `prod` rather than counted in one shared bucket. That holds
   for the edge proxy, the one clients connect to: a proxy that itself sits behind another
   (a CDN, a cloud load balancer) sees only that one's address and scheme, so there use its
   real-IP handling (in nginx, `set_real_ip_from` with the outer proxy's address and
@@ -705,6 +710,15 @@ through Redis and are immediate.
 
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
+
+**How long a revoked or banned user's access token still works.** An access token is a
+signed JWT checked without a database lookup, so it is valid until it expires (60 seconds by
+default, at most 15 minutes by a profile's `accessTokenTtl`). Ending a session puts its id on
+the revoked-session list for that longest lifetime, and the API checks the list, so a revoked
+session is refused at once. A server that verifies tokens offline (`@tula-tech/nextjs`'s
+interceptor, or your own JWKS check) does not read the list: for it, a ban, a deletion or a
+revocation takes effect when the token expires. Use a stateful session profile where that
+window is too long.
 
 ### The webhook worker as its own service
 

@@ -180,6 +180,25 @@ describe('an agent key reads what a secret key reads', () => {
     expect(client.status).toBe(401)
   })
 
+  // H-139: a route added under /v1/agent/ without agentKey() would be open to a secret key or
+  // to no key at all; the walk reads the route table, so a new route cannot be forgotten.
+  for (const { method, path } of routes.filter((route) => route.path.startsWith('/v1/agent/'))) {
+    test(`${method} ${path} is behind agentKey(): a secret key and no key are refused`, async () => {
+      const { app } = await setup()
+      const refused: Array<Record<string, string>> = [
+        { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' },
+        { 'content-type': 'application/json' },
+      ]
+      for (const headers of refused) {
+        const res = await app.request(concrete(path), { method, headers, body: '{}' })
+        expect(res.status).toBe(401)
+        expect(await code(res)).toBe('auth.invalid_key')
+      }
+      const ok = await app.request(concrete(path), init(method, AGENT_KEY))
+      expect(ok.status).not.toBe(401)
+    })
+  }
+
   test('a secret key is not an agent key: the agent’s group refuses it', async () => {
     const { app } = await setup()
     const res = await app.request('/v1/agent/proposals', init('POST', SECRET_KEY))

@@ -210,6 +210,12 @@ describe('revokeApiKey', () => {
     ).rejects.toBeInstanceOf(ConflictError)
   })
 
+  test('refuses to revoke itself when the id is written in uppercase', async () => {
+    await expect(
+      Project.revokeApiKey(deps, dev, dev.apiKeyId.toUpperCase(), TEST_ACTOR)
+    ).rejects.toBeInstanceOf(ConflictError)
+  })
+
   test('reports an unknown id as not found', async () => {
     await expect(
       Project.revokeApiKey(deps, dev, '00000000-0000-7000-8000-0000000000ff', TEST_ACTOR)
