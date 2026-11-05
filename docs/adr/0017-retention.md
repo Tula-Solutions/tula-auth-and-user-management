@@ -370,6 +370,10 @@ they did.
   without an error.
 - A session's row is gone 30 days after it ended, but the audit entries about it
   (`session.created`, `session.revoked`) stay and still name its id.
+- Decision (TULA-157, H-109): losing refresh-reuse detection once a session's row is
+  deleted is accepted. Detection needs the ended session; by 30 days after it ended it
+  expired long before, so no refresh token of it can be presented and no principal is
+  affected. Recommendation: keep `ENDED_SESSION_RETENTION` as it is.
 - The retention periods are constants, the same for every environment. Per-environment
   settings arrive in 1.2; these are candidates.
 - The lock occupies one of the instance's ten pooled connections for the length of a run.
