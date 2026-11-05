@@ -97,6 +97,10 @@ export interface VerificationTokenStore {
   ): Promise<VerificationTokenRecord | null>
 
   /**
+   * Find a token by its link hash, whatever its state: used and expired tokens come back too.
+   * `Verification.verifyLink` is the one caller and makes those checks itself (`link-lookup.test.ts`
+   * fails for a second one).
+   *
    * @param environmentId - The environment to look in.
    * @param linkTokenHash - SHA-256 of the presented link token.
    * @returns The token, or `null`.
