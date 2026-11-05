@@ -378,13 +378,29 @@ class TransportTest {
 
     @Test
     fun `the base address is the origin and the path, with no trailing slash`() {
-        assertEquals("https://auth.example.com", normalizeBaseUrl("HTTPS://Auth.Example.com/"))
-        assertEquals("https://auth.example.com/tula", normalizeBaseUrl("https://auth.example.com/tula///"))
-        assertEquals("http://127.0.0.1:4318/w/abc", normalizeBaseUrl("http://127.0.0.1:4318/w/abc"))
+        assertEquals("https://auth.example.com", normalizeBaseUrl("HTTPS://Auth.Example.com/", false))
+        assertEquals("https://auth.example.com/tula", normalizeBaseUrl("https://auth.example.com/tula///", false))
+        assertEquals("http://127.0.0.1:4318/w/abc", normalizeBaseUrl("http://127.0.0.1:4318/w/abc", false))
         assertEquals(
             "tula.refresh.https://auth.example.com|$TEST_KEY",
             TulaClient.storageKey("https://auth.example.com/", TEST_KEY),
         )
+    }
+
+    @Test
+    fun `plain http is for this machine only, unless it is allowed`() {
+        for (url in listOf("http://auth.example.com", "http://10.0.2.2:3003", "http://evil.localhost.example.com")) {
+            val failure = assertFailsWith<IllegalArgumentException> { normalizeBaseUrl(url, false) }
+            assertTrue(failure.message!!.contains("plain http"), failure.message)
+        }
+        for (url in listOf("http://localhost:3003", "http://127.0.0.1:1", "http://[::1]:3003", "http://app.localhost", "https://auth.example.com")) {
+            normalizeBaseUrl(url, false)
+        }
+        assertEquals("http://10.0.2.2:3003", normalizeBaseUrl("http://10.0.2.2:3003", true))
+        assertFailsWith<IllegalArgumentException> {
+            TulaClient(TEST_KEY, "http://10.0.2.2:3003", MemoryTokenStorage())
+        }
+        TulaClient(TEST_KEY, "http://10.0.2.2:3003", MemoryTokenStorage(), allowInsecureHttp = true).close()
     }
 
     @Test

@@ -322,6 +322,8 @@ export function createTransport(options: TransportOptions): Transport {
             headers,
             body: input.body === undefined ? undefined : JSON.stringify(input.body),
             signal: controller.signal,
+            // Never follow: the publishable-key header would travel on to wherever it points.
+            redirect: 'manual',
             // Only a browser client has a cookie to send (and to receive, when a flow
             // completes). The option is left out otherwise: some edge runtimes reject it.
             ...(options.client === 'web' && { credentials: 'include' as const }),
@@ -380,11 +382,13 @@ export function createTransport(options: TransportOptions): Transport {
     if (!response.ok) {
       throw errorFromResponse(response, payload, options.messages())
     }
-    if (payload === null) {
+    // Every success body is a JSON object (or a 204): anything else is not this API's answer.
+    // Unreadable keeps the HTTP status; readable but wrong-shaped is 0, like the callers' own checks.
+    if (response.status !== 204 && !isRecord(payload)) {
       throw new TulaError({
         code: 'response.invalid',
         message: formatMessage('response.invalid', { messages: options.messages() }),
-        status: response.status,
+        status: payload === null ? response.status : 0,
       })
     }
     return payload as Operations[Id]['response']
