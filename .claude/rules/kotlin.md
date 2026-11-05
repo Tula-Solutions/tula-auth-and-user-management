@@ -467,3 +467,7 @@ that differs says why.
   it with an address of its own. Plain `http`
   is allowed to `127.0.0.1`, `localhost` and `10.0.2.2` only, and it does not set
   `FLAG_SECURE`, which is an app's choice and never the library's.
+  **The generated `verifySignInLink` operation is unused by the native clients** (TULA-157,
+  H-336): an emailed link is opened by the host. A client that adds it pairs the link's token
+  with an in-memory `attemptId` and link binding of the attempt that asked for it, as
+  `packages/expo/src/email-link.ts` does, and never with one read from storage.

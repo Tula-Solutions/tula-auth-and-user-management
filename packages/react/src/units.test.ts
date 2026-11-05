@@ -54,6 +54,12 @@ describe('safeUrl', () => {
     expect(seen).toEqual(['/app'])
   })
 
+  test('go() hands a router the normalised path, not the string as written (H-293)', () => {
+    const seen: string[] = []
+    go(' /a/../app?x=1#h', (to) => seen.push(to))
+    expect(seen).toEqual(['/app?x=1#h'])
+  })
+
   test('undefined is refused, and go() does nothing for it', () => {
     expect(safeUrl(undefined, page)).toBeNull()
     expect(go(undefined, () => undefined)).toBe(false)

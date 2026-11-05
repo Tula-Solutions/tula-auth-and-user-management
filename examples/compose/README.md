@@ -17,7 +17,9 @@ sheet); whether the sheet then works needs an environment that has registered th
 names it, which nobody has set up. Google's button is drawn only when the app is also told
 the provider's client id (`-e tula_google_client_id …`). **No provider that needs a browser
 is offered**: the app's manifest claims no redirect URL and its activity wires no
-`CustomTabsBrowserSession`.
+`CustomTabsBrowserSession`. So the template **cannot receive a provider's return** either
+(TULA-157, H-338): an app that offers a provider claims the redirect URL in its manifest
+and passes the incoming intent's URL to `CustomTabsBrowserSession.returned()`.
 
 It is **not a workspace package**: there is no `package.json` here, and the directory is
 excluded from the Docker build context. It is a module (`:compose-example`) of the Gradle
@@ -45,6 +47,11 @@ adb shell am start -n dev.tula.example.compose/.MainActivity \
 `10.0.2.2` is an emulator's name for the machine it runs on. Plain `http` is allowed to
 `127.0.0.1`, `localhost` and `10.0.2.2` only (`res/xml/network_security_config.xml`);
 anything else has to be `https`.
+
+**Drop that domain-config when you ship** (TULA-157, H-334): the template's
+`res/xml/network_security_config.xml` allows cleartext to those three hosts for development.
+A shipped app removes the file and its `android:networkSecurityConfig` attribute, so that
+no cleartext is allowed to anything.
 
 ## What it shows
 

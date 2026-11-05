@@ -244,6 +244,10 @@ export async function resolveSaml(
         certificates: input.certificates,
       }
     }
+    // The same caps as the manual input (contract `sso-connection`): metadata is the other way in.
+    if (values.idpEntityId.length > 1024 || values.ssoUrl.length > 2048) {
+      throw new AuthError('sso.saml_invalid', { reason: 'too_long' })
+    }
     // The browser is sent here: plain http is for the local tier only, as for any address we call.
     const scheme = URL.canParse(values.ssoUrl) ? new URL(values.ssoUrl).protocol : null
     if (scheme === null) {

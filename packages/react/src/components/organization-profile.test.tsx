@@ -396,6 +396,22 @@ describe('<OrganizationProfile>: General', () => {
     expect(w.api.calls(ORG_ROUTE.active)[0]?.body).toEqual({ organizationId: B })
   })
 
+  test('the fallback organization comes from the reloaded list, not the one before (H-294)', async () => {
+    const STALE = { ...GLOBEX, id: 'org_stale', name: 'Initech', slug: 'initech' }
+    const w = adminWorld({ config: { ...ORGS_ON, personalAccount: false } })
+    w.organizations = [ACME, STALE, GLOBEX]
+    w.api.on(`DELETE ${ORG_ROUTE.member(A, 'user_1')}`, () => {
+      // Leaving Acme also cost the user Initech.
+      w.organizations = [GLOBEX]
+      return new Response(null, { status: 204 })
+    })
+    w.mount(<OrganizationProfile />)
+    await w.user.click(await screen.findByRole('button', { name: 'Leave organization' }))
+    await w.user.click(await screen.findByRole('button', { name: 'Yes, leave' }))
+    expect(await screen.findByText('You left Acme.')).toBeTruthy()
+    expect(w.api.calls(ORG_ROUTE.active)[0]?.body).toEqual({ organizationId: B })
+  })
+
   test('the last manager cannot leave: the reason is shown and the page stays', async () => {
     const w = adminWorld()
     w.api.on(`DELETE ${ORG_ROUTE.member(A, 'user_1')}`, () =>

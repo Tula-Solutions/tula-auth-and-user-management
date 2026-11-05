@@ -217,7 +217,9 @@ public func set(_ key: String, _ value: String) async throws
 
 _func_, defined in `native/swift/Sources/TulaAuth/TokenStorage.swift`
 
-Remove what is under `key`; nothing there is not an error. Throws `KeychainError` when the Keychain refuses.
+Remove what is under `key`; nothing there is not an error. A refusal is asked again twice,
+shortly after (a token left on the device after a sign-out is the harm). Throws
+`KeychainError` with the last refusal.
 
 ```swift
 public func remove(_ key: String) async throws

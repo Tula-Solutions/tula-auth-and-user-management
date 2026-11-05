@@ -147,3 +147,24 @@ What the section above does not say (moved from `sdk.md`).
   `session.signOut()` that refreshes the router after the request has reached the server. Do
   not call `router.refresh()` for a sign-out before then: the cookies are still there.
 - A new page of the example gets an axe check in both colour schemes in `e2e/tests/nextjs/`.
+- Decision (TULA-157, H-295): the middleware's exemption of the route handler's path compares
+  the raw `nextUrl.pathname` to `config.path`, not `canonicalPath`. `nextUrl` already resolves
+  dot segments, so the only paths that differ are encoded or doubled-slash spellings
+  (`/api/%74ula/…`); those are not exempt and are protected like any route, which fails
+  closed. Widening the exemption to the canonical form would exempt spellings the router may
+  not send to the handler. A test pins it.
+- Decision (TULA-157, H-287): the handler clears the three session cookies only when the
+  upstream sign-out answered 2xx; on a 401 or any other error they stay and the error goes to
+  the client. A failed sign-out must not make the browser forget a session the server still
+  holds (the user could not retry it); a 401 means the session is already dead and the stale
+  cookies are dropped by the next failed refresh. Recorded, not changed.
+- Decision (TULA-157, H-298): the sealed `x-tula-auth` header gets no timestamp or nonce of
+  its own. It is an HMAC over the claims bound to a digest of the session cookie, so a replay
+  needs that cookie, and the claims' own `exp` (about 60 s) bounds how long it holds. A
+  sealed-at time would only matter for an app that forwards request headers to an untrusted
+  party, and that party would hold the cookie too. Recorded, not changed.
+- Decision (TULA-157, H-299): the seal key stays `HMAC(key = "tula-nextjs-auth-v1:" + secret key)`
+  with no KDF. HMAC takes a key of any length and the secret key is high-entropy random, so
+  the fixed prefix is the domain separation that keeps the key from being used for anything
+  else; HKDF would add a step with no strength to gain. Changing it would invalidate every
+  header in flight. Recorded, not changed.

@@ -184,6 +184,9 @@ export interface SessionManager {
   /**
    * Ends the session here, in other tabs and on the server. When the server could not be told
    * it throws, the client is signed out all the same, and calling it again tells the server.
+   * A non-browser client holds the undelivered tokens (up to eight) in memory only (persisting it would put a
+   * token in storage after sign-out), so an app restart before the retry loses them and the
+   * server's sessions live until it expires.
    */
   signOut(): Promise<void>
   /** @param issued - Tokens a completed flow returned. */
@@ -805,6 +808,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function runRefresh(explicit: boolean): Promise<string | null> {
+    // A sign-out is ending the session: a browser's cookie is still valid until its request
+    // lands, so a refresh now would bring the session back. Nothing is asked.
+    if (signingOut > 0) {
+      return null
+    }
     // An explicit `refresh()` is the application (or the user) asking now: it always asks,
     // and gets the fresh answer. Only the implicit refreshes wait out a `Retry-After`.
     if (!explicit && backoff && environment.now() < backoff.until) {

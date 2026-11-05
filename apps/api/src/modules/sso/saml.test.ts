@@ -11,7 +11,9 @@ import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import { samlRedirectUrl } from '~/modules/sso/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
+import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import {
   createTestDeps,
   seedApiKey,
@@ -319,6 +321,11 @@ describe('SAML metadata route', () => {
     expect(xml).toContain('nameid-format:emailAddress')
   })
 
+  test('a disabled connection is a 404, a draft is still served (TULA-157, H-028)', async () => {
+    await SsoConnections.update(deps, TENANT, connectionId, { status: 'disabled' }, TEST_ACTOR)
+    expect((await app.request(new URL(spEntityId).pathname)).status).toBe(404)
+  })
+
   test('an unknown connection is a 404', async () => {
     const res = await app.request(
       new URL(spEntityId).pathname.replace(connectionId, Bun.randomUUIDv7())
@@ -411,5 +418,23 @@ describe('the mock identity provider (SAML)', () => {
     })
     expect(res.status).toBe(200)
     expect((await res.text()).match(/<ds:X509Certificate>/g)).toHaveLength(2)
+  })
+})
+
+describe('the AuthnRequest escapes what it embeds (TULA-157, H-036)', () => {
+  test('a hostile request id and IdP URL cannot add an attribute or an element', () => {
+    const hostile = '"/><evil x="1'
+    const connection = {
+      id: Bun.randomUUIDv7(),
+      environmentId: TENANT.environmentId,
+      saml: { ssoUrl: `https://idp.example/sso?a=${hostile}`, idpEntityId: 'x', certificates: [] },
+    } as unknown as SsoConnectionRecord
+    const url = new URL(samlRedirectUrl(deps, connection, { requestId: hostile, relayState: 's' }))
+    const xml = inflateRawSync(
+      Buffer.from(url.searchParams.get('SAMLRequest') ?? '', 'base64')
+    ).toString()
+    expect(xml).not.toContain('<evil')
+    expect(xml).toContain('ID="&quot;/&gt;&lt;evil x=&quot;1"')
+    expect(xml.match(/<samlp:AuthnRequest/g)).toHaveLength(1)
   })
 })

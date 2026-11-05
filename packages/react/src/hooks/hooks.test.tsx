@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, mock, test } from 'bun:test'
+import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { renderToString } from 'react-dom/server'
@@ -109,6 +109,37 @@ describe('the headless flow hooks', () => {
     // Core reports a throwing fetch as a network failure; either way the detail is not shown.
     expect(latest.reset.error?.message).not.toContain('secret detail')
     expect(['network.failed', 'internal']).toContain(latest.reset.error?.code ?? '')
+  })
+
+  test('a flow that finishes beginning after reset() is discarded, not leaked (H-292)', async () => {
+    const w = world()
+    let release: (response: Response) => void = () => undefined
+    w.api.on(ROUTE.signUp, () => new Promise<Response>((resolve) => (release = resolve)))
+    const discarded = jest.fn()
+    const start = w.client.signUp.start.bind(w.client.signUp)
+    spyOn(w.client.signUp, 'start').mockImplementation(async (...args) => {
+      const created = await start(...args)
+      return {
+        ...created,
+        discard: () => {
+          discarded()
+          created.discard()
+        },
+      } as typeof created
+    })
+    let latest = undefined as unknown as Flows
+    w.mount(<Probe onValue={(value) => (latest = value)} />)
+    let pending: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      pending = latest.signUp.start({ email: 'maya@northline.app', password: 'x' })
+      await Promise.resolve()
+    })
+    act(() => latest.signUp.reset())
+    await act(async () => {
+      release(await started('sign_up', { status: 'needs_email_verification' }))
+      await pending
+    })
+    expect(discarded).toHaveBeenCalledTimes(1)
   })
 
   test('a provider that is given another client starts every flow afresh', async () => {

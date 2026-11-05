@@ -596,6 +596,12 @@ describe('a forged header from the browser', () => {
     expect(overridden(response).get('cookie')).toBe('tula_session=sess-token')
   })
 
+  test('a differently spelled handler path is not exempt: it is protected like any route (H-295)', async () => {
+    const api = createFakeApi([signer], { secretKey: SECRET })
+    const response = await protect(api)(get('/api/%74ula/v1/client/me'))
+    expect(isNext(response)).toBe(false)
+  })
+
   test('a route the middleware does not cover ignores it: the signature is checked, not the presence', async () => {
     const api = createFakeApi([signer], { secretKey: SECRET })
     api.on('POST /v1/admin/sessions/verify', () => new Response(null, { status: 401 }))

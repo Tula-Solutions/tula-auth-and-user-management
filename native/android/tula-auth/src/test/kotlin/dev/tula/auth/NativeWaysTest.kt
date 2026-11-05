@@ -256,6 +256,16 @@ class NativeWaysTest {
             listOf(null, null, "oauth.access_denied"),
             read("$redirect#tula_error=oauth.access_denied").first?.parts(),
         )
+        // First wins for every name, not only the ticket (TULA-157, H-326): a second attempt
+        // id or error cannot override the first, which is what the binding check then judges.
+        assertEquals(
+            listOf("t", "first", null),
+            read("$redirect#tula_ticket=t&tula_attempt=first&tula_attempt=second").first?.parts(),
+        )
+        assertEquals(
+            listOf(null, null, "oauth.access_denied"),
+            read("$redirect#tula_error=oauth.access_denied&tula_error=oauth.other").first?.parts(),
+        )
 
         val unexpected = listOf(
             "$redirect/more#tula_ticket=t",

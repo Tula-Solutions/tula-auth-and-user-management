@@ -22,6 +22,7 @@ const expected: SamlExpectations = {
   acsUrl: ACS,
   requestId: REQUEST,
   idpEntityId: IDP,
+  replayScope: 'env_1:conn_1',
   certificates: [MOCK_SAML_KEYS.a.certificate, MOCK_SAML_KEYS.b.certificate],
 }
 const SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
