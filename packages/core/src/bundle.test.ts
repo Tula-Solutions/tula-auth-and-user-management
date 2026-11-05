@@ -175,9 +175,11 @@ import { join } from 'node:path'
  * message) added 27 bytes on top of that, to 19,721. The budget moved by exactly those, to 19,725.
  * The member setup-link client calls (`setupLinks`, `createSetupLink`, `revokeSetupLink`, Phase 4
  * review) added 42 bytes, to 19,763. The budget moved by exactly those, to 19,767.
+ * The refresh that waits out a sign-out (TULA-188, H-285) added 6 bytes, to 19,769. The budget
+ * moved by exactly those, to 19,773.
 
  */
-const GZIP_BUDGET_BYTES = 19_767
+const GZIP_BUDGET_BYTES = 19_773
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

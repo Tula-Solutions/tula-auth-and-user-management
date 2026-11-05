@@ -801,6 +801,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function runRefresh(explicit: boolean): Promise<string | null> {
+    // A sign-out is ending the session: a browser's cookie is still valid until its request
+    // lands, so a refresh now would bring the session back. Nothing is asked.
+    if (signingOut > 0) {
+      return null
+    }
     // An explicit `refresh()` is the application (or the user) asking now: it always asks,
     // and gets the fresh answer. Only the implicit refreshes wait out a `Retry-After`.
     if (!explicit && backoff && environment.now() < backoff.until) {
