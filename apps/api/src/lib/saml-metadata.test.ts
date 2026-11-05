@@ -122,4 +122,13 @@ describe('buildSpMetadata', () => {
       doc.getElementsByTagNameNS(md, 'SPSSODescriptor')[0]?.getAttribute('WantAssertionsSigned')
     ).toBe('true')
   })
+
+  test('escapes hostile values, so they cannot add an attribute or an element (H-036)', () => {
+    const hostile = '"/><evil x="1'
+    const xml = buildSpMetadata({ entityId: hostile, acsUrl: `https://sp.example/${hostile}` })
+    expect(xml).not.toContain('<evil')
+    const doc = new DOMParser().parseFromString(xml, 'text/xml')
+    expect(doc.getElementsByTagName('evil')).toHaveLength(0)
+    expect(doc.documentElement?.getAttribute('entityID')).toBe(hostile)
+  })
 })
