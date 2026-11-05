@@ -618,7 +618,10 @@ Migrations only move forward. Back up the database before upgrading.
 
 **First project and keys.** With your own database there is no Compose service to run the
 bootstrap scripts in; run them in the image with the runtime settings. The seed prints the
-environment ids, and each key is printed once:
+environment ids, and each key is printed once. The seed is a first-run bootstrap and nothing
+more: it makes a workspace named `Local`, a `Default project` and its development and
+production environments, and finds them again on a later run instead of making a second set.
+It reads nothing but `DATABASE_URL`, so run it against the database you mean (TULA-157, H-254):
 
 ```bash
 docker run --rm -e DATABASE_URL=postgres://tula_api:…@db:5432/tula tula-api bun run ../../packages/db/src/scripts/seed.ts
