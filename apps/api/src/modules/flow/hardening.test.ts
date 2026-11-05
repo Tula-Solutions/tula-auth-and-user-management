@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
 import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
+import * as Hooks from '~/modules/hook/service'
 import * as OrganizationDomains from '~/modules/organization-domain/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sso from '~/modules/sso/service'
@@ -98,6 +99,53 @@ describe('the sign-up organization join (H-083)', () => {
       expect(join).not.toHaveBeenCalled()
     } finally {
       join.mockRestore()
+    }
+  })
+})
+
+describe('the ban check at the end of a flow (H-087)', () => {
+  test('a ban that lands after the flow checks the user is refused by the session service', async () => {
+    const userId = deps.ids.next()
+    await deps.users.create(
+      {
+        id: userId,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: await Passwords.hash('correct horse battery staple'),
+      },
+      Audit.none('fixture')
+    )
+    const { attempt } = await Flows.signIn(deps, tenant, { identifier: 'maya@northline.app' }, web)
+    // The ban lands in the window between `finish`'s own steps and `Sessions.create`.
+    const before = spyOn(Hooks, 'beforeSession').mockImplementation(async () => {
+      await deps.users.setBanned(
+        tenant.environmentId,
+        userId,
+        deps.clock.now(),
+        deps.clock.now(),
+        Audit.none('fixture')
+      )
+      return 'none' as never
+    })
+    try {
+      const err = await Flows.submitPassword(
+        deps,
+        tenant,
+        { id: attempt.id, secret: attempt.attemptSecret },
+        'correct horse battery staple',
+        web
+      ).catch((e: unknown) => e)
+      expect((err as { code?: string }).code).toBe('auth.user_banned')
+    } finally {
+      before.mockRestore()
     }
   })
 })

@@ -898,6 +898,9 @@ async function finish(
     signUp: createdHere,
     ipAddress: cleanOrigin(context).ipAddress,
   })
+  // `finish` has no ban check of its own: `Sessions.create` owns the ban and the concurrent-session
+  // rule (ADR 0028), so a ban that lands after the flow's checks still ends here. Pinned by
+  // `hardening.test.ts` (H-087); keep that check if `Sessions.create` is refactored.
   const tokens = await Sessions.create(deps, tenant, {
     userId,
     client: state.client,
