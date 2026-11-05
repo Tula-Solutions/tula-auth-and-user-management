@@ -223,11 +223,12 @@ describe('ban / unban', () => {
     const user = await create()
     await Users.ban(deps, tenant, user.id, TEST_ACTOR)
     // A sign-in that passed its ban check just before the ban landed creates its session now.
-    const stray = await signIn(user.id)
+    // The session re-reads the ban after its insert and ends itself (H-095).
+    expect((await rejection(signIn(user.id))).code).toBe('auth.user_banned')
     await Users.unban(deps, tenant, user.id, TEST_ACTOR)
-    const err = await rejection(Sessions.refresh(deps, tenant, stray.refreshToken ?? ''))
-    expect(err.code).toBe('session.revoked')
-    expect(await deps.revokedSessions.has(stray.sessionId, deps.clock.now())).toBe(true)
+    expect(
+      await deps.sessions.listActiveByUser(tenant.environmentId, user.id, deps.clock.now())
+    ).toEqual([])
   })
 
   test.each([
