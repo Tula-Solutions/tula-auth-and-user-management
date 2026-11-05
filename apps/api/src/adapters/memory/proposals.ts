@@ -97,6 +97,11 @@ export class MemoryProposalStore implements ProposalStore {
     if (this.#records.has(record.id)) {
       throw new Error('duplicate proposal id')
     }
+    // Postgres holds this with a partial unique index (H-177): the loser gets the winner.
+    const waiting = await this.findPending(record.environmentId, record, record.createdAt)
+    if (record.status === 'pending' && waiting) {
+      return waiting
+    }
     this.#records.set(record.id, structuredClone(record))
     this.#activityLog.record(activity ? [activity] : [])
     return this.#seen(record, agents)
