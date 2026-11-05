@@ -612,6 +612,8 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
     const run = await tula(['approve', id], {}, 'yes')
     expect(run.code).toBe(0)
     expect(run.stdout).toContain('Operation      unban_user')
+    expect(run.stdout).toContain('Agent says     ')
+    expect(run.stdout).not.toContain('What it does')
     expect(run.stdout).toContain(`user ${userId} (maya@northline.app, Maya; already banned)`)
     expect(run.questions[0]).toContain('The user’s ban is lifted at once')
     expect(run.stdout).toContain('Approved and carried out.')
