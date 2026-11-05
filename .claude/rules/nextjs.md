@@ -153,3 +153,8 @@ What the section above does not say (moved from `sdk.md`).
   (`/api/%74ula/…`); those are not exempt and are protected like any route, which fails
   closed. Widening the exemption to the canonical form would exempt spellings the router may
   not send to the handler. A test pins it.
+- Decision (TULA-157, H-287): the handler clears the three session cookies only when the
+  upstream sign-out answered 2xx; on a 401 or any other error they stay and the error goes to
+  the client. A failed sign-out must not make the browser forget a session the server still
+  holds (the user could not retry it); a 401 means the session is already dead and the stale
+  cookies are dropped by the next failed refresh. Recorded, not changed.
