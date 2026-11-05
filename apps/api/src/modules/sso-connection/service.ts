@@ -85,7 +85,7 @@ export function samlUrls(
 
 /**
  * A fingerprint of everything a test sign-in exercises: the protocol, the provider's values,
- * the client, the role, the domains and the attribute mapping. A passing test is good for exactly the settings that
+ * the client, the role, the domains, the attribute mapping and the policy flags (`enforced`, `trustIdpMfa`, `breakGlassRole`). A passing test is good for exactly the settings that
  * hash to the value it stored, so any change to them is a reset with nothing to clear.
  * The client secret enters as its **sealed** form, which is different on every seal: saving the
  * same secret again also resets a passing test, by design (TULA-157, H-039).
@@ -104,6 +104,9 @@ export function fingerprint(
     | 'defaultRole'
     | 'domains'
     | 'attributeMapping'
+    | 'enforced'
+    | 'trustIdpMfa'
+    | 'breakGlassRole'
   >
 ): string {
   return sha256Hex(
@@ -120,6 +123,11 @@ export function fingerprint(
       record.defaultRole,
       [...record.domains].sort(),
       record.attributeMapping,
+      // What the sign-in policy decides about the people who pass through it (H-011). Group
+      // roles are the organization's, not the connection's, so they are not here.
+      record.enforced,
+      record.trustIdpMfa,
+      record.breakGlassRole,
     ])
   )
 }
