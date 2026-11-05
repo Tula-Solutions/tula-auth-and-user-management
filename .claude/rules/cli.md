@@ -280,3 +280,34 @@ What the section above does not say (moved from `sdk.md`).
   read and for a server without one, never a number then, never a failed run).
 - `@tula-tech/config` leaves `agents.proposalsInProduction: false` out of the fingerprint; in the
   file, left out is `false` and managed.
+
+## Decisions of the TULA-157 hardening audit
+
+Recorded for the reviewer to approve; none of them changed code (each changes the public CLI or
+what `apply` means).
+
+- Decision (TULA-157, H-268): `tula apply --yes` gates unknown, weakened and webhook-removal
+  changes only; provider, hook, native-app and role deletes are not gated. Recommendation: one
+  `--allow-prune` flag that every delete needs under `--yes`, as `--allow-weaker` does for a
+  weakening. Reason: a deleted provider or role signs people out or locks them out, and a CI run
+  should not do it by accident. Not built: a new flag is a public surface.
+- Decision (TULA-157, H-276): `apply` recomputes the plan live; `--expect-revision` pins the
+  settings revision only. Recommendation: `tula diff` prints a plan hash and `apply --expect-plan
+  <hash>` refuses when the live plan differs. Reason: what a person reviewed is then what runs.
+  Not built: a new flag and a new output format.
+- Decision (TULA-157, H-277): webhook, hook and native-app lists carry no revision or `If-Match`,
+  so the recheck before a write only narrows the window between plan and apply (the comments in
+  `apply.ts` say so). Recommendation: server revisions (or `If-Match`) on those three lists, then
+  the CLI sends them. Reason: only the server can close the window. Not built: a contract and
+  migration change of its own.
+- Decision (TULA-157, H-278): `output.redact` hides a secret that is at least
+  `MIN_REDACTED_LENGTH` (6) characters, as an exact trimmed match, in lines of at least 24
+  characters. Recommendation: keep the floor and say so: redaction is a safety net, not a
+  guarantee, and a secret never goes into output on purpose. Consider refusing to import a secret
+  shorter than the floor.
+- Decision (TULA-157, H-279): `tula policy test` takes the password as a positional argument, and
+  warns that shell history records it. Recommendation: remove the positional form and read the
+  password from a prompt or standard input only. Reason: the warning is a symptom. Not changed: it
+  is a documented public form (`docs/cli.md`).
+- H-282 (docs, not a decision): the secrets file is read back, then rewritten; a replacement made
+  between the two is not protected. This is in `docs/config.md` and the comment in `apply.ts`.

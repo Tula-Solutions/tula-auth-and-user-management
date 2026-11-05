@@ -932,3 +932,41 @@ describe('what a session has proven (auth_time and amr)', () => {
     expect(current).toEqual(['pwd'])
   })
 })
+
+describe('every path that ends a session denylists its id (H-099)', () => {
+  // Reuse, a banned user's refresh and end_oldest eviction are pinned above and in profiles.test.ts.
+  test.each([
+    [
+      'revoke',
+      (t: SessionTokens) =>
+        Sessions.revoke(deps, tenant, { userId: USER, sessionId: t.sessionId, actor: TEST_ACTOR }),
+    ],
+    [
+      'revokeForProposal',
+      (t: SessionTokens) =>
+        Sessions.revokeForProposal(deps, tenant, t.sessionId, TEST_ACTOR, {
+          proposalId: 'p1',
+          approvedBy: { type: 'admin', id: 'k1' },
+        }),
+    ],
+    [
+      'revokeOthers',
+      () =>
+        Sessions.revokeOthers(deps, tenant, {
+          userId: USER,
+          currentSessionId: 'none',
+          actor: TEST_ACTOR,
+        }),
+    ],
+    [
+      'revokeAllForUser',
+      () => Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned', TEST_ACTOR),
+    ],
+    ['signOut', (t: SessionTokens) => Sessions.signOut(deps, tenant, rt(t))],
+  ])('%s', async (_name, run) => {
+    const tokens = await create()
+    await run(tokens)
+    expect((await session(tokens.sessionId))?.revokedAt).not.toBeNull()
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+  })
+})

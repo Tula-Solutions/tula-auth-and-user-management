@@ -407,9 +407,9 @@ describe('linking and unlinking from a profile: edge cases', () => {
     await deps.users.create(owner, Audit.none('fixture'))
     const identity = await OAuth.link(deps, tenant, owner.id, 'google', profile, actor)
     const spy = spyOn(deps.users, 'unlinkIdentity').mockResolvedValueOnce('not_found')
-    expect(await codeOf(OAuth.unlink(deps, tenant, owner.id, identity.id, actor))).toBe(
-      'resource.not_found'
-    )
+    expect(
+      await codeOf(OAuth.unlink(deps, tenant, owner.id, identity.id, actor, 'session-id'))
+    ).toBe('resource.not_found')
     spy.mockRestore()
   })
 

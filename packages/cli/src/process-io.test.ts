@@ -86,12 +86,36 @@ describe('the secret key file', () => {
         .split('\n')
         .filter((line) => line.startsWith('warning:'))
       expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('key.txt')
+      expect(warnings[0]).not.toContain('--secret-key-file')
       expect(warnings[0]).toContain('readable by other users')
       expect(warnings[0]).toContain('chmod 600')
       expect(made.stderr()).not.toContain(SECRET_KEY)
       expect(made.read).toEqual(['/work/key.txt', '/work/key.txt'])
     }
   )
+
+  test('each file warns once, not only the first one read', async () => {
+    const made = parts({ stat: async () => ({ mode: 0o100644 }) })
+    const io = createProcessIo(made.parts)
+    await io.readFile?.('a.txt')
+    await io.readFile?.('b.txt')
+    await io.readFile?.('b.txt')
+    expect(made.stderr().match(/^warning:/gm)).toHaveLength(2)
+  })
+
+  test('a file larger than the cap is refused unread', async () => {
+    const made = parts({ stat: async () => ({ mode: 0o100600, size: 5 * 1024 * 1024 }) })
+    await expect(createProcessIo(made.parts).readFile?.('big.txt')).rejects.toThrow('larger than')
+    expect(made.read).toEqual([])
+  })
+
+  test('standard input larger than the cap is refused', async () => {
+    const made = parts()
+    const pending = createProcessIo(made.parts).readStdin?.()
+    ;(made.parts.stdin as unknown as PassThrough).write('x'.repeat(2 * 1024 * 1024))
+    await expect(pending).rejects.toThrow('larger than')
+  })
 
   test.each([
     ['its owner only (0600)', 0o100600],
@@ -104,17 +128,9 @@ describe('the secret key file', () => {
   })
 
   test('where there are no POSIX modes the check is skipped', async () => {
-    let looked = 0
-    const made = parts({
-      platform: 'win32',
-      stat: async () => {
-        looked += 1
-        return { mode: 0o100666 }
-      },
-    })
+    const made = parts({ platform: 'win32', stat: async () => ({ mode: 0o100666 }) })
     expect(await createProcessIo(made.parts).readFile?.('key.txt')).toBe(`${SECRET_KEY}\n`)
     expect(made.stderr()).toBe('')
-    expect(looked).toBe(0)
   })
 
   test('a file that cannot be looked at fails as the read does, with no warning', async () => {

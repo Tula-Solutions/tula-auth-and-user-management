@@ -321,6 +321,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
 - **No provider token is stored or logged**, and provider credentials are sealed and never
   returned. Identity changes are audited (`user.identity_linked`, `user.identity_unlinked`)
   and announced to the owner (`notifications.identityChanged`).
+- **Unlinking an identity ends the user's other sessions** (`OAuth.unlink`, reason
+  `mfa_changed`, the current session kept), before the notice: whoever held the provider
+  account loses the session it made. Decision (TULA-157, H-093): the existing reason is reused
+  so that `openapi.json` does not move.
 
 ## What to test
 

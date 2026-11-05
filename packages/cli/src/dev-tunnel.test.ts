@@ -178,7 +178,7 @@ function fakeHost(options: FakeOptions = {}) {
       if (line.includes('create-api-key.ts')) {
         return ok(`${line.includes('--kind publishable') ? PK : SK}\n`)
       }
-      if (line.includes('port api')) {
+      if (line.includes('port -- api')) {
         return ok(`${options.publishedAt ?? '127.0.0.1:53003'}\n`)
       }
       if (line.startsWith('git check-ignore')) {
@@ -750,7 +750,7 @@ describe('tula dev --tunnel', () => {
 
     test.each([
       ['git is asked whether the file is ignored', 'git check-ignore'],
-      ['Docker is asked where the mail is', 'port mailpit'],
+      ['Docker is asked where the mail is', 'port -- mailpit'],
     ])(
       'interrupted while %s, after the block was written: the tunnel is closed, its record goes, and the run fails',
       async (_name, part) => {

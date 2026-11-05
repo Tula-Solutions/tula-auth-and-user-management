@@ -637,6 +637,22 @@ describe('renaming and removing', () => {
     expect(again.status).toBe(404)
   })
 
+  test('removing a passkey ends the user’s other sessions and keeps the one that asked', async () => {
+    const { session, passkey, userId } = await withPasskey()
+    const elsewhere = (await passwordSignIn()).session as SessionTokens
+    const elsewhereSid = claimsOf(elsewhere.accessToken).sid
+    expect(await sessionCount(userId)).toBe(2)
+    const removed = await call('DELETE', `/me/passkeys/${passkey.id}`, undefined, {
+      token: session.accessToken,
+    })
+    expect(removed.status).toBe(204)
+    expect(await sessionCount(userId)).toBe(1)
+    expect(await deps.revokedSessions.has(elsewhereSid, deps.clock.now())).toBe(true)
+    expect(
+      await deps.revokedSessions.has(claimsOf(session.accessToken).sid, deps.clock.now())
+    ).toBe(false)
+  })
+
   test('another user cannot remove a passkey', async () => {
     const { passkey, userId } = await withPasskey()
     const other = await signUp('zed@northline.app')

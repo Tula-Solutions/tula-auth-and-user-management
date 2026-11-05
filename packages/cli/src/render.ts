@@ -24,7 +24,8 @@ import type { Output } from './output'
 const MAX_VALUE_LENGTH = 100
 
 function show(value: unknown): string {
-  const text = JSON.stringify(value) ?? 'undefined'
+  // JSON escapes only C0 controls; C1, U+2028/2029 and bidi marks in a server string pass through.
+  const text = printable(JSON.stringify(value) ?? 'undefined', Number.MAX_SAFE_INTEGER)
   return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH - 1)}…` : text
 }
 

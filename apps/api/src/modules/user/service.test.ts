@@ -329,6 +329,20 @@ describe('setPassword (admin)', () => {
     }
   })
 
+  test('a sweep that fails leaves the password unchanged (sessions end before the store)', async () => {
+    const user = await create()
+    await signIn(user.id)
+    const spy = spyOn(deps.sessions, 'revokeByUser').mockRejectedValue(new Error('store down'))
+    try {
+      await expect(
+        Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR)
+      ).rejects.toThrow('store down')
+    } finally {
+      spy.mockRestore()
+    }
+    expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
+  })
+
   test('enforces the password policy against the user’s details and changes nothing on failure', async () => {
     const user = await create({ firstName: 'Maya', lastName: 'Okafor' })
     const tokens = await signIn(user.id)
@@ -340,13 +354,11 @@ describe('setPassword (admin)', () => {
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
   })
 
-  test('does not report success, or end sessions, when the user vanished before the password was stored', async () => {
+  test('does not report success when the user vanished before the password was stored', async () => {
     const user = await create()
-    const tokens = await signIn(user.id)
     deps.users.setPasswordHash = async () => null
     const err = await rejection(Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR))
     expect(err.status).toBe(404)
-    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
   })
 
   test('gives a user who has no password their first one, recorded as created', async () => {
@@ -580,6 +592,35 @@ describe('changePassword (own)', () => {
     expect(await deps.revokedSessions.has(other.sessionId, deps.clock.now())).toBe(true)
   })
 
+  // H-096: the sessions end before the password is stored, so a failed sweep never leaves the new
+  // password with the old sessions alive.
+  test('a sweep that fails leaves the password unchanged (sessions end before the store)', async () => {
+    const { other, change } = await setup()
+    const spy = spyOn(deps.sessions, 'revokeByUser').mockRejectedValue(new Error('store down'))
+    try {
+      await expect(change(PASSWORD, NEW_PASSWORD)).rejects.toThrow('store down')
+    } finally {
+      spy.mockRestore()
+    }
+    expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
+    expect((await session(other.sessionId))?.revokedAt).toBeNull()
+  })
+
+  // H-170: a refusal after the current password was proven leaves the guess budget as it was.
+  test('a policy refusal does not reset the step-up guess budget', async () => {
+    const { user, change } = await setup()
+    const key = Mfa.stepUpLockKey(tenant.environmentId, user.id)
+    const clear = spyOn(deps.lockout, 'clear')
+    try {
+      await rejection(change(PASSWORD, 'short'))
+      expect(clear).not.toHaveBeenCalledWith(key)
+      await change(PASSWORD, NEW_PASSWORD)
+      expect(clear).toHaveBeenCalledWith(key)
+    } finally {
+      clear.mockRestore()
+    }
+  })
+
   test('a wrong current password is a generic failure and changes nothing', async () => {
     const { other, change } = await setup()
     const err = await rejection(change('not my password', NEW_PASSWORD))
@@ -666,9 +707,11 @@ describe('changePassword (own)', () => {
     expect(await Passwords.verify(await storedPassword(), current)).toBe(true)
   })
 
-  test('a weak new password does not count as a wrong guess', async () => {
+  // H-170: a refusal leaves the up-front count in place (only success clears it), but the free
+  // attempts still let an honest user fix a weak choice.
+  test('a few weak new passwords are refused for their weakness, not as a lockout', async () => {
     const { change } = await setup()
-    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 3; i++) {
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
       expect((await rejection(change(PASSWORD, 'short'))).code).toBe('password.too_short')
     }
   })
