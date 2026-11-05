@@ -139,6 +139,9 @@ export const MAX_IMPORT_ROWS = 500
  */
 export const MAX_IMPORT_METADATA_BYTES = 4096
 
+/** The most `params` keys an imported password may carry; no algorithm takes more than a handful. */
+export const MAX_IMPORT_PASSWORD_PARAMS = 16
+
 /**
  * A password hash made by another system, in a tagged form.
  *
@@ -166,7 +169,13 @@ export const ImportPasswordSchema = z
   .object({
     algorithm: z.string().max(64),
     hash: z.string().max(1024),
-    params: z.record(z.string().max(64), z.union([z.string().max(1024), z.number()])).optional(),
+    params: z
+      .record(z.string().max(64), z.union([z.string().max(1024), z.number()]))
+      // No algorithm takes more than a handful; a row of thousands is a memory bill (H-169).
+      .refine((params) => Object.keys(params).length <= MAX_IMPORT_PASSWORD_PARAMS, {
+        message: `at most ${MAX_IMPORT_PASSWORD_PARAMS} params`,
+      })
+      .optional(),
   })
   .meta({ ref: 'ImportPassword' })
 
