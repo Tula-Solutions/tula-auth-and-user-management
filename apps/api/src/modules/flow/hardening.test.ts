@@ -7,6 +7,7 @@ import * as Hooks from '~/modules/hook/service'
 import * as OrganizationDomains from '~/modules/organization-domain/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sso from '~/modules/sso/service'
+import * as Verification from '~/modules/verification/service'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 const tenant: Tenant = {
@@ -217,4 +218,49 @@ describe('a first factor switched off while its attempt is parked (H-089)', () =
       })
     }
   }
+})
+
+describe('reset start parity between a real and a decoy account (H-161)', () => {
+  // Wall-clock timing is flaky; parity is pinned by the work done: the same lookups, one
+  // code issued through the same path and one email awaited, whoever holds the address.
+  async function start(email: string) {
+    const issue = spyOn(Verification, 'issue')
+    const refuses = spyOn(Sso, 'refuses')
+    const before = deps.mailer.outbox.length
+    try {
+      await Flows.startPasswordReset(deps, tenant, { email }, web)
+      return {
+        issued: issue.mock.calls.map(([, , p]) => p.purpose),
+        refusedChecks: refuses.mock.calls.length,
+        sent: deps.mailer.outbox.length - before,
+      }
+    } finally {
+      issue.mockRestore()
+      refuses.mockRestore()
+    }
+  }
+
+  test('both paths issue one reset code, check SSO once and send one email', async () => {
+    await deps.users.create(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: await Passwords.hash('correct horse battery staple'),
+      },
+      Audit.none('fixture')
+    )
+    const real = await start('maya@northline.app')
+    const decoy = await start('nobody@northline.app')
+    expect(real).toEqual({ issued: ['password_reset'], refusedChecks: 1, sent: 1 })
+    expect(decoy).toEqual(real)
+  })
 })
