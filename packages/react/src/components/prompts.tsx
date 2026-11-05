@@ -361,6 +361,8 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   // the password form and coming back neither sends a second email nor forgets the first.
   const [receipt, setReceipt] = useState<{ sessionId: string; value: StepUpPrepared } | null>(null)
   const sessionId = state.status === 'signed-in' ? state.sessionId : null
+  // The session the dialog was opened for: a proof is for that one only.
+  const openedFor = useRef(sessionId)
   const body = useRef<HTMLDivElement>(null)
   const switched = useRef(false)
   useEffect(() => {
@@ -377,11 +379,12 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   }
 
   useEffect(() => {
-    // Signed out underneath the dialog (another tab, a revoked session): nothing to prove.
-    if (!signedIn) {
+    // Signed out, or signed in as another session, underneath the dialog (another tab, a
+    // revoked session): nothing to prove, and a proof must not be spent on the other one.
+    if (!signedIn || sessionId !== openedFor.current) {
       onDone(false)
     }
-  }, [signedIn, onDone])
+  }, [signedIn, sessionId, onDone])
 
   const submit = async (proof: StepUpProof): Promise<boolean> => {
     setPending(true)
