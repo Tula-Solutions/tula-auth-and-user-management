@@ -30,6 +30,25 @@ describe('rateLimit', () => {
     expect((await app.request('/test')).status).toBe(200)
   })
 
+  test('a request with no resolvable address is refused outside the local tiers, not pooled', async () => {
+    const mk = (tier: 'local' | 'dev' | 'staging' | 'prod') => {
+      const app = createApp(createTestDeps({ config: { ...TEST_CONFIG, tier } }))
+      app.get('/test', rateLimit({ name: 't', limit: 5, window: '1m', key: byIp }), (c) =>
+        c.text('ok')
+      )
+      return app
+    }
+    // app.request has no peer, so clientIp resolves nothing.
+    for (const tier of ['staging', 'prod'] as const) {
+      const res = await mk(tier).request('/test')
+      expect(res.status).toBe(503)
+      expect(((await res.json()) as { code: string }).code).toBe('service.unavailable')
+    }
+    for (const tier of ['local', 'dev'] as const) {
+      expect((await mk(tier).request('/test')).status).toBe(200)
+    }
+  })
+
   test('buckets by the trusted proxy IP so clients do not share a limit', async () => {
     const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
     const app = createApp(deps)

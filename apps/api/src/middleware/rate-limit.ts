@@ -37,9 +37,20 @@ export interface RateLimitRule {
  *
  * @param c - The request context.
  * @returns `ip:<bucket>`.
+ * @throws ServiceUnavailableError (503) in `staging`/`prod` when no client address resolves.
  */
 export function byIp(c: Context<AppEnv>): string {
-  return `ip:${ipBucket(clientIp(c, c.get('deps').config.trustProxy))}`
+  const { trustProxy, tier } = c.get('deps').config
+  const address = clientIp(c, trustProxy)
+  // Every unattributable request would share one `unknown` bucket: one caller could exhaust it
+  // for all, and an attacker's flood would lock out everyone. Refuse instead (a proxy that
+  // sends no X-Forwarded-For, or a runtime with no peer address, is a misconfiguration).
+  if (address === 'unknown' && (tier === 'staging' || tier === 'prod')) {
+    throw new ServiceUnavailableError({
+      internalMessage: 'client address unresolved; check TRUST_PROXY and the proxy in front',
+    })
+  }
+  return `ip:${ipBucket(address)}`
 }
 
 /**

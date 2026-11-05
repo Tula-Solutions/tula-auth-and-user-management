@@ -249,6 +249,18 @@ describe('configuration', () => {
     })
   })
 
+  test('an implausibly large trustedProxyHops is warned about once, a plausible one is not', () => {
+    const warnings: string[] = []
+    const onWarning = (message: string) => warnings.push(message)
+    resolveConfig({ ...base, trustedProxyHops: 3, onWarning })
+    expect(warnings).toHaveLength(0)
+    // 'a-large-hops' keys one warning per process, so use a fresh sink for each call.
+    resolveConfig({ ...base, trustedProxyHops: 9, onWarning })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('trustedProxyHops')
+    expect(warnings[0]).toContain('9')
+  })
+
   test('without onWarning a warning goes to console.warn', () => {
     const spy = spyOn(console, 'warn').mockImplementation(() => undefined)
     try {

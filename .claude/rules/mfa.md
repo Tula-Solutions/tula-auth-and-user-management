@@ -147,3 +147,12 @@ rules themselves are above and are not repeated).
   log line. Keep the tests that confirm an authenticator and add a passkey between the look
   and the write of `users.enableSmsFactor` (refused, nothing recorded), the suite's rows, and
   the tests of both orders of a dormant code.
+
+## Decisions awaiting review (TULA-157, rate limits)
+
+- **Decision (TULA-157, H-110): the step-up routes keep the per-IP limit, with the per-user
+  lockout as the real bound.** A guess at a step-up counts under the one per-user key
+  `Mfa.stepUpLockKey` (ADR 0011), so a second per-user rate limit on the routes would count
+  the same attempts twice, and the per-IP limit is only a cheap pre-filter. Recommendation:
+  no code change. The cost is that many users behind one NAT share the per-IP budget
+  (`STEP_UP_RATE_LIMIT` a minute); raise that number rather than adding a per-user rule.

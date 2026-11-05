@@ -354,3 +354,9 @@ rules themselves are above and are not repeated).
 - **Decision (TULA-157, H-220): the shared per-number cooldown is a bounded trade-off.** A third
   party can delay a number's next code by one cooldown, no more. Recommendation: keep it; the
   alternative (a cooldown per requester) lets one number be flooded.
+- **Decision (TULA-157, H-214): a send with no address skips the per-address limit, and only that.**
+  `address: null` (a send no request asked for, `modules/sms/service.ts`) leaves out the
+  per-IP limit; the per-number, per-destination-prefix, per-asker and daily budgets still
+  apply. Recorded, no code change: such a send has no client to count. A new caller passes
+  `ipBucket(clientIp(c, …))` whenever a request asked for the send, never `null` for
+  convenience.
