@@ -175,7 +175,8 @@ entry out of the stream.
   client routes that change the email address or the password are refused with a contract code. Admin
   routes still can. The guard sits in the one function that stores a user's own password, so a reset
   finish and an expired-password replacement are refused too (`user.managed`, the reset code unspent);
-  a reset start for a managed user gets the decoy attempt of an unknown address and no code.
+  a reset start for a managed user gets the decoy attempt of an unknown address and no code, except
+  for a break-glass member, who keeps the reset.
 - **Enforcement covers sign-up, verification and password reset.** On an enforced domain sign-up is
   refused (`auth.method_disabled`); a reset email goes only to a break-glass member, and the answers do
   not reveal which address exists.

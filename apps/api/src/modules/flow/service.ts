@@ -3346,7 +3346,7 @@ export async function startPasswordReset(
   // decoy, so the answer is the same for any address (decision 12).
   const found = await deps.users.findByEmail(tenant.environmentId, identifier)
   // A user an identity provider manages gets the decoy too: they cannot set a local password
-  // (decision 11), and and nothing at all is mailed to them.
+  // (decision 11), and nothing at all is mailed to them.
   // A break-glass member keeps the reset even when the connection manages the account (ADR 0067).
   const managed =
     !!found &&

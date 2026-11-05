@@ -112,11 +112,13 @@ async function setActive(
   const managed = user.managedByDirectoryId === ctx.organizationId
   if (active) {
     if (!member) {
+      const role = await Roles.defaultRole(deps, ctx)
+      await Roles.assertAppliable(deps, ctx, role)
       await Organizations.addMember(
         deps,
         ctx.tenant,
         ctx.organizationId,
-        { userId: user.id, role: await Roles.defaultRole(deps, ctx) },
+        { userId: user.id, role },
         ctx.actor
       )
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
@@ -313,6 +315,10 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
   }
   const existing = await deps.users.findByEmail(environmentId, parsed.normalized)
   const verifiedDomain = await onVerifiedDomain(deps, ctx, parsed.normalized)
+  if (input.active ?? true) {
+    // Before anything is written: a refusal here leaves no account for a retry to trip over.
+    await Roles.assertAppliable(deps, ctx, await Roles.defaultRole(deps, ctx))
+  }
   const now = deps.clock.now()
   let user: UserRecord
   let method: 'created' | 'linked'

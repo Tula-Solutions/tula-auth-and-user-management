@@ -53,6 +53,25 @@ export async function resolve(deps: Deps, ctx: ScimContext, names: string[]) {
 }
 
 /**
+ * Refuse a privileged role to a token a setup link minted.
+ *
+ * The portal lock (ADR 0067) holds where a role is applied, not only where a mapping is saved:
+ * a setup-link token must not turn an operator's privileged mapping or default role into a role.
+ *
+ * @param deps - The dependencies.
+ * @param ctx - The environment, the organization and whether the token came from a setup link.
+ * @param role - The role about to be applied.
+ * @throws ScimError `invalidValue` when the token is a setup link's and the role is privileged.
+ */
+export async function assertAppliable(deps: Deps, ctx: ScimContext, role: string) {
+  if (ctx.viaSetupLink && (await Organizations.isPrivilegedRole(deps, ctx.tenant, role))) {
+    throw invalidValue(
+      'This token cannot apply a privileged role. Use a token an administrator created.'
+    )
+  }
+}
+
+/**
  * Plan the role change of one user, if they are a member whose role differs from the one
  * their groups give.
  *
@@ -69,16 +88,8 @@ export async function plan(
   names: string[]
 ): Promise<RoleChange | null> {
   const to = await resolve(deps, ctx, names)
-  // The portal lock (ADR 0067) holds where a role is applied, not only where a mapping is saved:
-  // a setup-link token must not turn an operator's privileged mapping into a role.
-  if (
-    ctx.viaSetupLink &&
-    to !== null &&
-    (await Organizations.isPrivilegedRole(deps, ctx.tenant, to))
-  ) {
-    throw invalidValue(
-      'This token cannot apply a privileged role. Use a token an administrator created.'
-    )
+  if (to !== null) {
+    await assertAppliable(deps, ctx, to)
   }
   const member = await deps.organizations.findMembership(
     ctx.tenant.environmentId,

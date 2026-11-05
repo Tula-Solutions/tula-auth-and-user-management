@@ -672,6 +672,25 @@ export function describeOrganizationDomainStore(
       expect(await ctx.connectionDomains(ctx.a, held)).toEqual(['acme.test'])
     })
 
+    test("taking over a lapsed holder's name unbinds its connection and records it", async () => {
+      const org = await ctx.organization(ctx.a)
+      const row = await verified(ctx.a, org)
+      const held = await ctx.connect(ctx.a, org, ['acme.test'])
+      const afterLapse = new Date(inAYear.getTime() + 1000)
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          org,
+          row.id,
+          activity(ctx.a, 'organization_domain.removed', row.id),
+          afterLapse
+        )
+      ).toBe(true)
+      expect(await ctx.connectionDomains(ctx.a, held)).toEqual([])
+      const recorded = await ctx.recorded()
+      expect(recorded.filter((type) => type === 'sso_connection.updated')).toHaveLength(1)
+    })
+
     test('deleting the organization deletes its domains', async () => {
       const org = await ctx.organization(ctx.a)
       await verified(ctx.a, org)

@@ -79,7 +79,7 @@ const MAX_GROUP_LENGTH = 256
  * **Decided by the domain alone.** Whether the address has an account is never read, so a known
  * and an unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
  *
- * @param deps - Settings, config and the connection store.
+ * @param deps - Settings and config, the connection store, the verified domains and the clock.
  * @param tenant - The environment.
  * @param identifier - What the sign-in was started with: an address, or a phone number.
  * @returns The one active connection bound to the address's domain, or `null`.
@@ -133,7 +133,8 @@ async function holdsDomain(
  * belongs to; {@link requireNotEnforced} never asks it, and the password step folds it into
  * `auth.invalid_credentials` (account enumeration, ADR 0067).
  *
- * @param deps - Settings, connections, users and organizations.
+ * @param deps - Settings and config, connections, users, organizations, verified domains and the
+ *   clock.
  * @param tenant - The environment.
  * @param identifier - The address the sign-in is for (a phone number is on no domain).
  * @param method - The strategy being tried.
@@ -211,7 +212,8 @@ export async function isBreakGlass(
  * Called by each other first factor's own route (a client that skips the offer is refused too),
  * and by the completion of a provider or passkey sign-in once the account is known.
  *
- * @param deps - Settings, connections, users and organizations.
+ * @param deps - Settings and config, connections, users, organizations, verified domains and the
+ *   clock.
  * @param tenant - The environment.
  * @param identifier - The address the sign-in is for (a phone number is on no domain).
  * @param method - The strategy being tried, named in the refusal.

@@ -550,6 +550,53 @@ describe('the default role is the connection’s (DECISIONS 10)', () => {
   })
 })
 
+describe('a token a setup link minted may not provision a privileged default role (TULA-160)', () => {
+  test('the connection’s privileged default role is refused, and nobody is created as a member', async () => {
+    const now = deps.clock.now()
+    await deps.ssoConnections.insert(
+      {
+        id: Bun.randomUUIDv7(),
+        ...TENANT,
+        organizationId: orgId,
+        protocol: 'oidc',
+        saml: null,
+        name: 'Okta',
+        status: 'active',
+        issuer: 'https://idp.example',
+        clientId: 'c',
+        clientSecretSealed: 's',
+        attributeMapping: null,
+        defaultRole: 'admin',
+        enforced: false,
+        breakGlassRole: null,
+        trustIdpMfa: false,
+        domains: [],
+        testedFingerprint: 'f',
+        createdAt: now,
+        updatedAt: now,
+      },
+      Audit.none('fixture')
+    )
+    const portal = (
+      await ScimTokens.create(deps, TENANT, { organizationId: orgId, name: 'Portal' }, {
+        type: 'setup_link',
+        id: Bun.randomUUIDv7(),
+        ip: null,
+        userAgent: null,
+      } as never)
+    ).token
+    const refused = await scim('POST', '/Users', okta('eve@acme.test'), portal)
+    expect(refused.status).toBe(400)
+    expect(refused.body.detail).toContain('privileged role')
+    const eve = await deps.users.findByEmail(TENANT.environmentId, 'eve@acme.test')
+    expect(
+      eve && (await deps.organizations.findMembership(TENANT.environmentId, orgId, eve.id))
+    ).toBeFalsy()
+    // An administrator's token still provisions it.
+    expect((await scim('POST', '/Users', okta('eve@acme.test'))).status).toBe(201)
+  })
+})
+
 describe('a directory renames the address of an account it manages (DECISIONS 14)', () => {
   const emailOf = async (id: string) => (await deps.users.findById(TENANT.environmentId, id))?.email
 
