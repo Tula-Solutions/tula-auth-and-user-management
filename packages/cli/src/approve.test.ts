@@ -276,6 +276,7 @@ describe('tula approve', () => {
     expect(question).toContain('eve@northline.app')
     expect(question).toContain(BASE_URL)
     expect(question).toContain('Type yes to continue: ')
+    expect(question).toContain('(secret key, dev)')
     expect(question).not.toContain('\u001b')
     expect(question).not.toContain('\u{202E}')
   })
@@ -671,7 +672,9 @@ describe('tula approve: lifting a ban, ending a session, switching a provider of
       const run = await tula(['approve', id], {}, 'no')
       const about = `session ${session} (of user ${userId}: ada@northline.app, Ada; ios client, signed in ${signedIn}; live now)`
       expect(run.stdout).toContain(`About          ${about}`)
-      expect(run.questions[0]).toContain(`Approve end_session for ${about} at ${BASE_URL}?`)
+      expect(run.questions[0]).toContain(
+        `Approve end_session for ${about} at ${BASE_URL} (secret key, dev)?`
+      )
       expect(run.stdout + run.questions[0]).not.toContain('grace@northline.app')
       // Read with the operator's key, by reads alone: the proposal, the session, its user.
       expect(wire.map((request) => request.line)).toEqual([

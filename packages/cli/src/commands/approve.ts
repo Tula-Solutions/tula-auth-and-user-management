@@ -450,7 +450,7 @@ async function run(context: CommandContext): Promise<number> {
   // Always asked: nothing in this command skips it. The question names the operation and
   // the target it would be carried out on, both made printable, and the word is typed out.
   const answer = await ask(
-    `${asked} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
+    `${asked} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl} (${target.keyLabel})? Type yes to continue: `
   )
   if (answer.trim().toLowerCase() !== 'yes') {
     output.error('Cancelled. Nothing was changed.')
