@@ -161,15 +161,44 @@ export async function refuses(
   if (method !== 'password' || connection.breakGlassRole === null) {
     return true
   }
+  return !(await isBreakGlass(deps, tenant, identifier, connection))
+}
+
+/**
+ * Whether the address belongs to a member holding the enforced connection's break-glass role.
+ * Such a member keeps a local password, even when the connection manages the account
+ * (ADR 0067, decision 11 yields to the break-glass rule).
+ *
+ * @param deps - Users and organizations.
+ * @param tenant - The environment.
+ * @param identifier - The normalized address.
+ * @param connection - The connection offered for its domain; looked up when omitted.
+ * @returns `true` for a break-glass member of an enforced connection.
+ */
+export async function isBreakGlass(
+  deps: Pick<
+    Deps,
+    | 'environmentSettings'
+    | 'config'
+    | 'ssoConnections'
+    | 'users'
+    | 'organizations'
+    | 'organizationDomains'
+    | 'clock'
+  >,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string,
+  connection?: Awaited<ReturnType<typeof offered>>
+): Promise<boolean> {
+  const found = connection ?? (await offered(deps, tenant, identifier))
+  if (!found?.enforced || found.breakGlassRole === null) {
+    return false
+  }
   const user = await deps.users.findByEmail(tenant.environmentId, identifier)
   const membership = user
-    ? await deps.organizations.findMembership(
-        tenant.environmentId,
-        connection.organizationId,
-        user.id
-      )
+    ? await deps.organizations.findMembership(tenant.environmentId, found.organizationId, user.id)
     : null
-  return membership?.roleKey !== connection.breakGlassRole
+  return membership?.roleKey === found.breakGlassRole
 }
 
 /**

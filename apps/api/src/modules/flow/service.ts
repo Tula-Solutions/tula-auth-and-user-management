@@ -3347,7 +3347,11 @@ export async function startPasswordReset(
   const found = await deps.users.findByEmail(tenant.environmentId, identifier)
   // A user an identity provider manages gets the decoy too: they cannot set a local password
   // (decision 11), and and nothing at all is mailed to them.
-  const managed = !!found && (await isManaged(deps, tenant.environmentId, found))
+  // A break-glass member keeps the reset even when the connection manages the account (ADR 0067).
+  const managed =
+    !!found &&
+    (await isManaged(deps, tenant.environmentId, found)) &&
+    !(await Sso.isBreakGlass(deps, tenant, identifier))
   const user =
     found && !managed && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
   const state: State = {
@@ -3452,8 +3456,15 @@ export async function resetPassword(
     passwordExpired: false,
   })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
-  await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
-    Verification.consume(deps, tenant, token.id)
+  await Users.resetPassword(
+    deps,
+    tenant,
+    user.id,
+    input.password,
+    actor,
+    () => Verification.consume(deps, tenant, token.id),
+    // Past the refusal above, a managed account is here only as a break-glass member.
+    await Sso.isBreakGlass(deps, tenant, attempt.identifier)
   )
   if (user.emailVerifiedAt === null) {
     try {

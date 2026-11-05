@@ -768,10 +768,11 @@ async function replacePassword(
   actor: Actor,
   method: 'admin_reset' | 'self' | 'reset',
   beforeStore?: () => Promise<void>,
-  expired?: { setAt: number }
+  expired?: { setAt: number },
+  breakGlass = false
 ): Promise<void> {
   const { email, emailNormalized } = user
-  if (method !== 'admin_reset') {
+  if (method !== 'admin_reset' && !breakGlass) {
     // The identity provider owns a managed account's password (decision 11). Here, in the one
     // path that stores a user's own password, so reset, expired-password replacement and change
     // all hold; an administrator's route is the break-glass and never asks.
@@ -1018,6 +1019,8 @@ export async function setPassword(
  * @param password - The new password; must meet the policy.
  * @param actor - The user themselves, with the request's origin, for the audit log.
  * @param claim - Spends the proof; throw to refuse.
+ * @param breakGlass - The user is a break-glass member of an enforced connection, who keeps a
+ *   password reset though the connection manages the account (ADR 0067).
  * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or whatever
  *   `claim` throws.
  */
@@ -1027,13 +1030,24 @@ export async function resetPassword(
   userId: string,
   password: string,
   actor: Actor,
-  claim: () => Promise<void>
+  claim: () => Promise<void>,
+  breakGlass = false
 ): Promise<void> {
   const user = await requireUser(deps, scope, userId)
-  await replacePassword(deps, scope, user, password, actor, 'reset', async () => {
-    await claim()
-    await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
-  })
+  await replacePassword(
+    deps,
+    scope,
+    user,
+    password,
+    actor,
+    'reset',
+    async () => {
+      await claim()
+      await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+    },
+    undefined,
+    breakGlass
+  )
   // Again, now that the old password no longer works: someone who knew it could have signed in
   // between the first sweep and the store, and that session must not outlive the reset.
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)

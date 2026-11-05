@@ -9,6 +9,7 @@ import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
+import * as Sso from '~/modules/sso/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
@@ -1352,6 +1353,22 @@ describe('password reset', () => {
       }
       expect(await stored()).toBe(before)
       expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    })
+
+    test('a break-glass member of an enforced connection keeps the reset (ADR 0067)', async () => {
+      await registered()
+      const restore = manage()
+      const glass = spyOn(Sso, 'isBreakGlass').mockResolvedValue(true)
+      try {
+        const sent = deps.mailer.outbox.length
+        const { attempt } = await startReset()
+        expect(deps.mailer.outbox.length).toBeGreaterThan(sent)
+        const done = await reset(attempt, sentCode())
+        expect(done.attempt.step.status).toBe('complete')
+      } finally {
+        glass.mockRestore()
+        restore()
+      }
     })
   })
 
