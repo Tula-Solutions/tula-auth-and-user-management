@@ -122,3 +122,6 @@ rules themselves are above and are not repeated).
   (`passkeys.md`), a provider's exchange and an ID token (`oauth.md`), an expired password
   (`passwords.md`), a hook asked in `finish` (`auth-hooks.md`), a texted code
   (`phone-and-sms.md`, `mfa.md`), a device key at a start (`device-binding.md`).
+- **A flow request with no `Origin` header relies on the attempt secret alone.** Non-browser clients
+  send none, so the origin check cannot apply to them; the secret (`x-tula-attempt`) is what binds
+  the request to the attempt (ADR 0019). Never treat a missing origin as proof of a browser.
