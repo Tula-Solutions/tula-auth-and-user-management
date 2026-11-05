@@ -709,6 +709,10 @@ export async function remove(
     case 'deleted':
       // The delete cascaded any session a sign-in stored after the first sweep, so a sweep now
       // finds nothing; the store names the ones it ended and they are denylisted here (H-229).
+      // Accepted: should the denylist fail now (503), the user is already gone and a retry
+      // cannot name these again, so a session that raced the first sweep keeps its access
+      // token until it expires (one access-token lifetime, ~60s). The first sweep covered
+      // every session that existed before the deletion began.
       await Sessions.denylist(deps, result.endedSessionIds, deps.clock.now())
       return
     case 'last_manager':
