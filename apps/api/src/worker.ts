@@ -30,6 +30,10 @@ const container = build()
 // Liveness and readiness for the orchestrator and the image's HEALTHCHECK. Nothing of the API
 // is on this port, and it needs no route to the outside: do not publish it.
 const server = Bun.serve({
+  // All IPv4 interfaces on purpose: an orchestrator probes a container by its own address, not
+  // by loopback. Named so the exposure is a decision (H-207): the port stays unpublished and
+  // answers only status and readiness, nothing else.
+  hostname: '0.0.0.0',
   port: env.PORT,
   fetch: createWorkerApp(container.deps).fetch,
 })
