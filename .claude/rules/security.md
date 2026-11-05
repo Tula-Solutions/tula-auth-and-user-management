@@ -72,3 +72,11 @@ there is held to as it is to the list above:
 | Phone numbers, text messages, a texted sign-in code | `phone-and-sms.md` |
 | Password history and expiry | `passwords.md` |
 | Email templates | `message-wording.md` |
+
+## Fail-open rate limiters
+
+Decision (TULA-157, H-108): `whenUnavailable: 'allow'` is allowed only on a limiter in front of a
+route that takes no guessable secret and costs nothing: the client ceiling (`middleware/rate-limit.ts`),
+`session_refresh` (a 256-bit token), the JWKS and native-app association files (public data),
+`ready` (it must report the outage) and `message_preview`. Every credential route and
+`instance-admin.ts` refuse. A new `'allow'` needs a same-place comment saying why (ADR 0016).
