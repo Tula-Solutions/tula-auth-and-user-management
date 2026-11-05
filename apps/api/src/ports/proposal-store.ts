@@ -98,7 +98,8 @@ export interface ProposalStore {
    *
    * @param record - The proposal, `pending`.
    * @param activity - Recorded in the same transaction.
-   * @returns The row as stored.
+   * @returns The row as stored; where the agent already has a waiting proposal for the same
+   * operation and target (a concurrent identical request won), that one, and nothing is recorded.
    */
   insert(record: NewProposalRecord, activity: Recorded): Promise<ProposalRecord>
 
