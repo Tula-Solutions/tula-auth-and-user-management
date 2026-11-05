@@ -2298,9 +2298,9 @@ describe('second factor', () => {
       deps.clock.now(),
       Audit.none('fixture')
     )
-    // The ban is told only to someone who proved the factor.
+    // The ban is told to nobody at this step (H-143: it is refused before any code is spent).
     expect((await rejection(second(banned, '000000'))).code).toBe('mfa.invalid_code')
-    expect((await rejection(second(banned))).code).toBe('auth.user_banned')
+    expect((await rejection(second(banned))).code).toBe('mfa.invalid_code')
     expect(await liveSessions(userId)).toEqual([])
 
     await deps.users.setBanned(
