@@ -386,6 +386,13 @@
       "when": 1793899066432,
       "tag": "0058_scim_token_via_setup_link",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793899282647,
+      "tag": "0059_user_ban_origin",
+      "breakpoints": true
     }
   ]
 }

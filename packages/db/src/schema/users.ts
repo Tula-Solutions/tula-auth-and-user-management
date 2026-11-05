@@ -25,6 +25,11 @@ export const users = tula.table(
     firstName: text('first_name'),
     lastName: text('last_name'),
     bannedAt: timestamp('banned_at', { withTimezone: true }),
+    /**
+     * Who placed the ban: `operator` or `directory` (a SCIM deactivation, ADR 0067). A
+     * directory's reactivation lifts only a `directory` ban. `NULL` exactly when `banned_at` is.
+     */
+    banOrigin: text('ban_origin').$type<'operator' | 'directory'>(),
     lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true }),
     /**
      * The account's phone number in E.164 form, set only once the user proved it with a code
@@ -63,6 +68,11 @@ export const users = tula.table(
     check(
       'users_email_whole',
       sql`(${t.email} IS NULL) = (${t.emailNormalized} IS NULL) AND (${t.email} IS NOT NULL OR ${t.emailVerifiedAt} IS NULL)`
+    ),
+    // A ban has an origin and nothing else has one.
+    check(
+      'users_ban_origin_whole',
+      sql`(${t.bannedAt} IS NULL) = (${t.banOrigin} IS NULL) AND (${t.banOrigin} IS NULL OR ${t.banOrigin} IN ('operator', 'directory'))`
     ),
     // What an import keeps with a user is an object of at most 4 KiB of its text.
     check(
