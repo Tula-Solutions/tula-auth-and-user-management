@@ -739,7 +739,9 @@ async function declineRecord(
       actor,
       target: { type: 'organization_invitation', id: record.id },
       data: { organizationId: record.organizationId, role: record.roleKey, userId: member.userId },
-    })
+    }),
+    // The write itself refuses an invitation sent to another address, however it was reached.
+    record.emailNormalized
   )
   if (result.outcome === 'not_found') {
     throw new AuthError('organization.invitation_not_found')

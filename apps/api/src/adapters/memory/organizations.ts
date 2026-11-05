@@ -708,8 +708,15 @@ export class MemoryOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
-  async findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null> {
+  async findInvitationById(
+    environmentId: string,
+    id: string,
+    emailNormalized?: string
+  ): Promise<InvitationRecord | null> {
     const found = this.#invitation(environmentId, id)
+    if (found && emailNormalized !== undefined && found.emailNormalized !== emailNormalized) {
+      return null
+    }
     return found ? structuredClone(found) : null
   }
 
@@ -762,10 +769,16 @@ export class MemoryOrganizationStore implements OrganizationStore {
     id: string,
     userId: string,
     now: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    emailNormalized?: string
   ): Promise<ResolveInvitationOutcome> {
     const activity = activityOf(recorded)
-    const result = this.#resolve(this.#invitation(environmentId, id), 'declined', userId, now)
+    const found = this.#invitation(environmentId, id)
+    const own =
+      found && emailNormalized !== undefined && found.emailNormalized !== emailNormalized
+        ? null
+        : found
+    const result = this.#resolve(own, 'declined', userId, now)
     if (result.outcome === 'done') {
       this.#activityLog.record(activity ? [activity] : [])
     }

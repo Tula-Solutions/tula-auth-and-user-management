@@ -550,9 +550,14 @@ export interface OrganizationStore {
   /**
    * @param environmentId - The environment to look in.
    * @param id - The invitation.
-   * @returns The invitation, or `null` when this environment has none with that id.
+   * @param emailNormalized - When given, the invitation must also have been sent to this address.
+   * @returns The invitation, or `null` when this environment has none with that id (and address).
    */
-  findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null>
+  findInvitationById(
+    environmentId: string,
+    id: string,
+    emailNormalized?: string
+  ): Promise<InvitationRecord | null>
 
   /**
    * @param environmentId - The environment to look in.
@@ -603,6 +608,8 @@ export interface OrganizationStore {
    * @param userId - The user who declines it.
    * @param now - When it is declined, and the time its expiry is judged at.
    * @param activity - Recorded in the same transaction, only if it was declined.
+   * @param emailNormalized - When given, only an invitation sent to this address is declined;
+   *   another is `not_found`, so a decline cannot reach someone else's invitation.
    * @returns What came of it.
    */
   declineInvitation(
@@ -610,7 +617,8 @@ export interface OrganizationStore {
     id: string,
     userId: string,
     now: Date,
-    activity: Recorded
+    activity: Recorded,
+    emailNormalized?: string
   ): Promise<ResolveInvitationOutcome>
 
   /**

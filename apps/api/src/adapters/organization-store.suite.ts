@@ -1672,6 +1672,30 @@ export function describeOrganizationStore(
         ).toBeNull()
       })
 
+      test('an email predicate narrows a lookup by id and a decline to the invited address', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        const userId = Bun.randomUUIDv7()
+        expect(
+          await ctx.store.findInvitationById(ctx.a.environmentId, record.id, 'someone@else.com')
+        ).toBeNull()
+        expect(
+          await ctx.store.findInvitationById(ctx.a.environmentId, record.id, record.emailNormalized)
+        ).toEqual(record)
+        const declined = await ctx.store.declineInvitation(
+          ctx.a.environmentId,
+          record.id,
+          userId,
+          later,
+          activity(ctx.a, 'organization_invitation.declined', org.id),
+          'someone@else.com'
+        )
+        expect(declined.outcome).toBe('not_found')
+        expect((await ctx.store.findInvitationById(ctx.a.environmentId, record.id))?.status).toBe(
+          'pending'
+        )
+      })
+
       test('lists the pending, unexpired invitations to one address across organizations', async () => {
         const { org } = await setup2()
         const other = await stored(organization(ctx.a, { slug: 'other', name: 'Other Org' }))
