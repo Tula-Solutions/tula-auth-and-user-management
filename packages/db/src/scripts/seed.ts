@@ -1,9 +1,15 @@
 import { and, eq } from 'drizzle-orm'
 import { createDatabase } from '../client'
 import { environments, projects, workspaces } from '../schema'
+import { seedRefusal } from './seed-guard'
 
 // Local bootstrap: one workspace, a default project and its development + production
 // environments. Idempotent. API keys are created through the API (Step 5), not here.
+const refusal = seedRefusal(process.env)
+if (refusal) {
+  process.stderr.write(`${refusal}\n`)
+  process.exit(1)
+}
 const url = process.env.DATABASE_URL
 if (!url) {
   process.stderr.write('seed: set DATABASE_URL\n')
