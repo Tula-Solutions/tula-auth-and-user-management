@@ -382,6 +382,19 @@ describe('refreshing', () => {
     expect(response.headers.getSetCookie().join('\n')).not.toContain('tula_at=ey')
   })
 
+  test('a refreshed token that does not verify leaves the stale access cookie as it was (H-306)', async () => {
+    // Pinned on purpose: the rotated refresh cookie is kept (the API already spent r1), the
+    // access cookie is neither replaced nor cleared, and the request is signed out. The stale
+    // token is expired or invalid, so it cannot be used; the next refresh replaces it.
+    const api = createFakeApi([signer])
+    refreshing(api, await stranger.sign())
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt=r1; tula_at=stale' }))
+    expect(response.status).toBe(307)
+    const cookies = response.headers.getSetCookie()
+    expect(cookies).toContain('tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600')
+    expect(cookies.some((line) => line.startsWith('tula_at='))).toBe(false)
+  })
+
   test('requests arriving together with one refresh token share one refresh', async () => {
     const api = createFakeApi([signer])
     const fresh = await signer.sign()
