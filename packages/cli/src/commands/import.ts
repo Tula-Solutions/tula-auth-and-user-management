@@ -105,6 +105,11 @@ async function firebaseParameters(context: CommandContext): Promise<ParseInput['
     output.redact(fromEnv)
   }
   output.redact(config.saltSeparator)
+  // Also as typed: the standard-base64 form above differs from a URL-safe value.
+  const rawSeparator = io.env.TULA_FIREBASE_SALT_SEPARATOR?.trim()
+  if (rawSeparator) {
+    output.redact(rawSeparator)
+  }
   const finalRounds = rounds ?? config.rounds
   const finalMemCost = memCost ?? config.memCost
   if (finalRounds === undefined || finalMemCost === undefined) {

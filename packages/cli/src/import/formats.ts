@@ -202,7 +202,7 @@ export function text(value: unknown): string | undefined {
 }
 
 /**
- * A boolean as the exports write it: `true`, `t`, `1`, `yes` (any case).
+ * A boolean as the exports write it: `true`, `t`, `1`, `yes`, `y`, `on`, `enabled` (any case).
  *
  * @param value - A boolean or its text.
  * @returns `true` only for a true value.
@@ -214,7 +214,7 @@ export function truthy(value: unknown): boolean {
   if (typeof value === 'number') {
     return value === 1
   }
-  return typeof value === 'string' && /^(?:true|t|1|yes|y)$/i.test(value.trim())
+  return typeof value === 'string' && /^(?:true|t|1|yes|y|on|enabled)$/i.test(value.trim())
 }
 
 /**
