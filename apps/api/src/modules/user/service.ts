@@ -135,6 +135,7 @@ export async function get(
  * @param userId - The access token's subject.
  * @returns The user, and whether they have a password (never the credential itself).
  * @throws NotFoundError when the account was deleted while its access token was still valid.
+ * @throws AuthError `auth.user_banned` when the account is banned.
  */
 export async function me(
   deps: Pick<Deps, 'users'>,
@@ -142,6 +143,10 @@ export async function me(
   userId: string
 ): Promise<CurrentUser> {
   const user = await requireUser(deps, scope, userId)
+  // A ban's revocation can fail after the ban is stored; this read must not outlive it.
+  if (user.bannedAt) {
+    throw new AuthError('auth.user_banned')
+  }
   const found = await Passwords.ofUser(deps, scope.environmentId, user)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
@@ -681,6 +686,9 @@ export async function remove(
   )
   switch (result.outcome) {
     case 'deleted':
+      // A sign-in that passed its checks before the first revocation may have stored a session
+      // since; the user is gone now, so no new one can follow this sweep.
+      await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
       return
     case 'last_manager':
       throw lastOrganizationManager(result.organizationIds)

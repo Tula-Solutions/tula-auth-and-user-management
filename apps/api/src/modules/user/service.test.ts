@@ -254,6 +254,18 @@ describe('remove', () => {
     expect((await create()).id).not.toBe(user.id)
   })
 
+  test('ends a session created between the revocation and the delete (H-229)', async () => {
+    const user = await create()
+    const del = deps.users.delete.bind(deps.users)
+    let stray: Awaited<ReturnType<typeof signIn>> | undefined
+    spyOn(deps.users, 'delete').mockImplementation(async (...args) => {
+      stray = await signIn(user.id)
+      return del(...args)
+    })
+    await Users.remove(deps, tenant, user.id, TEST_ACTOR)
+    expect(await deps.revokedSessions.has(stray?.sessionId ?? '', deps.clock.now())).toBe(true)
+  })
+
   test('refuses the only manager of an organization before it ends any session', async () => {
     const user = await create()
     const tokens = await signIn(user.id)
@@ -736,6 +748,14 @@ describe('me', () => {
     expect(await Users.me(deps, tenant, user.id)).toEqual({ ...user, hasPassword: true })
     await Users.remove(deps, tenant, user.id, TEST_ACTOR)
     expect((await rejection(Users.me(deps, tenant, user.id))).status).toBe(404)
+  })
+})
+
+describe('me: banned', () => {
+  test('a banned user’s still-valid access token reads nothing (H-165)', async () => {
+    const user = await create()
+    await Users.ban(deps, tenant, user.id, TEST_ACTOR)
+    expect((await rejection(Users.me(deps, tenant, user.id))).code).toBe('auth.user_banned')
   })
 })
 
