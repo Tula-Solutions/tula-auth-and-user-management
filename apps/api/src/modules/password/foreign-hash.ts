@@ -42,7 +42,9 @@ export const HASH_LIMITS = {
     minParallelism: 1,
     maxParallelism: 8,
     minSaltBytes: 8,
+    maxSaltBytes: 64,
     minHashBytes: 16,
+    maxHashBytes: 64,
   },
   /**
    * PBKDF2-HMAC-SHA256. The floor is 100,000 iterations, below OWASP's 600,000 on purpose:
@@ -206,6 +208,8 @@ export function parse(algorithm: string, encoded: string, params?: RowParams): P
   if (
     base64Bytes(match[6] ?? '') < limits.minSaltBytes ||
     base64Bytes(match[7] ?? '') < limits.minHashBytes ||
+    base64Bytes(match[6] ?? '') > limits.maxSaltBytes ||
+    base64Bytes(match[7] ?? '') > limits.maxHashBytes ||
     parallelism < limits.minParallelism
   ) {
     return refuse('import.hash_malformed')
@@ -501,6 +505,16 @@ export async function verify(
   context?: Opener
 ): Promise<boolean | null> {
   try {
+    // bcrypt and argon2 are Bun's to compute, but the cost is the row's: a row edited behind
+    // the server's back must not choose it (H-174). Only the ceilings are judged again: the
+    // floors are the import's policy, and a weaker hash that is stored still verifies.
+    const algorithm = detect(stored)
+    if (algorithm === 'bcrypt' || algorithm === 'argon2id' || algorithm === 'argon2i') {
+      const judged = parse(algorithm, stored)
+      if (!judged.ok && judged.code === 'import.hash_parameters_too_costly') {
+        return false
+      }
+    }
     if (stored.startsWith(PBKDF2_PREFIX)) {
       const match = PBKDF2_STORED.exec(stored)
       const salt = decodeBase64(match?.[2] ?? '')
