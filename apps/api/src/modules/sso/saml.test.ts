@@ -321,6 +321,11 @@ describe('SAML metadata route', () => {
     expect(xml).toContain('nameid-format:emailAddress')
   })
 
+  test('a disabled connection is a 404, a draft is still served (TULA-157, H-028)', async () => {
+    await SsoConnections.update(deps, TENANT, connectionId, { status: 'disabled' }, TEST_ACTOR)
+    expect((await app.request(new URL(spEntityId).pathname)).status).toBe(404)
+  })
+
   test('an unknown connection is a 404', async () => {
     const res = await app.request(
       new URL(spEntityId).pathname.replace(connectionId, Bun.randomUUIDv7())
