@@ -295,6 +295,17 @@ export function registryUrl(name: string, version: string): string {
   return `${REGISTRY}/${name.replace('/', '%2F')}/${encodeURIComponent(version)}`
 }
 
+/**
+ * The address of a package's dist-tags: `{ "latest": "1.2.3" }`, or 404 for a package never
+ * published.
+ *
+ * @param name - The package's name.
+ * @returns The URL of a plain, unauthenticated GET.
+ */
+export function registryLatestUrl(name: string): string {
+  return `${REGISTRY}/-/package/${name.replace('/', '%2F')}/dist-tags`
+}
+
 /** As much of `fetch` as the registry check uses, so a test can pass its own. */
 export type Fetcher = (
   url: string,
@@ -312,6 +323,44 @@ function statedIntegrity(document: unknown): string | null {
   }
   const integrity = (dist as { integrity: unknown }).integrity
   return typeof integrity === 'string' && integrity !== '' ? integrity : null
+}
+
+/**
+ * Ask the registry what each package's `latest` dist-tag is, so that an upload can refuse to
+ * move the tag backward (H-341). Same request rules as {@link registryStates}.
+ *
+ * @param packages - The staged packages.
+ * @param fetcher - `fetch`, or a test's stand-in.
+ * @param timeoutMs - The deadline of each request.
+ * @returns Each name with its latest version, `null` for a package never published (404),
+ *   and `'unknown'` when the registry did not say.
+ */
+export async function registryLatest(
+  packages: readonly StagedPackage[],
+  fetcher: Fetcher,
+  timeoutMs = 15_000
+): Promise<Map<string, string | null>> {
+  const latest = new Map<string, string | null>()
+  for (const pkg of packages) {
+    let state: string | null = 'unknown'
+    try {
+      const response = await fetcher(registryLatestUrl(pkg.name), {
+        headers: { accept: 'application/json' },
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (response.status === 404) {
+        state = null
+      } else if (response.status === 200) {
+        const body = (await response.json()) as { latest?: unknown } | null
+        state = typeof body?.latest === 'string' ? body.latest : null
+      }
+    } catch {
+      // No answer is 'unknown', which refuses an upload.
+    }
+    latest.set(pkg.name, state)
+  }
+  return latest
 }
 
 /**
@@ -560,13 +609,17 @@ export interface ReleasePlan {
  * @param states - What the registry said of each.
  * @param channel - How the upload is done.
  * @param reasons - The refusals found so far ({@link refusals}).
+ * @param latest - Each package's `latest` dist-tag ({@link registryLatest}). A version about
+ *   to be uploaded below it is refused (it would move `latest` backward), as is a package
+ *   whose latest is unknown. Omitted: not checked.
  * @returns The plan.
  */
 export function planRelease(
   packages: readonly StagedPackage[],
   states: ReadonlyMap<string, RegistryState>,
   channel: Channel,
-  reasons: readonly string[]
+  reasons: readonly string[],
+  latest?: ReadonlyMap<string, string | null>
 ): ReleasePlan {
   const planned = packages.map((pkg): PlannedPackage => {
     const registry = states.get(pkg.name) ?? 'unknown'
@@ -579,12 +632,30 @@ export function planRelease(
     return { pkg, registry, action }
   })
   const unknown = planned.filter((entry) => entry.registry === 'unknown')
+  const backward = latest
+    ? planned
+        .filter((entry) => entry.action === 'publish')
+        .flatMap((entry) => {
+          // null is "never published"; a name missing from the map is an unanswered question.
+          const current = latest.has(entry.pkg.name) ? latest.get(entry.pkg.name) : 'unknown'
+          const id = `${entry.pkg.name}@${entry.pkg.version}`
+          if (current === 'unknown') {
+            return [`the registry did not say which version of ${entry.pkg.name} is latest`]
+          }
+          return current !== null && current !== undefined && !atLeast(entry.pkg.version, current)
+            ? [
+                `${id} is below the registry's latest ${current}: publishing it under "${DIST_TAG}" would move the tag backward`,
+              ]
+            : []
+        })
+    : []
   return {
     packages: planned,
     channel,
     refusals: [
       ...reasons,
       ...channel.problems,
+      ...backward,
       ...planned
         .filter((entry) => entry.action === 'refuse')
         .map((entry) =>
