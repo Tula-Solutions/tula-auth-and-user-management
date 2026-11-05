@@ -52,6 +52,7 @@ duplicate `userName` is 409 with `scimType: "uniqueness"`.
 | `userName` (else the primary of `emails`) | The user's email address. It must be an address; it is **never changed** by SCIM afterwards, and a managed user cannot change it from a client. A managed user cannot change their password from a client either (`user.managed`, 403) while the directory has a live token; administrators still can. |
 | `externalId` | The directory's own id, kept to find the user again (`filter=externalId eq "…"`). |
 | `name.givenName`, `name.familyName` | First and last name (at most 100 characters each). For a user the directory manages, a `PUT` or `PATCH` updates them (TULA-150); for anyone else they are left alone. |
+| `name.givenName`, `name.familyName` (note) | The managed-account lock (`user.managed`) guards only the address and the password. A managed user can still change their name from a client, and the directory overwrites it on its next sync of that user. |
 | `active` | `false` deactivates (below), `true` restores. |
 | Any other attribute | Accepted and ignored. |
 
