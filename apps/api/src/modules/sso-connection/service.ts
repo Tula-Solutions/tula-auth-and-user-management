@@ -578,6 +578,9 @@ export function weakens(current: SsoConnectionRecord, changes: SsoConnectionChan
  * @param id - The connection.
  * @param input - The fields to change.
  * @param actor - Who changes it, for the audit log.
+ * @param guard - Run on the very record the change is computed from, before anything is
+ *   written: the organization's member routes check ownership, step-up and roles there, so the
+ *   check and the write read the connection once (TULA-157, H-030).
  * @returns The connection as it is now.
  * @throws AuthError `sso.connection_not_found`, `sso.invalid_transition`, `sso.domain_taken`,
  *   `sso.name_taken`, `sso.domain_not_verified`, `sso.issuer_not_allowed`.
@@ -598,10 +601,12 @@ export async function update(
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   id: string,
   input: UpdateSsoConnectionRequest,
-  actor: Actor
+  actor: Actor,
+  guard?: (current: SsoConnectionRecord) => Promise<void>
 ): Promise<SsoConnection> {
   await requireEnabled(deps, tenant)
   const current = await requireConnection(deps, tenant, id)
+  await guard?.(current)
   const changes: SsoConnectionChanges = {}
   const changed: SsoConnectionField[] = []
   if (input.name !== undefined && input.name !== current.name) {

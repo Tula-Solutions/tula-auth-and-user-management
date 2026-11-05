@@ -12,6 +12,7 @@ import type {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
+import * as logger from '~/lib/logger'
 import { publicBase } from '~/lib/public-base'
 import * as Organizations from '~/modules/organization/service'
 import * as ScimTokens from '~/modules/scim-token/service'
@@ -46,6 +47,15 @@ async function requireOwn(
   id: string
 ): Promise<void> {
   const found = await deps.ssoConnections.find(tenant.environmentId, id)
+  if (found && found.organizationId !== scope.organizationId) {
+    // A probe for another organization's connection: the answer stays "not found", the
+    // operator gets a trace. Fixed fields, and none names the other organization or the id
+    // that was tried (TULA-157, H-026).
+    logger.warn('setup link asked for another organization’s connection', {
+      environmentId: tenant.environmentId,
+      organizationId: scope.organizationId,
+    })
+  }
   if (!found || found.organizationId !== scope.organizationId) {
     throw new AuthError('sso.connection_not_found')
   }

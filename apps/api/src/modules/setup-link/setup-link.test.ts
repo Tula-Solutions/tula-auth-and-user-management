@@ -433,6 +433,7 @@ describe('setup portal', () => {
     const b = await link(theirs.id)
     const foreign = await connect(b.token)
     const testId = Bun.randomUUIDv7()
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
     const calls: Array<[string, string, unknown?]> = [
       ['GET', `/connections/${foreign.id}`],
       ['PATCH', `/connections/${foreign.id}`, { name: 'x' }],
@@ -450,6 +451,14 @@ describe('setup portal', () => {
       expect([method, path, res.status]).toEqual([method, path, 404])
       expect(((await res.json()) as { code: string }).code).toBe('sso.connection_not_found')
     }
+    // H-026: each probe is logged with fixed fields and no id of the other organization.
+    expect(warn).toHaveBeenCalledTimes(calls.length)
+    for (const [, fields] of warn.mock.calls) {
+      expect(fields).toEqual({ environmentId: TENANT.environmentId, organizationId: mine.id })
+    }
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(foreign.id)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(theirs.id)
+    warn.mockRestore()
     const untouched = await deps.ssoConnections.find(TENANT.environmentId, foreign.id)
     expect(untouched?.name).toBe('Okta')
   })

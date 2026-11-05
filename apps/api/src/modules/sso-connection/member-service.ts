@@ -99,7 +99,10 @@ async function requireAssignable(
  * @param input - The change asked for.
  * @returns `true` for a weakening.
  */
-export function needsStepUp(current: SsoConnection, input: UpdateSsoConnectionRequest): boolean {
+export function needsStepUp(
+  current: Parameters<typeof ssoWeakenings>[0],
+  input: UpdateSsoConnectionRequest
+): boolean {
   return ssoWeakenings(current, input).length > 0
 }
 
@@ -198,16 +201,19 @@ export async function update(
   step: () => Promise<void>
 ): Promise<SsoConnection> {
   const permissions = await requireManager(deps, tenant, caller, organizationId)
-  const current = await requireOwn(deps, tenant, organizationId, id)
-  if (needsStepUp(current, input)) {
-    await step()
-  }
-  for (const role of [input.defaultRole, input.breakGlassRole]) {
-    if (typeof role === 'string') {
-      await requireAssignable(deps, tenant, permissions, role)
+  return SsoConnections.update(deps, tenant, id, input, actor, async (current) => {
+    if (current.organizationId !== organizationId) {
+      throw new AuthError('sso.connection_not_found')
     }
-  }
-  return SsoConnections.update(deps, tenant, id, input, actor)
+    if (needsStepUp(current, input)) {
+      await step()
+    }
+    for (const role of [input.defaultRole, input.breakGlassRole]) {
+      if (typeof role === 'string') {
+        await requireAssignable(deps, tenant, permissions, role)
+      }
+    }
+  })
 }
 
 /**
