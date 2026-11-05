@@ -232,3 +232,10 @@ this file under "Area rules" and does not repeat it.
   `organization_domains` row of the connection's own organization (`holdsDomain` in
   `modules/sso/service.ts`). Removing a domain (a takeover of a lapsed name included) unbinds it
   from the organization's connections in the same transaction, with an audit entry.
+
+- Decision (TULA-157, H-072): the organization claims (`claimsOf`, `fromMembership`) do not
+  check `bannedAt`; recommended and left as is. They are built only for a live session or a
+  token being issued, and a ban ends every session and refuses a refresh, a create and a
+  second step (`sessions.md`, "The ban window"), so a banned user reaches the claims at most
+  inside the access-token TTL, on a token that already holds them. A check there would add a
+  user read to every token build for no window the denylist does not already close.

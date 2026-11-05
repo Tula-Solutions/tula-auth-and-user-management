@@ -359,6 +359,23 @@ describe('a user with a real second factor', () => {
     expect(await liveSessions(userId)).toHaveLength(1)
   })
 
+  test('a user banned at the second step is refused before the backup code is spent (H-143)', async () => {
+    const userId = await seedUser()
+    const { codes } = await enrol(userId)
+    const attempt = await startSignIn()
+    await password(attempt)
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
+    const err = await rejection(second(attempt, 'backup_code', codes[0] as string))
+    expect(err.toJSON()).toMatchObject({ code: 'mfa.invalid_code' })
+    expect(deps.activityLog.ofType('user.backup_code_used')).toEqual([])
+  })
+
   test('a backup code completes the sign-in once and says how many are left', async () => {
     const userId = await seedUser()
     const { codes } = await enrol(userId)

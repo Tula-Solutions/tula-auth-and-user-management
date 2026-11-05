@@ -287,6 +287,38 @@ describe('refresh', () => {
     expect((await refresh(rt(first))).sessionId).toBe(first.sessionId)
   })
 
+  test('a session created for a banned user is revoked and refused (H-095)', async () => {
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: 'i1',
+        credentialId: 'c1',
+        passwordHash: 'hash',
+      },
+      Audit.none('fixture')
+    )
+    // The ban lands after the flow's own check and before the session exists.
+    await deps.users.setBanned(
+      tenant.environmentId,
+      USER,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
+    const err = await rejection(create())
+    expect(err.code).toBe('auth.user_banned')
+    const live = await deps.sessions.listActiveByUser(tenant.environmentId, USER, deps.clock.now())
+    expect(live).toEqual([])
+  })
+
   test('a banned user cannot refresh, and the attempt ends their session', async () => {
     await deps.users.create(
       {

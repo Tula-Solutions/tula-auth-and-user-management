@@ -683,6 +683,27 @@ export async function create(
     await createWithinLimit(deps, scope, { session, root, activity, origin, now }, settings)
   }
 
+  // A ban that landed after the caller's own check has already run its revocation, which missed
+  // this session: re-read after the insert so that the ban, not the race, has the last word.
+  const owner = await deps.users.findById(scope.environmentId, input.userId)
+  if (owner?.bannedAt) {
+    await denylist(deps, [sessionId], now)
+    await deps.sessions.revoke(
+      scope.environmentId,
+      sessionId,
+      'user_banned',
+      now,
+      revoked(
+        deps,
+        scope,
+        { id: sessionId, userId: input.userId },
+        'user_banned',
+        systemActor(origin)
+      )
+    )
+    throw new AuthError('auth.user_banned')
+  }
+
   const cookieMaxAge = absoluteExpiresAt
     ? Math.ceil((absoluteExpiresAt.getTime() - now.getTime()) / 1000)
     : MAX_COOKIE_AGE_SECONDS

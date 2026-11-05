@@ -518,8 +518,9 @@ describe('what a template costs', () => {
   test('a sign-in reads the user only for a template that has a user source', async () => {
     await addUser()
     const find = spyOn(deps.users, 'findById')
+    // One read always: the ban re-check after the insert (H-095). A template adds its own.
     await create()
-    expect(find).not.toHaveBeenCalled()
+    expect(find).toHaveBeenCalledTimes(1)
 
     configure({
       jwtTemplates: {
@@ -527,12 +528,14 @@ describe('what a template costs', () => {
       },
       profiles: { web: { jwtTemplate: 'app' } },
     })
-    await create()
-    expect(find).not.toHaveBeenCalled()
-
-    configure({ jwtTemplates: { app: APP }, profiles: { web: { jwtTemplate: 'app' } } })
+    find.mockClear()
     await create()
     expect(find).toHaveBeenCalledTimes(1)
+
+    configure({ jwtTemplates: { app: APP }, profiles: { web: { jwtTemplate: 'app' } } })
+    find.mockClear()
+    await create()
+    expect(find).toHaveBeenCalledTimes(2)
   })
 
   test('a stateful check reads the user only for a template that has a user source', async () => {
