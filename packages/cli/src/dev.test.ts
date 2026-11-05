@@ -50,10 +50,10 @@ function fakeHost(options: FakeHostOptions = {}) {
         minted += 1
         return ok(`${line.includes('--kind publishable') ? PK : SK}\n`)
       }
-      if (line.includes('port api')) {
+      if (line.includes('port -- api')) {
         return ok('127.0.0.1:53003\n')
       }
-      if (line.includes('port mailpit')) {
+      if (line.includes('port -- mailpit')) {
         return ok('127.0.0.1:58025\n')
       }
       if (line.startsWith('git check-ignore')) {
@@ -135,6 +135,13 @@ describe('the block tula dev manages in .env.local', () => {
     const text = withDevBlock('MY_OWN=1\n', vars)
     expect(text.startsWith('MY_OWN=1\n')).toBe(true)
     expect(parseDevBlock(text)).toEqual(vars)
+  })
+
+  test('refuses a value that holds a newline or a control character (no injected env line)', () => {
+    for (const bad of ['a\nEVIL=1', 'a\rb', 'a\u0000b', 'a\u001bb']) {
+      expect(() => withDevBlock('', { TULA_API_URL: bad })).toThrow(/control character|newline/i)
+    }
+    expect(() => withDevBlock('', { 'A\nB': 'x' })).toThrow()
   })
 
   test('is replaced in place, leaving every other line alone', () => {
