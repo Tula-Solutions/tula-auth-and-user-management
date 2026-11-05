@@ -913,6 +913,10 @@ async function finish(
     deviceThumbprint: state.deviceThumbprint,
     ssoConnectionId: state.ssoConnectionId ?? null,
   })
+  // Only the factors the user holds are asked again here, not an `mfa.policy` that became
+  // `required` after this attempt started (H-090): that takes an administrator's settings
+  // change, the user has no factor this session failed to prove, and their next sign-in
+  // stops at the enrolment.
   if (
     attempt.kind !== 'sign_up' &&
     // Asked only of an attempt that did not prove a strong factor: one that did is past this.
