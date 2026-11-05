@@ -1,4 +1,4 @@
-import { isStepUpRequired, stepUpMethods } from '@tula-tech/core'
+import { type AuthState, isStepUpRequired, stepUpMethods } from '@tula-tech/core'
 import { useCallback } from 'react'
 import { useTulaContext } from '../context'
 
@@ -47,18 +47,27 @@ export type WithStepUp = <Result>(action: () => Promise<Result>) => Promise<Resu
  * ```
  */
 export function useStepUp(): WithStepUp {
-  const { prompts } = useTulaContext()
+  const { prompts, client } = useTulaContext()
   return useCallback(
     async <Result>(action: () => Promise<Result>): Promise<Result> => {
       try {
         return await action()
       } catch (error) {
-        if (!isStepUpRequired(error) || !(await prompts.stepUp(stepUpMethods(error)))) {
+        if (!isStepUpRequired(error)) {
+          throw error
+        }
+        const before = sessionOf(client.state)
+        // Another session underneath the prompt: the retry would run as someone else.
+        if (!(await prompts.stepUp(stepUpMethods(error))) || sessionOf(client.state) !== before) {
           throw error
         }
         return action()
       }
     },
-    [prompts]
+    [prompts, client]
   )
+}
+
+function sessionOf(state: AuthState): string | null {
+  return state.status === 'signed-in' ? state.sessionId : null
 }

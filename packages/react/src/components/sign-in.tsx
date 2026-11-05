@@ -14,7 +14,7 @@ import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-che
 import { type UseResetPasswordResult, useResetPassword } from '../hooks/use-reset-password'
 import { type UseSignInResult, useSignIn } from '../hooks/use-sign-in'
 import { formatText } from '../localization'
-import { safeUrl } from '../navigation'
+import { safeTarget, safeUrl } from '../navigation'
 import {
   type FirstFactorFormProps,
   type FirstFactorForms,
@@ -109,7 +109,7 @@ export function SwitchLink(props: {
   const { url, onSwitch } = props
   // Validated against a dummy base: only the scheme matters here, and rendering must not need
   // `window`. A URL that is refused renders no link at all.
-  const href = url !== undefined && safeUrl(url, 'http://localhost') !== null ? url : undefined
+  const href = safeTarget(url, 'http://localhost') ?? undefined
   if (href === undefined && !onSwitch) {
     return null
   }

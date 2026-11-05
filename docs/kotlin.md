@@ -178,7 +178,8 @@ tula.session.signOut() // throws when the server could not be told
 - **A failed sign-out is not a sign-out.** `signOut()` forgets the session on the device
   and throws when the server could not be told: the session may still be alive there. Leave
   the signed-in screen only after a `signOut()` that returned; offer "try again" otherwise
-  (calling it again tells the server).
+  (calling it again tells the server, as long as the app has not restarted: the token is
+  held in memory, so a restart loses it and the session lives until it expires).
 
 ## The second step, and step-up
 

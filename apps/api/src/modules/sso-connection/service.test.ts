@@ -498,6 +498,25 @@ describe('SAML connections', () => {
     ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'forbidden_xml' } })
   })
 
+  test('metadata values past the manual-input caps are refused (TULA-157, H-022)', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const long = metadata().replace(
+      'entityID="https://idp.example.test/e"',
+      `entityID="https://idp.example.test/${'e'.repeat(1100)}"`
+    )
+    await expect(
+      Sso.create(deps, TENANT, saml(o.id, { metadataXml: long }), TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'too_long' } })
+    const longUrl = metadata().replace(
+      'Location="https://idp.example.test/sso"',
+      `Location="https://idp.example.test/${'s'.repeat(2100)}"`
+    )
+    await expect(
+      Sso.create(deps, TENANT, saml(o.id, { metadataXml: longUrl }), TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'too_long' } })
+  })
+
   test('no source, or two, is refused', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')
