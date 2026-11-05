@@ -163,7 +163,14 @@ async function deliver(
     })
     return
   }
-  await Email.send(deps, scope, email, message)
+  try {
+    await Email.send(deps, scope, email, message)
+  } catch {
+    // The slot is already spent and the limiter has no refund: one more try keeps a relay
+    // hiccup from costing the user a notice (TULA-182, H-219). A second failure is logged by
+    // dispatch.
+    await Email.send(deps, scope, email, message)
+  }
 }
 
 /**

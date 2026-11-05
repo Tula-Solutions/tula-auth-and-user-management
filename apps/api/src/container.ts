@@ -157,7 +157,12 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
   const plan = planProcess(role, env.WEBHOOK_WORKER)
   const database = createDatabase(env.DATABASE_URL)
   const clock = systemClock
-  const mailer = new SmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
+  const mailer = new SmtpMailer({
+    url: env.SMTP_URL,
+    from: env.MAIL_FROM,
+    // TLS is mandatory where real users' mail goes (TULA-182, H-225).
+    requireTls: env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'prod',
+  })
   const keyedHash = createKeyedHash(env.TULA_MASTER_KEY)
   // State that API instances must agree on lives in Redis when it is configured. Without it
   // (allowed in `local` and `dev` only, see `env.ts`) it is held in this process's memory.
