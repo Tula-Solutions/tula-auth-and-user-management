@@ -75,7 +75,7 @@ await admin.call('deleteWebhookEndpoint', { params: { id: endpoint.id } })
 | `GET /v1/admin/webhook-endpoints` | List, oldest first. |
 | `GET /v1/admin/webhook-endpoints/:id` | Read one. |
 | `PATCH /v1/admin/webhook-endpoints/:id` | Change `url`, `eventTypes` or `enabled`. |
-| `DELETE /v1/admin/webhook-endpoints/:id` | Remove it, with its delivery log. |
+| `DELETE /v1/admin/webhook-endpoints/:id` | Remove it, with its delivery log. Deliveries still queued are removed too and are never sent. |
 | `GET /v1/admin/webhook-endpoints/:id/deliveries` | [Its deliveries](#the-delivery-log), newest first. |
 | `GET /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId` | One delivery with every request made for it. |
 | `POST /v1/admin/webhook-endpoints/:id/test` | [Send a test event](#send-a-test-event). |

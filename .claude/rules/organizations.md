@@ -126,6 +126,12 @@ this file under "Area rules" and does not repeat it.
   organization with `createdBy` gets the lower cap and shares `CODES_PER_CREATOR_PER_DAY` with
   the creator's others; `domain_taken` for another organization's live verification spends the
   hourly allowance first (a probe). Keep both, and a limiter key holds ids only.
+- Decision (TULA-157, H-202, recorded, no code): the 200 codes a day an environment may send
+  for domain claims (`CODES_PER_ENVIRONMENT_PER_DAY`) are shared, so enough creator accounts
+  could spend them and block other tenants' claims for the day. Each creator is held to 20
+  and each organization to 10 or 30, so it takes ten creators, and each needs a sign-in
+  and an organization. Availability only, no mail beyond the cap. Recommendation: keep the
+  number and watch it; raise it, or make it a setting, when an environment hits it in real use.
 
 ## What to test
 
@@ -232,6 +238,14 @@ this file under "Area rules" and does not repeat it.
   `organization_domains` row of the connection's own organization (`holdsDomain` in
   `modules/sso/service.ts`). Removing a domain (a takeover of a lapsed name included) unbinds it
   from the organization's connections in the same transaction, with an audit entry.
+- **An SSO sign-in re-syncs a member's role from their groups, and it does downgrade** (H-021;
+  `ensureMember` in `modules/sso/service.ts`, ADR 0067). Where the organization maps groups, every
+  sign-in sets the role to the first mapped group the user is in, or to the connection's
+  `defaultRole` when they are in none: leaving a group in the IdP removes its privileges. Two cases
+  keep the old role: an organization with **no mapping** (the role is given only when the
+  membership is created), and a change that `changeMemberRole` refuses, the last manager above
+  all (the sign-in succeeds, a warning with the fixed reason is logged). Never make the re-sync
+  skip the organization service, or the last-manager rule goes with it.
 
 ## Decisions awaiting review (TULA-157)
 
@@ -304,3 +318,72 @@ this file under "Area rules" and does not repeat it.
 - Decision (TULA-157, H-035): **changed**. An unknown `kid` refetches the key set only if
   the cached set is at least 30 s old (`JWKS_REFETCH_COOLDOWN_MS`), so forged kids cannot
   drive a fetch per attempt; a real rotation is picked up on the next try after that.
+- Decision (TULA-157, H-009): **recorded, no change**: the managed lock (`user/managed.ts`)
+  holds while the connection row exists or an unrevoked SCIM token does; after a hard delete
+  or a revocation the users become password-settable. Recommended as intended: a lock with
+  nothing behind it would leave people unable to recover an account, and delete already
+  refuses an active connection. Changing it needs the managed flag cleared or kept in a
+  migration, so it is left to the owner.
+- Decision (TULA-157, H-010): **recommended, not built**: disabling a connection stops new
+  sign-ins (`Sso.requireActive`) and leaves issued sessions alive until they end. Recommended
+  to keep that, and to offer revoking the connection's users' sessions as an explicit option of
+  the disable call, through the session service so the ids are denylisted: revoking by default
+  would sign out a whole organization on a mis-click. Not built: it changes what an existing
+  call does to live sessions.
+- Decision (TULA-157, H-011): **changed**: `fingerprint()` in `modules/sso-connection/service.ts`
+  now also hashes `enforced`, `trustIdpMfa` and `breakGlassRole`, so a passing test attests to
+  them; no schema change. Draft connections tested before this release need one new test; an
+  active connection is not affected. Group-role mappings belong to the organization, not the
+  connection, and are not in it. Test: `sso-connection/fingerprint.test.ts`.
+- Decision (TULA-157, H-012): **recorded, no change**: editing an active connection weakens
+  nothing a `org:sys:sso:manage` holder could not do by drafting, testing and reactivating,
+  and the weakening is audited and step-up guarded (H-002/H-007). Re-gating an active
+  connection on an edit would take sign-in down for a typo's duration; revisit if a way
+  appears to test a change without leaving `active`.
+- Decision (TULA-157, H-013): **recommended, not built**: `trustIdpMfa` records `mfa` without
+  reading `amr`/`acr` or SAML `AuthnContext`. It is an explicit opt-in that says the IdP is
+  trusted for MFA, and IdPs differ in what they send. Recommended: when a claim is present and
+  names no second factor, fall back to local MFA; absent claim keeps today's trust. Not built:
+  it changes who is asked for a second factor in `modules/flow` (security-sensitive) and needs
+  per-IdP claim handling, so it wants the owner.
+- Decision (TULA-157, H-014): **recorded, no change**: `resolveAccount` does not require
+  `email_verified` on an OIDC profile before linking; the connection's verified, unlapsed
+  domain (TULA-158, `holdsDomain`) vouches for the address, as its row 2 documents. The claim
+  cannot be enforced "when present": `profileOf` reads an absent claim as `false`, and
+  common IdPs (Entra ID) omit it, so enforcing it would refuse their whole organization.
+- Decision (TULA-157, H-015): **recorded, no change**: a setup-link portal holder edits an
+  active connection through the same update path. The holder is the operator's own
+  customer's IT administrator, which is the portal's purpose, and the dangerous edits are
+  already guarded by `ssoWeakenings`. Restricting them to non-active connections changes what
+  a portal can do; the owner decides.
+- Decision (TULA-157, H-016): **recorded, no change**: a setup link outlives its creator's
+  demotion or removal until it expires (30 days at most) or is revoked (ADR 0067 accepts this
+  as bearer-credential risk). Recommended: revoke an organization's links minted by a member
+  when that member is removed or loses `org:sys:sso:manage`, from the member service, and show
+  the creator in the link list. Not built: it changes the portal's access and spans
+  `modules/setup-link`, which another ticket (TULA-171) is working in.
+- Decision (TULA-157, H-047): **changed**: `Portal.createConnection` refuses a 51st connection
+  for the organization with a 409 (`MAX_PORTAL_CONNECTIONS`), so a link holder cannot build more
+  than the portal shows. The admin path keeps no cap.
+- Decision (TULA-157, H-049): **recorded, no change**: SCIM `POST /Users` answers 409 for an
+  address held anywhere in the environment because RFC 7644 asks for uniqueness, and the caller
+  already holds an organization's SCIM token. Recommended, if the probe matters: refuse a
+  `userName` outside the organization's verified domains with a uniform 400. Not built: it
+  changes what directories may send.
+- Decision (TULA-157, H-050): **recorded, no change**: SCIM tokens minted through a setup link
+  outlive the link. They are capped (`MAX_LIVE_TOKENS`) and an organization admin lists and
+  revokes them; a directory must keep syncing after the 30-day link ends. Recommended: show
+  "created through a setup link" in the token list.
+- Decision (TULA-157, H-051): **recorded, no change**: SCIM group role changes are put back by a
+  compensating second round of writes, not atomically. A crash mid-commit can leave partial
+  role changes. Recommended: a batch role change on the organization store, when one exists.
+- Decision (TULA-157, H-058): **recorded, no change**: revoking a link leaves the tokens,
+  connections and sealed secrets made through it, as the route description says. Recommended:
+  an opt-in `cascade` on revoke, a contract change.
+- Decision (TULA-157, H-059): **recorded, no change**: the portal has no connection delete, so
+  drafts stay until an operator removes them. They are bounded by the 50-connection cap (H-047).
+  Recommended: a portal delete for connections that are not enforced; a new route, so a contract
+  change.
+- Decision (TULA-157, H-060): **recorded, no change**: the portal lists mappings to privileged
+  roles as locked, which shows the group names. Moot once a setup-link token cannot apply a
+  privileged role (TULA-156); until then the names are the holder's own directory's groups.

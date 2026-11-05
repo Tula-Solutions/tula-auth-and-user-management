@@ -44,7 +44,7 @@ export const MAX_AUDIT_RETENTION_DAYS = 3650
 const UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]/u
 
 const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
-const HOST = `(?:${LABEL}(?:\\.${LABEL})*|\\[[0-9a-f:.]{2,45}\\])`
+const HOST = `(?:${LABEL}(?:\\.${LABEL})*|\\[(?!.*:::)(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\\])`
 const PORT = '(?::([1-9][0-9]{0,4}))?'
 const HTTPS_ORIGIN = new RegExp(`^https://${HOST}${PORT}$`)
 const LOOPBACK_ORIGIN = new RegExp(`^http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])${PORT}$`)

@@ -14,6 +14,7 @@ import {
   type ProviderOptions,
   withDeadline,
 } from './id-token'
+import { readProfile } from './profile-read'
 
 /** What is asked of GitHub: the profile, and the email addresses (the public one may be empty). */
 export const GITHUB_SCOPES = ['read:user', 'user:email']
@@ -52,39 +53,13 @@ async function accessTokenOf(
   return tokens.accessToken()
 }
 
-/**
- * Read one resource of GitHub's API. The request is aborted at the timeout (the signal also
- * ends a body that stops arriving); {@link withDeadline} guards a `fetch` that ignores it.
- */
+/** Read one resource of GitHub's API through the capped, no-redirect reader (H-153). */
 function api(path: string, accessToken: string, timeoutMs: number): Promise<unknown> {
-  return withDeadline(read(path, accessToken, AbortSignal.timeout(timeoutMs)), timeoutMs)
-}
-
-async function read(path: string, accessToken: string, signal: AbortSignal): Promise<unknown> {
-  let response: Response
-  try {
-    response = await globalThis.fetch(`${GITHUB_API}${path}`, {
-      signal,
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        accept: 'application/vnd.github+json',
-        'user-agent': 'tula-auth',
-        'x-github-api-version': '2022-11-28',
-      },
-    })
-  } catch {
-    throw new OAuthProviderError('unavailable')
-  }
-  if (!response.ok) {
-    await response.body?.cancel()
-    throw new OAuthProviderError('unavailable')
-  }
-  try {
-    return await response.json()
-  } catch {
-    // A body cut off by the timeout is the provider not answering, not a bad profile.
-    throw new OAuthProviderError(signal.aborted ? 'unavailable' : 'invalid_profile')
-  }
+  return readProfile(`${GITHUB_API}${path}`, accessToken, timeoutMs, {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'tula-auth',
+    'x-github-api-version': '2022-11-28',
+  })
 }
 
 /** The primary address of a GitHub account and whether GitHub has verified it. */

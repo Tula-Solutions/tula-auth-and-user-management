@@ -201,6 +201,11 @@ saved. Send the list yourself in the same request, `"urls": { "allowedOrigins": 
 or correct `CORS_ORIGINS` and restart. Until an environment saves settings, `CORS_ORIGINS`
 keeps applying to it exactly as written.
 
+A browser's preflight request names no environment, so the API answers it for an origin that
+**any** environment of the deployment allows. That only lets the browser send the real
+request: each environment still checks the origin against its own list, and a cookie is
+honoured only for an origin that environment allows.
+
 If the API logs `stored environment settings held list entries that are not valid; they were
 ignored`, a stored origin or redirect URL is one this version does not accept. The environment
 keeps working without those entries; read the settings and `PUT` them back to clean the row.
@@ -597,14 +602,18 @@ earlier major version wrote: a database made with the 17 image is moved with `pg
 - a **runtime** login for the API (`DATABASE_URL`) that is a member of `tula_app` and owns
   nothing. Tenant isolation is enforced by row-level security, which PostgreSQL does not apply
   to table owners or superusers. An API connected as the owner has no isolation between
-  projects.
+  projects, so the API and the webhook worker refuse to start on a login that is a superuser,
+  has `BYPASSRLS` or owns a table, and log that in fixed words. A worker whose database is
+  not answering yet waits for it and starts no delivery until the login has been checked.
 
 ```sql
 CREATE ROLE tula_app NOLOGIN;
 CREATE ROLE tula_api LOGIN PASSWORD '<a strong password>' IN ROLE tula_app;
 ```
 
-The Compose file's passwords (`tula` / `tula_api`) are for local use only.
+The Compose file's passwords (`tula` / `tula_api`, also set in `docker/postgres/init.sql`) are
+public defaults for local use only. Never run them in production: create `tula_api` with your
+own strong password, as above, and put the same one in `DATABASE_URL` (H-234).
 
 **Migrations.** Run them before starting a new version, as the owner:
 
@@ -616,7 +625,10 @@ Migrations only move forward. Back up the database before upgrading.
 
 **First project and keys.** With your own database there is no Compose service to run the
 bootstrap scripts in; run them in the image with the runtime settings. The seed prints the
-environment ids, and each key is printed once:
+environment ids, and each key is printed once. The seed is a first-run bootstrap and nothing
+more: it makes a workspace named `Local`, a `Default project` and its development and
+production environments, and finds them again on a later run instead of making a second set.
+It reads nothing but `DATABASE_URL`, so run it against the database you mean (TULA-157, H-254):
 
 ```bash
 docker run --rm -e DATABASE_URL=postgres://tula_api:…@db:5432/tula tula-api bun run ../../packages/db/src/scripts/seed.ts
@@ -640,6 +652,13 @@ only reachable on a Docker network.
 > https. Set `TRUST_PROXY=true` so rate limits and the audit log see the client's address, and
 > make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
 > proxy, clients can forge their address.
+
+> [!IMPORTANT]
+> **Keep setup links out of logs.** An SSO setup link carries its secret in the URL fragment
+> (`/dashboard/setup#token=…`) and the portal sends it in the `x-tula-setup-token` header. A
+> browser never sends a fragment, but a proxy, a log shipper or an analytics script that sees the
+> page's full address does: have your proxy and log pipeline redact the `x-tula-setup-token`
+> header and drop the `#token=` fragment, as you would an `Authorization` header.
 
 **A Next.js app in front (`@tula-tech/nextjs`).** With the Next.js SDK the browser talks to the
 app's own origin, and the app's server forwards to the API
@@ -710,6 +729,15 @@ through Redis and are immediate.
 
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
+
+**How long a revoked or banned user's access token still works.** An access token is a
+signed JWT checked without a database lookup, so it is valid until it expires (60 seconds by
+default, at most 15 minutes by a profile's `accessTokenTtl`). Ending a session puts its id on
+the revoked-session list for that longest lifetime, and the API checks the list, so a revoked
+session is refused at once. A server that verifies tokens offline (`@tula-tech/nextjs`'s
+interceptor, or your own JWKS check) does not read the list: for it, a ban, a deletion or a
+revocation takes effect when the token expires. Use a stateful session profile where that
+window is too long.
 
 ### The webhook worker as its own service
 

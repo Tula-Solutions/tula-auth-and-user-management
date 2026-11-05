@@ -311,8 +311,10 @@ describe('bun run src/worker.ts', () => {
         expect(await child.exited).toBe(0)
         const out = await new Response(child.stdout).text()
         expect(out).toContain('tula webhook worker started')
-        // The first round was tried and failed for want of a database: logged, not fatal.
-        expect(out).toContain('could not run the webhook delivery job')
+        // Its database login could not be judged for want of a database: logged, not fatal, and
+        // no round is started before it is (H-227).
+        expect(out).toContain('database login not checked yet')
+        expect(out).not.toContain('could not run the webhook delivery job')
         expect(out).toContain('shutting down')
         expect(out).not.toContain('tula api listening')
         // The retention job is the API's.

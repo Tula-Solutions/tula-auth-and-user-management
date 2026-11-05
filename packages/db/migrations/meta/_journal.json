@@ -393,6 +393,13 @@
       "when": 1793899282647,
       "tag": "0059_user_ban_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793908102424,
+      "tag": "0060_proposals_pending_unique",
+      "breakpoints": true
     }
   ]
 }

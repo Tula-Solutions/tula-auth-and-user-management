@@ -46,6 +46,9 @@ async function sentByCore(baseUrl: string): Promise<{ url: string; proof: string
   const tula = createTulaClient({
     publishableKey: 'tula_pk_dev_publishable0000000000000000000',
     baseUrl,
+    // The plain-http rows (a Compose service name) are a private network's deployment,
+    // whose client has to opt in to http off-machine (H-313); https rows ignore it.
+    allowInsecureHttp: true,
     client: 'ios',
     storage: memoryStorage(),
     deviceKey: key,

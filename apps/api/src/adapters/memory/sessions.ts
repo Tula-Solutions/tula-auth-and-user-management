@@ -160,7 +160,14 @@ export class MemorySessionStore implements SessionStore {
   async rotate(environmentId: string, rotation: Rotation): Promise<boolean> {
     const parent = this.#tokens.get(rotation.parentId)
     const session = parent && this.#session(environmentId, parent.sessionId)
-    if (!parent || !session || parent.usedAt !== null || session.revokedAt !== null) {
+    // The child must join the parent's own session, as the Postgres adapter's guard requires.
+    if (
+      !parent ||
+      !session ||
+      parent.usedAt !== null ||
+      session.revokedAt !== null ||
+      rotation.child.sessionId !== parent.sessionId
+    ) {
       return false
     }
     parent.usedAt = rotation.at

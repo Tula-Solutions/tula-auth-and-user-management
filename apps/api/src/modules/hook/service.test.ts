@@ -320,10 +320,11 @@ describe('changing a hook', () => {
     spies.push(
       spyOn(deps.hooks, 'update').mockImplementationOnce(async (...args) => {
         // Someone else switches it off after this request read it as on.
+        const read = await deps.hooks.find(tenant.environmentId, id)
         await update(
           tenant.environmentId,
           id,
-          { enabled: true, failureMode: 'deny' },
+          read as NonNullable<typeof read>,
           { enabled: false },
           deps.clock.now(),
           Audit.none('fixture')

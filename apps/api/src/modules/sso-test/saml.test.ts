@@ -277,6 +277,18 @@ describe('SAML test round', () => {
     expect((await SsoConnections.get(deps, TENANT, connectionId)).tested).toBe(false)
   })
 
+  test('a domain whose verification has lapsed is not on the connection’s domains (H-003)', async () => {
+    deps.clock.advance('2d')
+    const s = await started()
+    await answer(s)
+    const result = await SsoTests.result(deps, TENANT, connectionId, s.testId)
+    expect(result).toMatchObject({
+      status: 'failed',
+      reason: 'email_outside_domains',
+      mapped: { emailOnVerifiedDomain: false },
+    })
+  })
+
   test('a name that is not an email fails with email_missing', async () => {
     const s = await started()
     await answer(s, { subject: 'not-an-address' })

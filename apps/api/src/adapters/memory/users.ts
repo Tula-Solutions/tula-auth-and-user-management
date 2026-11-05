@@ -185,6 +185,7 @@ export class MemoryUserRepository implements UserRepository {
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
     if (
+      this.#users.has(user.id) ||
       (user.emailNormalized !== null && this.#byEmail(user.environmentId, user.emailNormalized)) ||
       (oauthIdentity &&
         this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
@@ -526,6 +527,18 @@ export class MemoryUserRepository implements UserRepository {
       this.#activityLog.record(activity ? [activity] : [])
     }
     return { ...user }
+  }
+
+  /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    const user = this.#user(environmentId, userId)
+    if (user && user.managedByDirectoryId === organizationId) {
+      user.managedByDirectoryId = null
+    }
   }
 
   /** @inheritdoc */

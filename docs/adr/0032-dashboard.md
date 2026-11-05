@@ -349,3 +349,8 @@ and callbacks passed to `mutate` do not run once their screen is gone.
   the live checks of this step.
 - Operator accounts, roles and per-workspace permissions (the V2 control plane).
 - The Dockerfile's dashboard build stage: it arrives with the app.
+- Per-workspace operator scoping. The single operator credential (`TULA_ADMIN_TOKEN`) covers
+  every workspace, project and environment of the deployment, so one operator cannot be kept
+  out of another team's workspace. That is a limit of the single-operator model, not a bug:
+  a deployment that must separate teams runs one instance per team until the V2 control plane
+  has operator accounts and roles.

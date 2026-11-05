@@ -216,12 +216,14 @@ router.get(
   }),
   instanceAdmin(),
   validator('query', PageQuerySchema, validationHook),
-  async (c) =>
-    c.json(
+  async (c) => {
+    c.header('cache-control', 'no-store')
+    return c.json(
       WorkspaceListSchema.parse(
         await ControlPlane.listWorkspaces(c.get('deps'), c.req.valid('query'))
       )
     )
+  }
 )
 
 router.post(
@@ -266,10 +268,12 @@ router.get(
   }),
   instanceAdmin(),
   validator('query', ProjectListQuerySchema, validationHook),
-  async (c) =>
-    c.json(
+  async (c) => {
+    c.header('cache-control', 'no-store')
+    return c.json(
       ProjectListSchema.parse(await ControlPlane.listProjects(c.get('deps'), c.req.valid('query')))
     )
+  }
 )
 
 router.post(
@@ -351,12 +355,14 @@ router.get(
   }),
   instanceAdmin(),
   validator('query', EnvironmentListQuerySchema, validationHook),
-  async (c) =>
-    c.json(
+  async (c) => {
+    c.header('cache-control', 'no-store')
+    return c.json(
       InstanceEnvironmentListSchema.parse(
         await ControlPlane.listEnvironments(c.get('deps'), c.req.valid('query'))
       )
     )
+  }
 )
 
 router.post(

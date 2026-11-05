@@ -196,9 +196,18 @@ export function describeProposalStore(
     })
 
     test('the list is newest first and holds no more than the limit', async () => {
-      const first = await stored(ctx.a, { createdAt: new Date('2026-01-01T00:00:01.000Z') })
-      const second = await stored(ctx.a, { createdAt: new Date('2026-01-01T00:00:02.000Z') })
-      const third = await stored(ctx.a, { createdAt: new Date('2026-01-01T00:00:03.000Z') })
+      const first = await stored(ctx.a, {
+        targetId: 'list-1',
+        createdAt: new Date('2026-01-01T00:00:01.000Z'),
+      })
+      const second = await stored(ctx.a, {
+        targetId: 'list-2',
+        createdAt: new Date('2026-01-01T00:00:02.000Z'),
+      })
+      const third = await stored(ctx.a, {
+        targetId: 'list-3',
+        createdAt: new Date('2026-01-01T00:00:03.000Z'),
+      })
       const all = await ctx.store.list(ctx.a.environmentId, 10)
       expect(all.map((row) => row.id)).toEqual([third.id, second.id, first.id])
       const some = await ctx.store.list(ctx.a.environmentId, 2)
@@ -324,6 +333,30 @@ export function describeProposalStore(
       ])
     })
 
+    // H-177: the check-then-insert in the service is not atomic; the store is what holds it.
+    test('a second insert of the same waiting proposal returns the first and records nothing', async () => {
+      const first = await stored(ctx.a)
+      const second = await stored(ctx.a)
+      expect(second.id).toBe(first.id)
+      expect(await ctx.recorded()).toEqual(['proposal.created'])
+      // Another target is another proposal.
+      const other = await stored(ctx.a, { targetId: '00000000-0000-7000-8000-0000000000c2' })
+      expect(other.id).not.toBe(first.id)
+    })
+
+    test('an expired waiting proposal does not stop a new one for the same target', async () => {
+      const old = await stored(ctx.a)
+      const later = new Date(expiry.getTime() + 1000)
+      const fresh = proposal(ctx.a, {
+        createdAt: later,
+        updatedAt: later,
+        expiresAt: new Date(later.getTime() + 600_000),
+      })
+      const made = await ctx.store.insert(fresh, activity(ctx.a, 'proposal.created', fresh.id))
+      expect(made.id).toBe(fresh.id)
+      expect(made.id).not.toBe(old.id)
+    })
+
     test('a waiting proposal is found only for the same operation, target and agent', async () => {
       const row = await stored(ctx.a)
       const like = {
@@ -402,8 +435,8 @@ export function describeProposalStore(
     test('the purge deletes what expired strictly before the cutoff, a batch at a time', async () => {
       const old = new Date('2025-06-01T00:10:00.000Z')
       const oldCreated = new Date('2025-06-01T00:00:00.000Z')
-      const one = await stored(ctx.a, { expiresAt: old, createdAt: oldCreated })
-      const two = await stored(ctx.a, { expiresAt: old, createdAt: oldCreated })
+      const one = await stored(ctx.a, { targetId: 'old-1', expiresAt: old, createdAt: oldCreated })
+      const two = await stored(ctx.a, { targetId: 'old-2', expiresAt: old, createdAt: oldCreated })
       const kept = await stored(ctx.a)
       // At the cutoff itself: kept.
       expect(await ctx.store.deleteExpiredBefore(ctx.a.environmentId, old, 10)).toBe(0)

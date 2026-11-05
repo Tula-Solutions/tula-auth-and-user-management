@@ -819,6 +819,26 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({ managedByDirectoryId: null })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            eq(users.managedByDirectoryId, organizationId)
+          )
+        )
+    )
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,

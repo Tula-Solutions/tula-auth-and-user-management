@@ -272,3 +272,15 @@ decision in ADR 0053.
   residual as closed. No real MCP client has been connected to either server
   (`docs/plans/phase-2-unverified.md`, "Step 2.17"): do not describe how a client shows a
   proposal until one has.
+
+- Decision (TULA-157, H-182): the gap between `requireAccepted` (a fresh read of the
+  setting) and the approval's compare-and-set is accepted. They are separate transactions, so
+  a setting switched off in between still lets one approval land. The approval is a human's
+  act on a proposal that was valid when made, the operation is reversible, and it is
+  audited; closing the gap would hold the environment lock across the operation. Recommend
+  leaving it; no code changed.
+- Decision (TULA-157, H-183): recommend a route that rejects (cancels) a pending proposal
+  (`POST /v1/admin/proposals/:id/reject`, behind `secretKey()`, an audit entry, a new
+  `rejected` status the store's compare-and-set also checks). Today a pending proposal only
+  expires. This is a usability gap, not a security one, and it changes the contract, the SDKs
+  and ADR 0053 ("dismissal is not built"), so it is recorded and not built.

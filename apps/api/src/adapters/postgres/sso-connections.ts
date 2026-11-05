@@ -130,7 +130,12 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
       const rows = await tx
         .select()
         .from(ssoConnections)
-        .where(eq(ssoConnections.id, bound.connectionId))
+        .where(
+          and(
+            eq(ssoConnections.environmentId, environmentId),
+            eq(ssoConnections.id, bound.connectionId)
+          )
+        )
       return (await this.#withDomains(tx, rows))[0] ?? null
     })
   }
@@ -192,7 +197,14 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
           return 'missing' as const
         }
         if (domains) {
-          await tx.delete(ssoConnectionDomains).where(eq(ssoConnectionDomains.connectionId, id))
+          await tx
+            .delete(ssoConnectionDomains)
+            .where(
+              and(
+                eq(ssoConnectionDomains.environmentId, environmentId),
+                eq(ssoConnectionDomains.connectionId, id)
+              )
+            )
           if (domains.length > 0) {
             await tx.insert(ssoConnectionDomains).values(
               domains.map((domain) => ({
@@ -212,7 +224,12 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
           await tx
             .update(ssoConnectionDomains)
             .set({ active: row.status === 'active', updatedAt })
-            .where(eq(ssoConnectionDomains.connectionId, id))
+            .where(
+              and(
+                eq(ssoConnectionDomains.environmentId, environmentId),
+                eq(ssoConnectionDomains.connectionId, id)
+              )
+            )
         }
         await recordActivity(tx, activity ? [activity] : [])
         return (await this.#withDomains(tx, [row]))[0] as SsoConnectionRecord
@@ -303,8 +320,19 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
         .update(users)
         .set({ managedByConnectionId: null })
         .where(and(eq(users.environmentId, environmentId), eq(users.managedByConnectionId, id)))
-      await tx.delete(ssoIdentities).where(eq(ssoIdentities.connectionId, id))
-      await tx.delete(ssoConnectionDomains).where(eq(ssoConnectionDomains.connectionId, id))
+      await tx
+        .delete(ssoIdentities)
+        .where(
+          and(eq(ssoIdentities.environmentId, environmentId), eq(ssoIdentities.connectionId, id))
+        )
+      await tx
+        .delete(ssoConnectionDomains)
+        .where(
+          and(
+            eq(ssoConnectionDomains.environmentId, environmentId),
+            eq(ssoConnectionDomains.connectionId, id)
+          )
+        )
       const rows = await tx
         .delete(ssoConnections)
         .where(and(eq(ssoConnections.environmentId, environmentId), eq(ssoConnections.id, id)))
@@ -348,7 +376,12 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
         const [connection] = await tx
           .select({ projectId: ssoConnections.projectId })
           .from(ssoConnections)
-          .where(eq(ssoConnections.id, identity.connectionId))
+          .where(
+            and(
+              eq(ssoConnections.environmentId, environmentId),
+              eq(ssoConnections.id, identity.connectionId)
+            )
+          )
         if (!connection) {
           return false
         }

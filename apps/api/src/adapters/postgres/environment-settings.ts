@@ -30,7 +30,13 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
   /** @param db - Database connected as the runtime role. */
   constructor(private readonly db: Database) {}
 
-  /** @inheritdoc */
+  /**
+   * @inheritdoc
+   *
+   * Takes no `fresh` argument because it has no cache of its own: every read is fresh. The
+   * cache wrapper (`cacheEnvironmentSettings`) is what honours `fresh`; a cache added here
+   * must take it.
+   */
   async get(environmentId: string): Promise<StoredEnvironmentSettings | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx

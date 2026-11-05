@@ -42,3 +42,22 @@ export const SHIPPED_MIGRATIONS: readonly ShippedMigration[] = journal.entries.m
   tag: entry.tag,
   when: entry.when,
 }))
+
+/**
+ * Pick the connection string `db:migrate` runs with.
+ *
+ * Migrations need the schema owner. Falling back to `DATABASE_URL` (the runtime role, which
+ * cannot alter the schema) fails closed on privileges, so the caller is told it fell back and
+ * can say why a later privilege error happened.
+ *
+ * @param env - The process environment.
+ * @returns The URL and whether it is the runtime fallback, or `null` when neither is set.
+ */
+export function migrationUrl(
+  env: Record<string, string | undefined>
+): { url: string; fellBack: boolean } | null {
+  if (env.DATABASE_MIGRATION_URL) {
+    return { url: env.DATABASE_MIGRATION_URL, fellBack: false }
+  }
+  return env.DATABASE_URL ? { url: env.DATABASE_URL, fellBack: true } : null
+}

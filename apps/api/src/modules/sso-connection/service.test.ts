@@ -604,6 +604,38 @@ describe('SAML connections', () => {
     }
   })
 
+  test('a refresh that changes the IdP entity id is refused (H-005)', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    let body = metadata()
+    const request = spyOn(Outbound, 'request').mockImplementation(async () => ({
+      status: 200,
+      headers: new Headers(),
+      body: new TextEncoder().encode(body),
+    }))
+    try {
+      const made = await Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, { metadataUrl: 'https://idp.example.test/metadata' }),
+        TEST_ACTOR
+      )
+      body = metadata().replace(
+        'entityID="https://idp.example.test/e"',
+        'entityID="https://evil.example.test/e"'
+      )
+      await expect(Sso.refreshMetadata(deps, TENANT, made.id, TEST_ACTOR)).rejects.toMatchObject({
+        code: 'sso.saml_invalid',
+        params: { reason: 'entity_id_changed' },
+      })
+      expect((await Sso.get(deps, TENANT, made.id)).saml?.idpEntityId).toBe(
+        'https://idp.example.test/e'
+      )
+    } finally {
+      request.mockRestore()
+    }
+  })
+
   test('refresh needs a metadata address, and an update swaps the certificates', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')

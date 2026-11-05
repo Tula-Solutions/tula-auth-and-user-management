@@ -850,6 +850,17 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(results.filter(Boolean)).toHaveLength(1)
     })
 
+    test('refuses a duplicate id and leaves the first user unchanged (H-239)', async () => {
+      const first = user(ctx.a)
+      const clash = user(ctx.a, { id: first.id })
+      expect(await ctx.users.create(first, Audit.none('fixture'))).toBe(true)
+      expect(await ctx.users.create(clash, Audit.none('fixture'))).toBe(false)
+      expect((await ctx.users.findById(ctx.a.environmentId, first.id))?.emailNormalized).toBe(
+        first.emailNormalized
+      )
+      expect(await ctx.users.findByEmail(ctx.a.environmentId, clash.emailNormalized)).toBeNull()
+    })
+
     test('the same email can exist in another environment', async () => {
       const first = user(ctx.a)
       const twin = user(ctx.b, { email: first.email, emailNormalized: first.emailNormalized })
@@ -1591,6 +1602,20 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         outcome: 'not_found',
       })
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
+    })
+
+    test('releases a directory mark only for the organization that holds it', async () => {
+      const org = Bun.randomUUIDv7()
+      const input = { ...user(ctx.a), managedByDirectoryId: org }
+      await ctx.users.create(input, Audit.none('fixture'))
+      const mark = async (environmentId: string) =>
+        (await ctx.users.findById(environmentId, input.id))?.managedByDirectoryId ?? null
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, Bun.randomUUIDv7())
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.b.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBeNull()
     })
 
     test('sets the names, and another environment, or a missing user, changes nothing', async () => {
