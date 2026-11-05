@@ -288,3 +288,9 @@ also deletes its binding to the organization's connections in the same transacti
 `sso_connection.updated` with `changed: ['domains']`.
 A lapse is never written (the reminders job only emails), so the sign-in check is the defence for
 it; an organization taking over a name ends the old claim through the same removal.
+
+**Group-role mappings outlive their connection (H-232).** `organization_group_roles` is keyed
+by organization, so deleting an SSO connection leaves its mappings. They are inert without a
+connection, an organization can change its identity provider and keep its mappings, and
+nothing reads them until a connection signs a user in. Kept deliberately; the dashboard lists
+and removes them under the organization.

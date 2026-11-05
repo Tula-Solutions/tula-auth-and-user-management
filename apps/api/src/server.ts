@@ -11,6 +11,12 @@ import { closeApi } from '~/server-close'
 const env = loadEnv()
 const container = createContainer(env)
 
+// Fail closed before anything is served on a login that bypasses row-level security (H-227).
+await container.verifyDatabaseRole().catch((error: unknown) => {
+  logger.error('refusing to start', { err: errorReason(error) })
+  process.exit(1)
+})
+
 // Create signing keys before taking traffic so every instance's key cache starts with them.
 const bootstrap = await Jwks.ensureAllEnvironments(container.deps).catch((error: unknown) => {
   // Listing environments is the first query of the process: say plainly what is wrong.
