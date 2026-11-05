@@ -143,18 +143,31 @@ async function deliver(
     })
     return
   }
-  const decision = await deps.rateLimiter.hit(
-    limitKey(
-      message.type,
-      scope,
-      user.id,
-      message.type === 'mfa_changed' || message.type === 'identity_changed'
-        ? message.change
-        : undefined
-    ),
-    NOTICES_PER_HOUR,
-    NOTICE_WINDOW_MS
-  )
+  let decision: Awaited<ReturnType<SendDeps['rateLimiter']['hit']>>
+  try {
+    decision = await deps.rateLimiter.hit(
+      limitKey(
+        message.type,
+        scope,
+        user.id,
+        message.type === 'mfa_changed' || message.type === 'identity_changed'
+          ? message.change
+          : undefined
+      ),
+      NOTICES_PER_HOUR,
+      NOTICE_WINDOW_MS
+    )
+  } catch (error) {
+    // Error level, not the warning dispatch adds: a security notice that is not sent because
+    // the limiter is away is an outage an operator should be paged for (H-206). No address.
+    logger.error('security notice suppressed: the rate limiter cannot count', {
+      notice: message.type,
+      environmentId: scope.environmentId,
+      userId: user.id,
+      reason: describeMailFailure(error),
+    })
+    throw error
+  }
   if (!decision.allowed) {
     logger.info('security notice skipped: the hourly limit for this user is reached', {
       notice: message.type,
