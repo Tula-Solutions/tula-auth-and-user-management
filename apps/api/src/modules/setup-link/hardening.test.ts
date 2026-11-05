@@ -1,14 +1,24 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, SETUP_LINK_HEADER } from '@tula-tech/contract'
+import { createApp } from '~/index'
 import * as Organizations from '~/modules/organization/service'
 import * as Portal from '~/modules/setup-link/portal'
-import { createInstanceTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import * as SetupLinks from '~/modules/setup-link/service'
+import {
+  createInstanceTestDeps,
+  seedApiKey,
+  TEST_ACTOR,
+  TEST_TENANT,
+  type TestDeps,
+} from '~/testing'
 
 const TENANT = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
 
+const PK = 'tula_pk_dev_publishable0000000000000000000'
+
 let deps: TestDeps
 
-beforeEach(() => {
+beforeEach(async () => {
   deps = createInstanceTestDeps()
   deps.environments.add({
     id: TEST_TENANT.environmentId,
@@ -16,6 +26,7 @@ beforeEach(() => {
     kind: 'development',
     createdAt: deps.clock.now(),
   })
+  await seedApiKey(deps, PK)
   deps.outbound.point('idp.example.test', '93.184.216.34')
   deps.environmentSettings.seed(TEST_TENANT.environmentId, {
     revision: 1,
@@ -48,5 +59,50 @@ describe('setup portal hardening (TULA-171)', () => {
     }
     const view = await Portal.show(deps, TENANT, scope)
     expect(view.connections).toHaveLength(50)
+  })
+
+  // H-061: the middleware checks only the link; each portal route must still refuse when SSO is
+  // off, so a new route cannot skip the check unnoticed. The list is the router's route table.
+  test('H-061: with SSO switched off every portal route answers sso.disabled', async () => {
+    const org = await Organizations.create(deps, TENANT, { name: 'a', slug: 'a' }, TEST_ACTOR)
+    const made = await SetupLinks.create(
+      deps,
+      TENANT,
+      { organizationId: org.id, name: 'IT', expiresInDays: 7 } as never,
+      TEST_ACTOR
+    )
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: false },
+      } as never,
+    })
+    const id = Bun.randomUUIDv7()
+    const routes: [string, string][] = [
+      ['GET', ''],
+      ['POST', '/connections'],
+      ['POST', '/scim-tokens'],
+      ['GET', `/connections/${id}`],
+      ['PATCH', `/connections/${id}`],
+      ['POST', `/connections/${id}/refresh-metadata`],
+      ['GET', `/connections/${id}/group-roles`],
+      ['PUT', `/connections/${id}/group-roles`],
+      ['POST', `/connections/${id}/tests`],
+      ['GET', `/connections/${id}/tests/${id}`],
+    ]
+    for (const [method, path] of routes) {
+      const res = await createApp(deps).request(`/v1/setup${path}`, {
+        method,
+        headers: { [SETUP_LINK_HEADER]: made.token, 'content-type': 'application/json' },
+        ...(method === 'GET' ? {} : { body: '{}' }),
+      })
+      const json = (await res.json()) as { code?: string }
+      // An id route checks ownership first and a write route validates its body first, so neither reaches the SSO check with an empty body.
+      expect(`${method} ${path} ${json.code}`).toMatch(
+        / (sso\.disabled|sso\.connection_not_found|validation\.failed)$/
+      )
+    }
   })
 })
