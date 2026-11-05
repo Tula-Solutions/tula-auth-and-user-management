@@ -2,6 +2,7 @@ import type { Deps } from '~/dependencies'
 import * as logger from '~/lib/logger'
 import * as Outbound from '~/lib/outbound'
 import { errorReason } from '~/lib/safe-error'
+import { lapsed } from '~/modules/organization-domain/service'
 import { plural } from './helpers'
 import type { DiagnosticCheck } from './schema'
 
@@ -108,7 +109,7 @@ export async function read(
     }
     for (const domain of connection.domains) {
       const claim = await deps.organizationDomains.findVerified(environmentId, domain)
-      if (claim?.organizationId !== connection.organizationId) {
+      if (claim?.organizationId !== connection.organizationId || lapsed(claim, deps.clock.now())) {
         next.unverified += 1
         break
       }

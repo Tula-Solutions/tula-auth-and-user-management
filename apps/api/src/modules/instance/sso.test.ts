@@ -197,6 +197,15 @@ describe('the sso_connections check', () => {
     expect(result.summary).toContain('no longer verified')
   })
 
+  test('warns for a bound domain whose verification has lapsed (H-003)', async () => {
+    const deps = await setup()
+    await connect(deps, { endsInDays: 1000 })
+    deps.clock.advance(366 * DAY)
+    const result = await sso(deps)
+    expect(result.status).toBe('warn')
+    expect(result.summary).toContain('no longer verified')
+  })
+
   test('requests at most the bound number of metadata addresses and says so', async () => {
     const deps = await setup()
     metadataAnswers(200)

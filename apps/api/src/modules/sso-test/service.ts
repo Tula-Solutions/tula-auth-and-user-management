@@ -197,11 +197,12 @@ export async function result(
       }
 }
 
-function received(
+async function received(
+  deps: Pick<Deps, 'organizationDomains' | 'clock'>,
   seen: Record<string, string[]>,
   profile: Sso.SsoProfile,
   connection: SsoConnectionRecord
-): Result {
+): Promise<Result> {
   const clip = (value: string) => value.slice(0, MAX_VALUE_LENGTH)
   const attributes = Object.entries(seen)
     .slice(0, MAX_ATTRIBUTES)
@@ -210,7 +211,11 @@ function received(
   const groups = (profile.groups ?? []).slice(0, MAX_VALUES).map(clip)
   const parsed = profile.email === null ? null : parseEmail(profile.email)
   const domain = parsed?.normalized.slice(parsed.normalized.lastIndexOf('@') + 1)
-  const onDomain = domain !== undefined && connection.domains.includes(domain)
+  // Ownership is read now, as a sign-in does: a lapsed domain would fail a real sign-in too.
+  const onDomain =
+    domain !== undefined &&
+    connection.domains.includes(domain) &&
+    (await Sso.holdsDomain(deps, connection, domain))
   const mapped = {
     email: parsed?.normalized ?? null,
     givenName: profile.givenName ?? null,
@@ -349,7 +354,7 @@ async function judge(
             },
             seen
           )
-    return received(seen.attributes ?? {}, profile, connection)
+    return await received(deps, seen.attributes ?? {}, profile, connection)
   } catch (error) {
     if (error instanceof Sso.SsoRefusal) {
       return failure(refine(error.reason, connection, deps.clock.now()))
