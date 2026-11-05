@@ -27,6 +27,8 @@ export const scimTokens = tula.table(
     name: text('name').notNull(),
     prefix: text('prefix').notNull(),
     tokenHash: text('token_hash').notNull(),
+    // Minted by a setup link's portal: such a token never applies a privileged role (ADR 0067).
+    viaSetupLink: boolean('via_setup_link').notNull().default(false),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     ...timestamps(),

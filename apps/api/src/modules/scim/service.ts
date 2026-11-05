@@ -25,6 +25,8 @@ export interface ScimContext {
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>
   organizationId: string
   actor: Actor
+  /** The token was minted by a setup link: it may not apply a privileged role. */
+  viaSetupLink: boolean
 }
 
 function resource(deps: Deps, user: UserRecord, record: ScimUserRecord): ScimUserResource {
@@ -94,7 +96,8 @@ async function hasMembership(deps: Deps, ctx: ScimContext, userId: string) {
  * Give or take back access. Deactivating removes the membership (the last manager of the
  * organization cannot be removed: 409) and, only for an account this directory created that
  * has no other membership, bans it, which signs it out and denylists its sessions.
- * Activating lifts only a ban of the directory's own deactivation (`mayUnban`), never an operator's.
+ * Activating lifts only a ban the directory itself placed (`banOrigin`), never an operator's,
+ * whichever came first.
  */
 async function setActive(
   deps: Deps,
@@ -109,19 +112,19 @@ async function setActive(
   const managed = user.managedByDirectoryId === ctx.organizationId
   if (active) {
     if (!member) {
+      const role = await Roles.defaultRole(deps, ctx)
+      await Roles.assertAppliable(deps, ctx, role)
       await Organizations.addMember(
         deps,
         ctx.tenant,
         ctx.organizationId,
-        { userId: user.id, role: await Roles.defaultRole(deps, ctx) },
+        { userId: user.id, role },
         ctx.actor
       )
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
       await Roles.sync(deps, ctx, user.id)
     }
-    // shortcut: an operator ban placed while the directory already holds the user inactive is
-    // lifted on reactivation (who banned is not recorded); upgrade by recording the banner.
-    if (managed && mayUnban && user.bannedAt !== null) {
+    if (managed && mayUnban && user.banOrigin === 'directory') {
       await Users.unban(deps, ctx.tenant, user.id, ctx.actor)
     }
   } else {
@@ -129,7 +132,7 @@ async function setActive(
       await Organizations.removeMember(deps, ctx.tenant, ctx.organizationId, user.id, ctx.actor)
     }
     if (managed && user.bannedAt === null && !(await hasMembership(deps, ctx, user.id))) {
-      await Users.ban(deps, ctx.tenant, user.id, ctx.actor)
+      await Users.ban(deps, ctx.tenant, user.id, ctx.actor, undefined, 'directory')
     }
   }
   await deps.scim.updateUser(
@@ -297,7 +300,8 @@ async function applyEmail(
  * @param ctx - The environment, the organization and the actor.
  * @param input - The User the directory sent.
  * @returns The resource.
- * @throws ScimError `uniqueness` (409) for a taken `userName` or `externalId`.
+ * @throws ScimError `uniqueness` (409) for a taken `userName` or `externalId`; `invalidValue`
+ *   (400) for a new account on a domain the organization has not verified.
  */
 export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput) {
   const { environmentId } = ctx.tenant
@@ -311,6 +315,10 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
   }
   const existing = await deps.users.findByEmail(environmentId, parsed.normalized)
   const verifiedDomain = await onVerifiedDomain(deps, ctx, parsed.normalized)
+  if (input.active ?? true) {
+    // Before anything is written: a refusal here leaves no account for a retry to trip over.
+    await Roles.assertAppliable(deps, ctx, await Roles.defaultRole(deps, ctx))
+  }
   const now = deps.clock.now()
   let user: UserRecord
   let method: 'created' | 'linked'
@@ -332,6 +340,10 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       method = 'linked'
     }
   } else {
+    // Otherwise a directory could squat an address on a domain its organization never proved.
+    if (!verifiedDomain) {
+      throw invalidValue('userName is not on a domain this organization has verified.')
+    }
     user = {
       id: deps.ids.next(),
       projectId: ctx.tenant.projectId,
@@ -342,6 +354,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       firstName: nameOf(input.name?.givenName),
       lastName: nameOf(input.name?.familyName),
       bannedAt: null,
+      banOrigin: null,
       lastSignInAt: null,
       createdAt: now,
       phoneNumber: null,

@@ -166,11 +166,17 @@ entry out of the stream.
   existing privileged mapping is shown read-only (`locked`). The operator and an organization admin with
   `org:sys:sso:manage` can map any role. A leaked link must not let its holder make their own provider
   group organization admins.
+  The lock also holds where a role is applied: a SCIM token the portal minted (`scim_tokens.via_setup_link`)
+  is refused a push (400 `invalidValue`) that would give a member a privileged role, and nothing changes;
+  a token an operator minted applies the mapping.
 - **One default role.** A SCIM-provisioned member in no mapped group gets the role a sign-in would give:
   the default role of the organization's active connection (else the most recently tested, else `member`).
 - **Managed users are locked from the client.** While a user is managed by a connection or by a directory,
   client routes that change the email address or the password are refused with a contract code. Admin
-  routes still can.
+  routes still can. The guard sits in the one function that stores a user's own password, so a reset
+  finish and an expired-password replacement are refused too (`user.managed`, the reset code unspent);
+  a reset start for a managed user gets the decoy attempt of an unknown address, notice included, except
+  for a break-glass member, who keeps the reset.
 - **Enforcement covers sign-up, verification and password reset.** On an enforced domain sign-up is
   refused (`auth.method_disabled`); a reset email goes only to a break-glass member, and the answers do
   not reveal which address exists.
@@ -272,3 +278,13 @@ the dashboard build, so that the organization's IT administrator sets up SSO wit
   `<OrganizationProfile>` for OIDC connections (list, add, turn on and off, require, delete).
   SAML, group roles and the test sign-in are not drawn there yet; the test is available to
   any client through `startTest` and `testResult`.
+
+## Addendum: the domain list is a filter (TULA-158)
+
+A connection's stored domains are never the proof. Finding a connection for an address and
+accepting an IdP's account both re-check a verified, unlapsed domain row of the connection's
+organization, so a lapse (which is time-based) or a lost name stops SSO at once. Removing a domain
+also deletes its binding to the organization's connections in the same transaction, audited as
+`sso_connection.updated` with `changed: ['domains']`.
+A lapse is never written (the reminders job only emails), so the sign-in check is the defence for
+it; an organization taking over a name ends the old claim through the same removal.

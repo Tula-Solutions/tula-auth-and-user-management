@@ -52,10 +52,10 @@ async function seed(count: number) {
   }
 }
 
-async function tula(args: string[], key = SECRET_KEY) {
+async function tula(args: string[], key = SECRET_KEY, stub?: AdminFetch) {
   let stdout = ''
   let stderr = ''
-  const fetch: AdminFetch = async (url, init) => app.request(url, init)
+  const fetch: AdminFetch = stub ?? (async (url, init) => app.request(url, init))
   const code = await runCli(
     args,
     {
@@ -87,6 +87,48 @@ describe('tula audit export', () => {
     expect(run.code).toBe(0)
     expect(ids(run.stdout)).toHaveLength(5)
     expect(run.stderr).toContain('5 entries exported')
+  })
+
+  test('keeps every NDJSON record when a field holds one quote', async () => {
+    const row = (n: number, userAgent: string) =>
+      JSON.stringify({
+        id: `0198f4a0-0000-7000-8000-00000000000${n}`,
+        occurredAt: `2026-01-02T03:04:0${n}.000Z`,
+        userAgent,
+      })
+    const body = `${[row(1, 'a'), row(2, 'Agent "x'), row(3, 'b')].join('\n')}\n`
+    const run = await tula(
+      ['audit', 'export'],
+      SECRET_KEY,
+      async () => new Response(body, { headers: { 'content-type': 'application/x-ndjson' } })
+    )
+    expect(run.stdout).toBe(body)
+    expect(run.stderr).toContain('3 entries exported')
+    expect(cursorOf(row(3, 'b'), 'ndjson')).toBe(
+      auditExportCursor({
+        id: '0198f4a0-0000-7000-8000-000000000003',
+        occurredAt: '2026-01-02T03:04:03.000Z',
+      })
+    )
+  })
+
+  test('keeps a CSV row whose quoted cell holds a newline', async () => {
+    const row = (n: number, userAgent: string) =>
+      `0198f4a0-0000-7000-8000-00000000000${n},2026-01-02T03:04:0${n}.000Z,${userAgent}`
+    const body = `id,occurredAt,userAgent\n${[row(1, 'a'), row(2, '"line1\nline2"'), row(3, 'b')].join('\n')}\n`
+    const run = await tula(
+      ['audit', 'export', '--format', 'csv'],
+      SECRET_KEY,
+      async () => new Response(body, { headers: { 'content-type': 'text/csv' } })
+    )
+    expect(run.stdout).toBe(body)
+    expect(run.stderr).toContain('3 entries exported')
+    expect(cursorOf(row(3, 'b'), 'csv')).toBe(
+      auditExportCursor({
+        id: '0198f4a0-0000-7000-8000-000000000003',
+        occurredAt: '2026-01-02T03:04:03.000Z',
+      })
+    )
   })
 
   test('csv has a header row and one row per entry', async () => {

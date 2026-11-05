@@ -11,6 +11,9 @@ export type DeleteUserOutcome =
    */
   | { outcome: 'last_manager'; organizationIds: string[] }
 
+/** Who placed a ban: an operator, or a directory's deprovisioning (ADR 0067). */
+export type BanOrigin = 'operator' | 'directory'
+
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
   id: string
@@ -33,6 +36,8 @@ export interface UserRecord {
   firstName: string | null
   lastName: string | null
   bannedAt: Date | null
+  /** Who placed the ban; `null` exactly when `bannedAt` is. */
+  banOrigin: BanOrigin | null
   lastSignInAt: Date | null
   createdAt: Date
   /**
@@ -68,7 +73,12 @@ export interface UserRecord {
 export interface NewUser
   extends Omit<
     UserRecord,
-    'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt' | 'smsFactorEnabledAt'
+    | 'bannedAt'
+    | 'banOrigin'
+    | 'lastSignInAt'
+    | 'phoneNumber'
+    | 'phoneNumberVerifiedAt'
+    | 'smsFactorEnabledAt'
   > {
   /** Id for the `email` identity row. */
   identityId: string
@@ -606,13 +616,17 @@ export interface UserRepository {
   ): Promise<{ users: UserRecord[]; totalCount: number }>
 
   /**
-   * Ban or unban a user. Banning keeps the first ban time if they are already banned.
+   * Ban or unban a user. Banning keeps the first ban time if they are already banned. An
+   * `operator` ban of a user the `directory` banned takes the ban over (the origin changes,
+   * nothing else is written or recorded): a directory's reactivation then leaves it. The
+   * origin never goes the other way.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param bannedAt - Ban time, or `null` to unban.
    * @param at - Update time.
    * @param activity - Recorded in the same transaction, only if the ban state changed.
+   * @param origin - Who is banning (ignored when unbanning); an operator by default.
    * @returns The user as they now are, or `null` when they do not exist.
    */
   setBanned(
@@ -620,7 +634,8 @@ export interface UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
-    activity: Recorded
+    activity: Recorded,
+    origin?: BanOrigin
   ): Promise<UserRecord | null>
 
   /**

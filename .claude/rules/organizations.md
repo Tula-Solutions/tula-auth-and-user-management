@@ -214,3 +214,8 @@ this file under "Area rules" and does not repeat it.
 - **A manager acts only on members within their own permissions** (`requireOutranks` in
   `member-service.ts`): changing the role of, or removing, a member who holds a permission the
   caller lacks is refused; leaving is exempt.
+- **An SSO connection's domain list is only a filter** (TULA-158): finding a connection for an
+  address and accepting an IdP's account for linking both need a verified, unlapsed
+  `organization_domains` row of the connection's own organization (`holdsDomain` in
+  `modules/sso/service.ts`). Removing a domain (a takeover of a lapsed name included) unbinds it
+  from the organization's connections in the same transaction, with an audit entry.

@@ -148,7 +148,7 @@ afterAll(() => {
 })
 
 /** Verify a domain for the organization straight in the store (its mail round is not the subject). */
-async function verify(domain: string) {
+async function verify(domain: string, owner = organizationId, lifetimeMs = 86_400_000) {
   const id = Bun.randomUUIDv7()
   const none = Audit.none('fixture')
   const now = deps.clock.now()
@@ -156,7 +156,7 @@ async function verify(domain: string) {
     {
       id,
       ...TENANT,
-      organizationId,
+      organizationId: owner,
       domain,
       mode: 'suggest',
       codeHash: 'h',
@@ -168,11 +168,11 @@ async function verify(domain: string) {
   )
   await deps.organizationDomains.verify(
     TENANT.environmentId,
-    organizationId,
+    owner,
     id,
     'h',
     now,
-    new Date(now.getTime() + 86_400_000),
+    new Date(now.getTime() + lifetimeMs),
     none
   )
 }
@@ -502,6 +502,113 @@ describe('the matching table', () => {
     const result = await signedIn()
     expect(recorded()).toContain('user.created')
     expect(result.step.userId).toBeTruthy()
+  })
+})
+
+describe('the organization still holds the domain (TULA-158)', () => {
+  const held = async () => await deps.ssoConnections.find(TENANT.environmentId, connectionId)
+  /**
+   * The sign-in is under way at the IdP when the domain goes: the exchange must still refuse,
+   * for a user who exists and for one that would be created, because the stored list is only a
+   * filter.
+   */
+  async function expectRefused(change: () => Promise<void>, email = `ada@${DOMAIN}`) {
+    await seedUser(`ada@${DOMAIN}`, true)
+    const { sso } = await started(email)
+    const begun = (await sso.json()) as { authorizationUrl: string; binding: string }
+    await change()
+    const back = (await callback(consent(begun.authorizationUrl))).fragment
+    expect(back.get('tula_error')).toBeNull()
+    const response = await post('/v1/client/sign-ins/oauth/exchange', {
+      ticket: back.get('tula_ticket'),
+      attemptId: back.get('tula_attempt'),
+      binding: begun.binding,
+    })
+    expect(((await response.json()) as { code: string }).code).toBe('sso.email_domain_mismatch')
+  }
+  /**
+   * The domain is held for a minute only, so that it can lapse while the provider's state (which
+   * lives for minutes) is still valid.
+   */
+  async function holdBriefly() {
+    const row = await domainRow()
+    await deps.organizationDomains.remove(
+      TENANT.environmentId,
+      organizationId,
+      row.id,
+      Audit.none('fixture')
+    )
+    await verify(DOMAIN, organizationId, 60_000)
+    await SsoConnections.update(deps, TENANT, connectionId, { domains: [DOMAIN] }, TEST_ACTOR)
+  }
+  async function domainRow() {
+    const row = await deps.organizationDomains.findVerified(TENANT.environmentId, DOMAIN)
+    return row as NonNullable<typeof row>
+  }
+
+  test('removing the domain refuses the old IdP and unbinds it with an audit entry', async () => {
+    const row = await domainRow()
+    await expectRefused(async () => {
+      await deps.organizationDomains.remove(
+        TENANT.environmentId,
+        organizationId,
+        row.id,
+        Audit.none('fixture')
+      )
+    })
+    expect((await held())?.domains).toEqual([])
+    expect(await Sso.offered(deps, TENANT, `ada@${DOMAIN}`)).toBeNull()
+    expect(recorded()).toContain('sso_connection.updated')
+  })
+
+  test('a lapsed verification refuses the old IdP', async () => {
+    await holdBriefly()
+    await expectRefused(async () => {
+      deps.clock.advance(120_000)
+    })
+    expect(await Sso.offered(deps, TENANT, `ada@${DOMAIN}`)).toBeNull()
+  })
+
+  test('another organization verifying a lost domain takes it from the connection', async () => {
+    const other = (
+      await Organizations.create(deps, TENANT, { name: 'Other', slug: 'other' }, TEST_ACTOR)
+    ).id
+    await holdBriefly()
+    const row = await domainRow()
+    await expectRefused(async () => {
+      deps.clock.advance(120_000)
+      await deps.organizationDomains.remove(
+        TENANT.environmentId,
+        organizationId,
+        row.id,
+        Audit.none('fixture'),
+        deps.clock.now()
+      )
+      await verify(DOMAIN, other)
+    })
+    expect((await held())?.domains).toEqual([])
+  })
+
+  test('a connection with two domains keeps working for the one still held', async () => {
+    await verify('second.test')
+    await SsoConnections.update(
+      deps,
+      TENANT,
+      connectionId,
+      { domains: [DOMAIN, 'second.test'] },
+      TEST_ACTOR
+    )
+    const row = await domainRow()
+    await deps.organizationDomains.remove(
+      TENANT.environmentId,
+      organizationId,
+      row.id,
+      Audit.none('fixture')
+    )
+    expect((await held())?.domains).toEqual(['second.test'])
+    expect(await Sso.offered(deps, TENANT, `ada@${DOMAIN}`)).toBeNull()
+    idp.claims = { email: 'ada@second.test' }
+    expect((await signedIn('ada@second.test')).step.status).toBe('complete')
   })
 })
 

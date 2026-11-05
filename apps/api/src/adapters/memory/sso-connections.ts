@@ -49,6 +49,29 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
     )
   }
 
+  /**
+   * Take a domain off the organization's connections: what the database does in the same
+   * transaction as the removal of the organization's domain row.
+   *
+   * @returns The connections that held it.
+   */
+  unbindDomain(
+    environmentId: string,
+    organizationId: string,
+    domain: string
+  ): SsoConnectionRecord[] {
+    const held = [...this.#records.values()].filter(
+      (one) =>
+        one.environmentId === environmentId &&
+        one.organizationId === organizationId &&
+        one.domains.includes(domain)
+    )
+    for (const one of held) {
+      one.domains = one.domains.filter((name) => name !== domain)
+    }
+    return held.map((one) => structuredClone(one))
+  }
+
   /** @inheritdoc */
   async list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]> {
     return [...this.#records.values()]

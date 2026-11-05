@@ -1,0 +1,1 @@
+ALTER TABLE "tula"."scim_tokens" ADD COLUMN "via_setup_link" boolean DEFAULT false NOT NULL;

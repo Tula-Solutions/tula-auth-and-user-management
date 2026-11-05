@@ -28,7 +28,10 @@ import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
 import { describeHookStore } from '~/adapters/hook-store.suite'
 import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
-import { describeOrganizationDomainStore } from '~/adapters/organization-domain-store.suite'
+import {
+  connectionRecord,
+  describeOrganizationDomainStore,
+} from '~/adapters/organization-domain-store.suite'
 import { describeOrganizationStore, userDeletion } from '~/adapters/organization-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -284,6 +287,13 @@ describeOrganizationDomainStore('Postgres on a real server', async () => {
           )
       )
     },
+    connect: async (tenant, organizationId, domains) => {
+      const record = connectionRecord(tenant, organizationId, domains)
+      await new PostgresSsoConnectionStore(db).insert(record, Audit.none('fixture'))
+      return record.id
+    },
+    connectionDomains: async (tenant, id) =>
+      (await new PostgresSsoConnectionStore(db).find(tenant.environmentId, id))?.domains ?? [],
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

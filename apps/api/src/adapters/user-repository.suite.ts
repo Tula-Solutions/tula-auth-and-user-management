@@ -72,6 +72,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       return {
         ...rest,
         bannedAt: null,
+        banOrigin: null,
         lastSignInAt: null,
         phoneNumber: null,
         managedByConnectionId: null,
@@ -1480,6 +1481,28 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       // `%` and `_` are not wildcards: this would match everyone if they were.
       expect(await search(`%${tag}_`)).toEqual([])
       expect(await search(`no-such-user-${tag}`)).toEqual([])
+    })
+
+    test('a ban records its origin: an operator takes over a directory ban, never the reverse', async () => {
+      const input = user(ctx.a)
+      await ctx.users.create(input, Audit.none('fixture'))
+      const ban = async (at: number | null, origin?: 'operator' | 'directory') =>
+        (
+          await ctx.users.setBanned(
+            ctx.a.environmentId,
+            input.id,
+            at === null ? null : later(at),
+            later(at ?? 9_000),
+            Audit.none('fixture'),
+            origin
+          )
+        )?.banOrigin
+      expect(await ban(1_000, 'directory')).toBe('directory')
+      expect(await ban(2_000, 'directory')).toBe('directory')
+      expect(await ban(3_000)).toBe('operator')
+      expect(await ban(4_000, 'directory')).toBe('operator')
+      expect(await ban(null)).toBeNull()
+      expect(await ban(5_000)).toBe('operator')
     })
 
     test('bans keep the first ban time, and unbans clear it', async () => {
