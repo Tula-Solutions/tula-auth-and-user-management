@@ -6,7 +6,7 @@ import { useIdTokenProviders } from './hooks/use-id-token'
 import type { BrowserSession, IdTokenCredential, IdTokenSheet, PasskeySheet } from './host'
 import { waysOf } from './host'
 import { ID_TOKEN_SHEET_CEILING_MS, idTokenProviders, signInWithIdToken } from './id-token-sign-in'
-import { signInWithProvider } from './provider-sign-in'
+import { retryProviderSignIn, signInWithProvider } from './provider-sign-in'
 import { sha256Hex } from './sha256'
 import { fakeSchedule } from './testing/fake-schedule'
 import { json, sessionTokens, TEST_USER, type World, world } from './testing/world'
@@ -400,6 +400,19 @@ describe('signInWithIdToken', () => {
       const started = w.api.calls('POST /v1/client/sign-ins/oauth').length
       await expect(signInWithProvider(w.client, input)).rejects.toMatchObject({ code: 'flow.busy' })
       expect(w.api.calls('POST /v1/client/sign-ins/oauth')).toHaveLength(started)
+      held.settle.resolve(null)
+      expect((await sheet).status).toBe('cancelled')
+    })
+
+    test('a retry of a round trip is flow.busy while a sheet is out, like a start (TULA-157, H-324)', async () => {
+      const held = pending<IdTokenCredential | null>()
+      const google = fakeSheet(() => held.promise)
+      const browser: BrowserSession = { open: async () => null }
+      const w = world({ client: { google: google.sheet, browser } })
+      routes(w)
+      const sheet = signInWithIdToken(w.client, { provider: 'google' })
+      await waitFor(() => expect(google.asked).toHaveLength(1))
+      expect((await caught(retryProviderSignIn(w.client))).code).toBe('flow.busy')
       held.settle.resolve(null)
       expect((await sheet).status).toBe('cancelled')
     })

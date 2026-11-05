@@ -403,6 +403,10 @@ describe('passkeySheetOver (react-native-passkey)', () => {
     ['RequestFailed', 'UnknownError'],
     ['BadConfiguration', 'UnknownError'],
     ['NoCredentials', 'UnknownError'],
+    // The module's own words for a native code it does not map (H-325): a failure until a device
+    // shows a dismissal arriving as one of them, never a guessed dismissal.
+    ['Native error', 'UnknownError'],
+    ['Unknown error', 'UnknownError'],
     ['InvalidChallenge', 'UnknownError'],
     // A word that is a member of every object must not be looked up as one of the table's.
     ['constructor', 'UnknownError'],
