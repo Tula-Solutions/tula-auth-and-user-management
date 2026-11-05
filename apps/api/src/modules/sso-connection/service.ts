@@ -626,6 +626,15 @@ export async function update(
   }
   if (input.saml !== undefined) {
     const next = await resolveSaml(deps, input.saml)
+    // Re-reading the address already kept must name the same IdP: a hijacked metadata URL could
+    // otherwise rebind the issuer under signed-in organizations (TULA-168, H-005).
+    if (
+      input.saml.metadataUrl !== undefined &&
+      input.saml.metadataUrl === current.saml?.metadataUrl &&
+      next.idpEntityId !== current.saml.idpEntityId
+    ) {
+      throw new AuthError('sso.saml_invalid', { reason: 'entity_id_changed' })
+    }
     if (JSON.stringify(next) !== JSON.stringify(current.saml)) {
       changes.saml = next
       changes.issuer = next.idpEntityId
