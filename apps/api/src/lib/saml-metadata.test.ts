@@ -68,6 +68,12 @@ describe('parseIdpMetadata', () => {
     expect(reason(() => parseIdpMetadata('<!doctype x [<!ENTITY a "x">'))).toBe('forbidden_xml')
   })
 
+  test('refuses a document nested deeper than any metadata is (H-023)', () => {
+    const deep = (n: number) => `${'<md:Extensions>'.repeat(n)}${'</md:Extensions>'.repeat(n)}`
+    expect(reason(() => parseIdpMetadata(idp(deep(5000))))).toBe('malformed')
+    expect(reason(() => parseIdpMetadata(idp(deep(10))))).toBeUndefined()
+  })
+
   test('refuses what is not usable metadata', () => {
     expect(reason(() => parseIdpMetadata('<nope'))).toBe('malformed')
     expect(reason(() => parseIdpMetadata('<a xmlns="urn:x"/>'))).toBe('malformed')
