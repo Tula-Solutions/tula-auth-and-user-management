@@ -237,7 +237,7 @@ describe('scimToken middleware', () => {
     const { o, id, token: secret } = await token()
     const res = await guarded().request('/', bearer(secret))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ organizationId: o.id, tokenId: id })
+    expect(await res.json()).toEqual({ organizationId: o.id, tokenId: id, viaSetupLink: false })
     expect((await deps.scim.listTokens(TENANT.environmentId, o.id))[0]?.lastUsedAt).toEqual(
       deps.clock.now()
     )

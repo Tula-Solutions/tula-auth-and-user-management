@@ -166,6 +166,9 @@ entry out of the stream.
   existing privileged mapping is shown read-only (`locked`). The operator and an organization admin with
   `org:sys:sso:manage` can map any role. A leaked link must not let its holder make their own provider
   group organization admins.
+  The lock also holds where a role is applied: a SCIM token the portal minted (`scim_tokens.via_setup_link`)
+  is refused a push (400 `invalidValue`) that would give a member a privileged role, and nothing changes;
+  a token an operator minted applies the mapping.
 - **One default role.** A SCIM-provisioned member in no mapped group gets the role a sign-in would give:
   the default role of the organization's active connection (else the most recently tested, else `member`).
 - **Managed users are locked from the client.** While a user is managed by a connection or by a directory,

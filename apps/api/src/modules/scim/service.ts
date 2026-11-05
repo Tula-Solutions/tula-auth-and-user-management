@@ -25,6 +25,8 @@ export interface ScimContext {
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>
   organizationId: string
   actor: Actor
+  /** The token was minted by a setup link: it may not apply a privileged role. */
+  viaSetupLink: boolean
 }
 
 function resource(deps: Deps, user: UserRecord, record: ScimUserRecord): ScimUserResource {

@@ -204,27 +204,6 @@ export async function refreshMetadata(
 }
 
 /**
- * Whether a role holds a system permission that does more than read (`org:sys:*` not ending in
- * `:read`); a role that does not exist does not. The built-in `member` holds
- * `org:sys:memberships:read` only and stays mappable: it is what a connection gives anyone.
- */
-async function isPrivileged(
-  deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
-  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
-  role: string
-): Promise<boolean> {
-  try {
-    const found = await Organizations.requireRole(deps, tenant, role)
-    return found.permissions.some((key) => key.startsWith('org:sys:') && !key.endsWith(':read'))
-  } catch (error) {
-    if (error instanceof AuthError && error.code === 'organization.role_unknown') {
-      return false
-    }
-    throw error
-  }
-}
-
-/**
  * Read the group to role mapping of one of the link's organization's connections, with the
  * mappings to privileged roles marked `locked`.
  *
@@ -248,7 +227,10 @@ export async function getGroupRoles(
   const { mappings } = await SsoConnections.getGroupRoles(deps, tenant, id)
   return {
     mappings: await Promise.all(
-      mappings.map(async (one) => ({ ...one, locked: await isPrivileged(deps, tenant, one.role) }))
+      mappings.map(async (one) => ({
+        ...one,
+        locked: await Organizations.isPrivilegedRole(deps, tenant, one.role),
+      }))
     ),
   }
 }
@@ -284,7 +266,7 @@ export async function putGroupRoles(
   const saved = await deps.ssoConnections.listGroupRoles(tenant.environmentId, scope.organizationId)
   const locked: typeof saved = []
   for (const one of saved) {
-    if (await isPrivileged(deps, tenant, one.role)) {
+    if (await Organizations.isPrivilegedRole(deps, tenant, one.role)) {
       locked.push(one)
     }
   }
@@ -295,7 +277,7 @@ export async function putGroupRoles(
     if (held(one)) {
       continue
     }
-    if (await isPrivileged(deps, tenant, one.role)) {
+    if (await Organizations.isPrivilegedRole(deps, tenant, one.role)) {
       throw new AuthError('sso.role_not_allowed')
     }
     sent.push(one)

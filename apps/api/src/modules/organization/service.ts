@@ -577,3 +577,29 @@ export async function listForUser(
     })),
   }
 }
+
+/**
+ * Whether a role holds a system permission that does more than read (`org:sys:*` not ending in
+ * `:read`); a role that does not exist does not. The built-in `member` holds
+ * `org:sys:memberships:read` only and stays mappable: it is what a connection gives anyone.
+ *
+ * @param deps - Roles, ids and clock.
+ * @param tenant - The environment.
+ * @param role - The role key.
+ * @returns Whether the role is privileged.
+ */
+export async function isPrivilegedRole(
+  deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  role: string
+): Promise<boolean> {
+  try {
+    const found = await requireRole(deps, tenant, role)
+    return found.permissions.some((key) => key.startsWith('org:sys:') && !key.endsWith(':read'))
+  } catch (error) {
+    if (error instanceof AuthError && error.code === 'organization.role_unknown') {
+      return false
+    }
+    throw error
+  }
+}
