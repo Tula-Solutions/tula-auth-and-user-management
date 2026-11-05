@@ -11,6 +11,7 @@ import { validationHook } from '~/handlers'
 import { userActor } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
+import { requireRecentAuth } from '~/middleware/recent-auth'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as SetupLinks from '~/modules/setup-link/service'
 import * as openapi from '~/openapi'
@@ -43,6 +44,10 @@ const manager =
   'role on every request, never from the token): `organization.not_a_member` (403) for an ' +
   'organization they do not belong to, and `auth.forbidden` (403) for a member without the ' +
   'permission.'
+
+const stepUp =
+  ' Minting or revoking a link needs a **recent authentication** (`auth.step_up_required`, 403): ' +
+  'a link lets its holder configure the organization’s single sign-on.'
 
 const OrganizationParamSchema = z.object({ id: z.uuid() })
 const LinkParamSchema = z.object({ id: z.uuid(), linkId: z.uuid() })
@@ -91,7 +96,8 @@ router.post(
     summary: 'Create an SSO setup link for my organization',
     description:
       'Creates a setup link; the token and its address are in this answer and nowhere else. ' +
-      manager,
+      manager +
+      stepUp,
     security: openapi.security.session,
     responses: {
       201: { description: 'The link, with its token.', content: json(CreatedSetupLinkSchema) },
@@ -102,6 +108,7 @@ router.post(
   limit,
   publishableKey(),
   sessionAuth(),
+  requireRecentAuth(),
   validator('param', OrganizationParamSchema, validationHook),
   validator('json', CreateMySetupLinkRequestSchema, validationHook),
   async (c) => {
@@ -124,7 +131,7 @@ router.delete(
     operationId: 'revokeMyOrganizationSetupLink',
     tags: ['SSO setup links'],
     summary: 'Revoke one of my organization’s SSO setup links',
-    description: `Revokes a link that is not revoked yet. ${manager}`,
+    description: `Revokes a link that is not revoked yet. ${manager}${stepUp}`,
     security: openapi.security.session,
     responses: {
       204: { description: 'Revoked.' },
@@ -134,6 +141,7 @@ router.delete(
   limit,
   publishableKey(),
   sessionAuth(),
+  requireRecentAuth(),
   validator('param', LinkParamSchema, validationHook),
   async (c) => {
     const { id, linkId } = c.req.valid('param')

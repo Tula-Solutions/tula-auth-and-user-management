@@ -283,6 +283,29 @@ describe('signing in with a second factor over HTTP', () => {
 })
 
 describe('step-up over HTTP', () => {
+  test('confirming the authenticator needs a recent authentication of its own (H-142)', async () => {
+    const session = (await signUp()).session as SessionTokens
+    deps.clock.advance('5m')
+    const early = await json<SessionTokens>(
+      await post('/sessions/refresh', { refreshToken: session.refreshToken })
+    )
+    const enrolment = await json<TotpEnrolment>(
+      await post('/me/factors/totp', {}, early.accessToken)
+    )
+    // Past the sign-in's ten minutes, inside the pending secret's ten.
+    deps.clock.advance('6m')
+    const fresh = await json<SessionTokens>(
+      await post('/sessions/refresh', { refreshToken: early.refreshToken })
+    )
+    const refused = await post(
+      '/me/factors/totp/confirm',
+      { code: codeFor(enrolment.secret) },
+      fresh.accessToken
+    )
+    expect(refused.status).toBe(403)
+    expect((await errorOf(refused)).code).toBe('auth.step_up_required')
+  })
+
   test('a stale session is asked to step up, and the fresh token is accepted', async () => {
     const session = (await signUp()).session as SessionTokens
     deps.clock.advance('11m')
@@ -892,7 +915,7 @@ describe('the MFA routes: validation, caching and limits', () => {
     }
   })
 
-  test('confirming with nothing started is 410, and a second confirmation is 409', async () => {
+  test('confirming with nothing started is 410, and a second confirmation needs a step-up first', async () => {
     const session = (await signUp()).session as SessionTokens
     expect(
       await errorOf(await post('/me/factors/totp/confirm', { code: '123456' }, session.accessToken))
@@ -904,7 +927,7 @@ describe('the MFA routes: validation, caching and limits', () => {
     expect((await post('/me/factors/totp/confirm', { code }, session.accessToken)).status).toBe(200)
     expect(
       await errorOf(await post('/me/factors/totp/confirm', { code }, session.accessToken))
-    ).toMatchObject({ status: 409, code: 'mfa.already_enabled' })
+    ).toMatchObject({ status: 403, code: 'auth.step_up_required' }) // the guard now precedes the 409 (H-142)
     await Notices.settled()
   })
 

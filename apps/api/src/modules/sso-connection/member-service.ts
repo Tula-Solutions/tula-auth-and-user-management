@@ -5,6 +5,7 @@ import {
   type SsoGroupRoles,
   type SsoTestResult,
   type SsoTestStart,
+  ssoWeakenings,
   type UpdateSsoConnectionRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -89,20 +90,17 @@ async function requireAssignable(
 }
 
 /**
- * Whether an update is one of the three that ask less of a sign-in without activating
- * anything: enforcement off, the provider trusted for MFA, a break-glass role named. The route
- * wants a recent authentication for these (the audit entry says `weakened: true` for them).
+ * Whether an update is a weakening (`ssoWeakenings`, the one copy of the rule): activating,
+ * changing what an active connection accepts (issuer, secret, domains, mapping), enforcement
+ * off, the provider trusted for MFA, a break-glass role named. The route wants a recent
+ * authentication for these, and the audit entry says `weakened: true` for the same set.
  *
  * @param current - The connection as it is.
  * @param input - The change asked for.
  * @returns `true` for a weakening.
  */
 export function needsStepUp(current: SsoConnection, input: UpdateSsoConnectionRequest): boolean {
-  return (
-    (input.enforced === false && current.enforced) ||
-    (input.trustIdpMfa === true && !current.trustIdpMfa) ||
-    (typeof input.breakGlassRole === 'string' && input.breakGlassRole !== current.breakGlassRole)
-  )
+  return ssoWeakenings(current, input).length > 0
 }
 
 /**
