@@ -292,5 +292,4 @@ it; an organization taking over a name ends the old claim through the same remov
 **Group-role mappings outlive their connection (H-232).** `organization_group_roles` is keyed
 by organization, so deleting an SSO connection leaves its mappings. They are inert without a
 connection, an organization can change its identity provider and keep its mappings, and
-nothing reads them until a connection signs a user in. Kept deliberately; the dashboard lists
-and removes them under the organization.
+nothing reads them until a connection signs a user in. Kept deliberately.
