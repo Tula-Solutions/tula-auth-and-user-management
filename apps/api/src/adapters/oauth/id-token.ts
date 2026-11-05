@@ -407,6 +407,9 @@ export function displayName(value: unknown): string | undefined {
  * The email claims of an ID token. `email_verified` is a boolean in the OIDC specification, but
  * Apple sends the string `"true"`.
  *
+ * The native path (a handed-over token, `handedOver: true`) accepts the boolean `true` only (H-163):
+ * the string form is Apple's web flow and is not widened to a token a client handed over.
+ *
  * @param payload - A verified ID token's claims.
  * @returns The address (or `null`) and whether the provider asserts it verified.
  */

@@ -2580,6 +2580,8 @@ export async function completeExternalSignIn(
   method: string
 ): Promise<FlowResult> {
   // A provider's profile is refused for an enforced domain before any account is made or linked.
+  // A null profile address skips this first check on purpose (H-164): nothing is made or linked
+  // for it, and the account's own address is checked again below (the invariant the next check holds).
   if (typeof provider === 'string' && profile.email !== null) {
     await Sso.requireNotEnforced(deps, tenant, normalizeEmail(profile.email), provider)
   }
