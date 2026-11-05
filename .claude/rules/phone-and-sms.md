@@ -249,7 +249,10 @@ it ("Signing in with a texted code", at the end of this section).
   `SMS_COUNT_RETENTION_FLOOR_DAYS`). Today's rows are what the daily limit is held against:
   a delete of them reopens a spent day. Never loosen the policy, never grant the role
   `UPDATE` on `day` (a row could be made old to get past it), and add no second policy
-  that is not restrictive. A test that needs an empty day takes a fresh tenant: it cannot
+  that is not restrictive. The seven days are a minimum the database enforces, not the
+  retention: the app keeps rows 90 days (`SMS_COUNT_RETENTION`), and that value is the
+  rule; the floor is a net against a wrong cutoff, so the two differ on purpose.
+  A test that needs an empty day takes a fresh tenant: it cannot
   clear one.
 - **Over HTTP, in one run, the daily limit's hourly shares refuse before the day does.** The
   scenario "text messages past the daily limit" says so; that the day's own count refuses
@@ -366,3 +369,8 @@ rules themselves are above and are not repeated).
   apply. Recorded, no code change: such a send has no client to count. A new caller passes
   `ipBucket(clientIp(c, …))` whenever a request asked for the send, never `null` for
   convenience.
+- **Decision (TULA-157, H-243): the development inbox (`adapters/sms/dev.ts`) is one
+  process-local list for all environments, not keyed by environment id.** It is safe because
+  of three gates: `env.ts` refuses `SMS_PROVIDER=dev` outside `ENVIRONMENT=local`,
+  `container.ts` picks it only then, and the dev router checks a loopback host. Keying it
+  would add little for a local-only tool. Never loosen those gates.

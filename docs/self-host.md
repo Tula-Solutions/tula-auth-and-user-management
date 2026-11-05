@@ -201,6 +201,11 @@ saved. Send the list yourself in the same request, `"urls": { "allowedOrigins": 
 or correct `CORS_ORIGINS` and restart. Until an environment saves settings, `CORS_ORIGINS`
 keeps applying to it exactly as written.
 
+A browser's preflight request names no environment, so the API answers it for an origin that
+**any** environment of the deployment allows. That only lets the browser send the real
+request: each environment still checks the origin against its own list, and a cookie is
+honoured only for an origin that environment allows.
+
 If the API logs `stored environment settings held list entries that are not valid; they were
 ignored`, a stored origin or redirect URL is one this version does not accept. The environment
 keeps working without those entries; read the settings and `PUT` them back to clean the row.
