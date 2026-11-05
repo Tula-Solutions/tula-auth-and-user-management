@@ -53,6 +53,7 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       channel: ${{ steps.plan.outputs.channel }}
       publish: ${{ steps.plan.outputs.publish }}
+      move_channel: ${{ steps.plan.outputs.move_channel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { persist-credentials: false }
@@ -105,9 +106,10 @@ jobs:
       - name: Note the digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p "$RUNNER_TEMP/digests"
-          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+          touch "$RUNNER_TEMP/digests/${ARCH}-${DIGEST#sha256:}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: digest-${{ matrix.arch }}
@@ -140,17 +142,32 @@ jobs:
         env:
           VERSION: ${{ needs.plan.outputs.version }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
+          MOVE_CHANNEL: ${{ needs.plan.outputs.move_channel }}
           SOURCE: https://github.com/${{ github.repository }}
         run: |
-          # One file per architecture, named after its digest: exactly two, or nothing is tagged.
-          test "$(ls | wc -l)" -eq 2
+          # One digest file per platform, named `<arch>-<digest>`: one amd64 and one arm64, or
+          # nothing is tagged (two of one platform would make a manifest of a single one).
+          shopt -s nullglob
+          sources=()
+          for arch in amd64 arm64; do
+            files=("$arch"-*)
+            if [ "${#files[@]}" -ne 1 ]; then
+              echo "::error::expected one $arch digest, found ${#files[@]}"
+              exit 1
+            fi
+            sources+=("$IMAGE@sha256:${files[0]#"$arch"-}")
+          done
+          # An older release rebuilt must not take the channel back from a newer one.
+          tags=(--tag "$IMAGE:$VERSION")
+          if [ "$MOVE_CHANNEL" = true ]; then
+            tags+=(--tag "$IMAGE:$CHANNEL")
+          fi
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.source=$SOURCE" \
             --annotation "index:org.opencontainers.image.version=$VERSION" \
             --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
-            --tag "$IMAGE:$VERSION" \
-            --tag "$IMAGE:$CHANNEL" \
-            $(printf "$IMAGE@sha256:%s " *)
+            "${tags[@]}" \
+            "${sources[@]}"
           docker buildx imagetools inspect "$IMAGE:$VERSION"
 
   public:
