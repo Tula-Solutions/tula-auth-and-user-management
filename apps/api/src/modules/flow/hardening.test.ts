@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
+import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
+import * as OrganizationDomains from '~/modules/organization-domain/service'
+import * as Passwords from '~/modules/password/service'
 import * as Sso from '~/modules/sso/service'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -40,6 +43,61 @@ describe('password reset lookups (H-078)', () => {
       expect(refuses).toHaveBeenCalledTimes(1)
     } finally {
       refuses.mockRestore()
+    }
+  })
+})
+
+describe('the sign-up organization join (H-083)', () => {
+  test('a stale accountCreated flag does not make a sign-in join an organization', async () => {
+    const userId = deps.ids.next()
+    await deps.users.create(
+      {
+        id: userId,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: await Passwords.hash('correct horse battery staple'),
+      },
+      Audit.none('fixture')
+    )
+    // The account is older than the attempt: a flag claiming it was created here is wrong.
+    deps.clock.advance(60_000)
+    const { attempt: later } = await Flows.signIn(
+      deps,
+      tenant,
+      { identifier: 'maya@northline.app' },
+      web
+    )
+    const stored = await deps.flowAttempts.findById(tenant.environmentId, later.id)
+    await deps.flowAttempts.transition(
+      tenant.environmentId,
+      later.id,
+      stored?.status ?? 'needs_password',
+      {
+        status: stored?.status ?? 'needs_password',
+        state: { ...stored?.state, accountCreated: true },
+      },
+      deps.clock.now()
+    )
+    const join = spyOn(OrganizationDomains, 'joinOnSignUp')
+    try {
+      await Flows.submitPassword(
+        deps,
+        tenant,
+        { id: later.id, secret: later.attemptSecret },
+        'correct horse battery staple',
+        web
+      )
+      expect(join).not.toHaveBeenCalled()
+    } finally {
+      join.mockRestore()
     }
   })
 })

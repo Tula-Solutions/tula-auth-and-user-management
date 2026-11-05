@@ -883,12 +883,19 @@ async function finish(
   }
   // Named field by field from the server's own records: the allow-list of the question
   // (`HookBeforeSessionDataSchema`). No address of the user's, no user agent, no attempt.
+  // The persisted flag is only believed for an account made no earlier than the attempt, so a
+  // future writer of it cannot make a sign-in of an old account count as a sign-up (H-083).
+  const createdHere =
+    attempt.kind === 'sign_up' ||
+    (state.accountCreated === true &&
+      ((await deps.users.findById(tenant.environmentId, userId))?.createdAt ?? new Date(0)) >=
+        attempt.createdAt)
   const clearance = await Hooks.beforeSession(deps, tenant, {
     userId,
     client: state.client,
     profile: await Sessions.profileNameFor(deps, tenant, state),
     amr: mergeAuthMethods([], state.amr ?? []),
-    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    signUp: createdHere,
     ipAddress: cleanOrigin(context).ipAddress,
   })
   const tokens = await Sessions.create(deps, tenant, {
@@ -923,7 +930,7 @@ async function finish(
     })
     throw new AuthError('flow.invalid_step')
   }
-  if (attempt.kind === 'sign_up' || state.accountCreated === true) {
+  if (createdHere) {
     // A verified address on an `auto_join` domain of an organization (ADR 0065, "Verified
     // domains"): the membership, its audit entry and its event are written here, as part of
     // the sign-up, and never for a sign-in. Cannot throw: a sign-up that has a session is
