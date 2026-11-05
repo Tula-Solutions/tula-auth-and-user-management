@@ -192,6 +192,14 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
     )
   }
+  if (role === 'api' && env.TRUST_PROXY && env.ENVIRONMENT !== 'local') {
+    // `clientIp` takes the LAST X-Forwarded-For entry, right only behind exactly one trusted
+    // proxy. Behind two (a CDN and a load balancer) it is the inner proxy's address, so every
+    // client shares one bucket; with none, a client writes its own (H-150).
+    logger.warn(
+      'TRUST_PROXY is on: the API takes the last X-Forwarded-For entry as the client address, which is right only behind exactly one proxy that overwrites the header (docs/self-host.md).'
+    )
+  }
   if (role === 'api') {
     // A worker starts no attempt, so only the API says it. Not a refused boot: a deployment
     // that binds no session to a device key loses nothing (ADR 0043).

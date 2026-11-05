@@ -3282,6 +3282,12 @@ export interface TulaClientOptions {
   /** Where the Tula API is served, e.g. `https://auth.example.com`. */
   baseUrl: string
   /**
+   * Allow a plain `http:` `baseUrl` to a host that is not this machine. Off by default: the
+   * publishable key and the bearer tokens would cross the network readable. Only for a private
+   * network you trust.
+   */
+  allowInsecureHttp?: boolean
+  /**
    * The kind of client, which decides where the refresh token lives. `web` (the default in a
    * browser): an httpOnly cookie set by the API, which this SDK never sees. `ios`, `android`,
    * `server` (the default elsewhere): the `storage` adapter.

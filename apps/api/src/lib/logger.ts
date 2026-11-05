@@ -25,6 +25,11 @@ export const REDACTED_KEYS = [
   'set-cookie',
   'x-tula-publishable-key',
   'x-tula-attempt',
+  // Operator credentials in headers or bodies; SCIM bearer tokens travel in `authorization`.
+  'x-tula-setup-token',
+  'x-tula-admin-token',
+  'secretKey',
+  'apiKey',
   'attemptSecret',
   'secretHash',
   // An emailed sign-in link's token and the browser binding that goes with it (ADR 0024). Both

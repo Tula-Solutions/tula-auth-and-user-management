@@ -206,7 +206,13 @@ export async function verifyAccessToken(
 ): Promise<SessionClaims | null> {
   try {
     const header = decodeProtectedHeader(token)
-    if (header.alg !== 'EdDSA' || typeof header.kid !== 'string' || header.kid === '') {
+    // The API always signs `typ: JWT`; any other kind of token under this issuer's keys is not a session.
+    if (
+      header.typ !== 'JWT' ||
+      header.alg !== 'EdDSA' ||
+      typeof header.kid !== 'string' ||
+      header.kid === ''
+    ) {
       return null
     }
     const { payload } = await jwtVerify(token, keySetFor(config), {

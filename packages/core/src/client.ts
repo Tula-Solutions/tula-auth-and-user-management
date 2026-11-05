@@ -125,6 +125,12 @@ export interface TulaClientOptions {
   /** Where the Tula API is served, e.g. `https://auth.example.com`. */
   baseUrl: string
   /**
+   * Allow a plain `http:` `baseUrl` to a host that is not this machine. Off by default: the
+   * publishable key and the bearer tokens would cross the network readable. Only for a private
+   * network you trust.
+   */
+  allowInsecureHttp?: boolean
+  /**
    * The kind of client, which decides where the refresh token lives. `web` (the default in a
    * browser): an httpOnly cookie set by the API, which this SDK never sees. `ios`, `android`,
    * `server` (the default elsewhere): the `storage` adapter.
@@ -1526,7 +1532,7 @@ export interface TulaClient {
   }
 }
 
-function normalizeBaseUrl(baseUrl: string): string {
+function normalizeBaseUrl(baseUrl: string, allowInsecureHttp?: boolean): string {
   let url: URL
   try {
     url = new URL(baseUrl)
@@ -1535,6 +1541,19 @@ function normalizeBaseUrl(baseUrl: string): string {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new TypeError('createTulaClient: `baseUrl` must be an http(s) URL')
+  }
+  const host = url.hostname
+  if (
+    url.protocol === 'http:' &&
+    !allowInsecureHttp &&
+    host !== 'localhost' &&
+    !host.endsWith('.localhost') &&
+    host !== '127.0.0.1' &&
+    host !== '[::1]'
+  ) {
+    throw new TypeError(
+      'createTulaClient: `baseUrl` is plain http to another machine; use https (or set `allowInsecureHttp` on a private network you trust)'
+    )
   }
   return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
 }
@@ -1576,7 +1595,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         : 'createTulaClient: `publishableKey` must be a publishable key (tula_pk_…)'
     )
   }
-  const baseUrl = normalizeBaseUrl(options.baseUrl)
+  const baseUrl = normalizeBaseUrl(options.baseUrl, options.allowInsecureHttp)
   const client = options.client ?? defaultClientKind()
   if (client === 'web' && options.storage) {
     throw new TypeError(

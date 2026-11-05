@@ -40,7 +40,7 @@ export async function createSigner(kid = 'key-1'): Promise<Signer> {
         amr: ['pwd'],
         ...claims,
       })
-        .setProtectedHeader({ alg: 'EdDSA', kid, ...header })
+        .setProtectedHeader({ alg: 'EdDSA', kid, typ: 'JWT', ...header })
         .sign(privateKey)
     },
   }

@@ -1193,6 +1193,13 @@ export async function signIn(
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
+  // Refused by shape alone, before anything is looked up: the answer for a malformed
+  // identifier is the same whoever holds the account (TULA-157, H-032).
+  const phone = parsePhoneNumber(input.identifier)
+  const address = phone === null ? parseEmail(input.identifier, context.testAddress) : null
+  if (phone === null && address === null) {
+    throw new InvalidEmailError()
+  }
   const strategies: FirstFactorStrategy[] = [
     ...Factors.firstFactors(
       await Settings.current(deps, tenant),
@@ -1202,7 +1209,11 @@ export async function signIn(
   ]
   // Offered by the address's domain alone, never by whether an account exists: a known and an
   // unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
-  const connection = await Sso.offered(deps, tenant, normalizeEmail(input.identifier))
+  const connection = await Sso.offered(
+    deps,
+    tenant,
+    address?.normalized ?? normalizeEmail(input.identifier)
+  )
   if (connection !== null) {
     strategies.push('sso')
   }
@@ -1219,7 +1230,7 @@ export async function signIn(
         : 'needs_first_factor',
     // A phone number is kept in E.164 form, whatever was typed between its digits; anything
     // else is kept as an address would be. Neither is looked up here.
-    identifier: parsePhoneNumber(input.identifier) ?? normalizeEmail(input.identifier),
+    identifier: phone ?? address?.normalized ?? normalizeEmail(input.identifier),
     state,
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
@@ -2583,7 +2594,11 @@ export async function completeExternalSignIn(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  if (typeof provider === 'string' && !created && user.emailNormalized !== null) {
+  // The account's own address, for a new account too (H-031): one rule for both, so a path
+  // that makes an account with an address the profile did not carry is still refused. What
+  // resolution does before this point is either nothing (an identity already linked) or
+  // reachable only for the profile's address, which the check above has cleared (H-029).
+  if (typeof provider === 'string' && user.emailNormalized !== null) {
     await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, provider)
   }
   // A connection that trusts its identity provider for MFA (TULA-140) skips Tula's second step,
@@ -3665,11 +3680,6 @@ export async function submitSecondFactor(
     await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   }
   const user = await deps.users.findById(tenant.environmentId, userId)
-  // Refuse before the lockout, the charge or the verifier: a banned user's code must not be
-  // spent. The answer stays generic, so the ban is told to nobody who has not proved the factor.
-  if (user?.bannedAt) {
-    throw new AuthError('mfa.invalid_code')
-  }
   if (proof.method === 'sms_code') {
     // The texted second factor switched off, text messages off or the number's country
     // removed since the code was sent: refused before the guess is counted or the code used.

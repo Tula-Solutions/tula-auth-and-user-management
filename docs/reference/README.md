@@ -27,7 +27,7 @@ Kotlin toolchain). The generated types of the client API are not listed.
 
 | Module | Language | Sources | Declarations | Without a doc comment |
 | --- | --- | --- | --- | --- |
-| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 326 | 0 |
+| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 327 | 0 |
 | [`TulaAuthUI`](swift.md) | Swift | `native/swift/Sources/TulaAuthUI` | 696 | 0 |
 | [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 271 | 1 |
 | [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 242 | 0 |

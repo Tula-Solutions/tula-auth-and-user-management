@@ -327,8 +327,7 @@ describe('asking for an email code', () => {
   })
 
   test('an identifier that is not an email address is refused before anything is sent', async () => {
-    const attempt = await start('not an address')
-    expect((await rejection(prepare(attempt))).code).toBe('email.invalid')
+    expect((await rejection(start('not an address'))).code).toBe('email.invalid')
     expect(deps.mailer.outbox).toHaveLength(0)
   })
 
