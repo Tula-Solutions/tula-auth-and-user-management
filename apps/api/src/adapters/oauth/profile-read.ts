@@ -34,14 +34,19 @@ async function boundedText(response: Response, maxBytes: number): Promise<string
   }
 }
 
-async function read(url: string, accessToken: string, signal: AbortSignal): Promise<unknown> {
+async function read(
+  url: string,
+  accessToken: string,
+  signal: AbortSignal,
+  headers: Record<string, string>
+): Promise<unknown> {
   let response: Response
   try {
     response = await globalThis.fetch(url, {
       signal,
       // A redirect would carry the token to wherever it points.
       redirect: 'error',
-      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      headers: { accept: 'application/json', ...headers, authorization: `Bearer ${accessToken}` },
     })
   } catch {
     throw new OAuthProviderError('unavailable')
@@ -79,10 +84,16 @@ async function read(url: string, accessToken: string, signal: AbortSignal): Prom
  * @param url - The provider's profile endpoint, a constant of the adapter.
  * @param accessToken - The access token the code was just exchanged for.
  * @param timeoutMs - The deadline of the whole read.
+ * @param headers - Headers a provider asks for besides the bearer token (never the token itself).
  * @returns The answer's JSON, unjudged.
  * @throws OAuthProviderError `unavailable` when the provider does not answer, answers anything
  *   but a 2xx or stops mid-body; `invalid_profile` when the answer is over the cap or not JSON.
  */
-export function readProfile(url: string, accessToken: string, timeoutMs: number): Promise<unknown> {
-  return withDeadline(read(url, accessToken, AbortSignal.timeout(timeoutMs)), timeoutMs)
+export function readProfile(
+  url: string,
+  accessToken: string,
+  timeoutMs: number,
+  headers: Record<string, string> = {}
+): Promise<unknown> {
+  return withDeadline(read(url, accessToken, AbortSignal.timeout(timeoutMs), headers), timeoutMs)
 }

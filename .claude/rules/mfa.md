@@ -161,3 +161,18 @@ rules themselves are above and are not repeated).
   the same attempts twice, and the per-IP limit is only a cheap pre-filter. Recommendation:
   no code change. The cost is that many users behind one NAT share the per-IP budget
   (`STEP_UP_RATE_LIMIT` a minute); raise that number rather than adding a per-user rule.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-145): a second-factor guess and an enrolment confirmation share the
+  per-user lockout (ADR 0011). Accepted: it costs availability, never confidentiality.
+- Decision (TULA-157, H-146): a session holder can run the per-user step-up lockout dry
+  (`Mfa.stepUpLockKey`). Accepted, no code change; raise `STEP_UP_RATE_LIMIT`, add no
+  per-user rule (see above).
+- Decision (TULA-157, H-148): `mfa.policy` is checked at sign-in only (ADR 0025), so a user
+  signed in before it became `required` is not asked to enrol. Recommendation: ask for
+  enrolment (or a step-up) at the next sensitive action. Recorded only: it changes the
+  contract's flow for live sessions.
+- Decision (TULA-157, H-149): a session's step-up facts survive a phone change or removal.
+  Recorded, low impact: an SMS-only `amr` never satisfies recent-auth. Revoke them if SMS
+  ever counts for step-up.

@@ -208,6 +208,10 @@ function webKindOf(value: string): 'https' | 'loopback' | null {
   if (url.username !== '' || url.password !== '' || url.hash !== '') {
     return null
   }
+  // `hash` is '' for a bare trailing `#`, which the server's own `#name=` would double.
+  if (value.includes('#')) {
+    return null
+  }
   if (url.protocol === 'https:') {
     return 'https'
   }
