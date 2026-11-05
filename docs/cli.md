@@ -424,6 +424,7 @@ One guide per provider says what to export and what is and is not carried:
 | `--from <provider>` | `clerk`, `auth0`, `firebase`, `supabase` or `better-auth`. Required. |
 | `<export file>` | The provider's user export (JSON, NDJSON or CSV, by provider). |
 | `--yes` | Import. Without it only the report is printed, and no key is needed. |
+| `--no-trust-verified` | Import every address as unverified, whatever the export says. Use it for an export from a source you do not control or that anyone edited: a verified address lets its owner skip the emailed code. |
 | `--password-hashes <file>` | Auth0: the hash export that Auth0 support sends. |
 | `--accounts <file>` | better-auth: the `account` table. |
 | `--organizations <file>`, `--memberships <file>` | Clerk: its organizations and their members, imported through the organization admin routes. |

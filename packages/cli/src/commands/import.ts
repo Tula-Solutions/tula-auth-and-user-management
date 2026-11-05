@@ -22,7 +22,7 @@ import {
 import { resolveTarget } from '../target'
 
 const USAGE =
-  'tula import --from <provider> <export file> [--yes] [--progress-file <path>] [--fresh] [--allow-passwordless]\n' +
+  'tula import --from <provider> <export file> [--yes] [--progress-file <path>] [--fresh] [--allow-passwordless] [--no-trust-verified]\n' +
   '            [--password-hashes <file>] [--accounts <file>] [--organizations <file>] [--memberships <file>]\n' +
   '            [--firebase-hash-config <file>] [--firebase-rounds <n>] [--firebase-mem-cost <n>]\n' +
   '            [--batch-size <n>] [--max-wait <seconds>] [--env <name>] [--api-url <url>] [--secret-key-file <path>] [--json]'
@@ -163,6 +163,14 @@ async function load(
     allowPasswordless: flags['allow-passwordless'] === true,
     firebase,
   })
+  if (flags['no-trust-verified'] === true) {
+    // An export is the source's claim; this keeps an untrusted or edited one from verifying addresses.
+    for (const entry of parsed.rows) {
+      if (entry.user !== null) {
+        entry.user.emailVerified = false
+      }
+    }
+  }
   const fingerprint = fingerprintOf([
     ['export', text],
     ...Object.entries(files).sort(([left], [right]) => left.localeCompare(right)),
@@ -173,6 +181,7 @@ async function load(
       'options',
       JSON.stringify({
         passwordless: flags['allow-passwordless'] === true,
+        unverified: flags['no-trust-verified'] === true,
         firebase:
           firebase === undefined
             ? null
@@ -267,6 +276,11 @@ export const importCommand: Command = {
       type: 'boolean',
       description:
         'Import a user whose password hash cannot be carried over without a password, instead of refusing the row.',
+    },
+    'no-trust-verified': {
+      type: 'boolean',
+      description:
+        'Import every address as unverified, whatever the export says. For an export from a source you do not control.',
     },
     'password-hashes': {
       type: 'string',

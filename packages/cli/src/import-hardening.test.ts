@@ -77,3 +77,48 @@ describe('the salt separator from the environment (H-265)', () => {
     expect(out).not.toContain(raw)
   })
 })
+
+describe('--no-trust-verified (H-275)', () => {
+  test('sends every address unverified', async () => {
+    const sent: { users: { emailVerified?: boolean }[] }[] = []
+    const files: Record<string, string> = { '/work/users.csv': fixture('supabase-users.csv') }
+    const host = {
+      readFile: async (path: string) => files[path] ?? null,
+      writeSecretFile: async (path: string, text: string) => {
+        files[path] = text
+      },
+      sleep: async () => {},
+    } as unknown as Host
+    const fetch: AdminFetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}'))
+      sent.push(body)
+      return Response.json({ results: [] })
+    }
+    const run = async (extra: string[]) => {
+      sent.length = 0
+      delete files['/work/users.csv.tula-import-progress.json']
+      await runCli(
+        ['import', '--from', 'supabase', 'users.csv', '--yes', '--allow-passwordless', ...extra],
+        {
+          stdout: { write: () => {} },
+          stderr: { write: () => {} },
+          env: {
+            TULA_API_URL: 'http://localhost:3003',
+            TULA_SECRET_KEY: 'tula_sk_dev_importtest00000000000000000000000',
+          },
+          cwd: '/work',
+          isTTY: false,
+          stdinIsTTY: false,
+          fetch,
+          host,
+        },
+        COMMANDS
+      )
+      return sent.flatMap((body) => body.users ?? [])
+    }
+    expect((await run([])).some((user) => user.emailVerified === true)).toBe(true)
+    const users = await run(['--no-trust-verified'])
+    expect(users.length).toBeGreaterThan(0)
+    expect(users.every((user) => user.emailVerified === false)).toBe(true)
+  })
+})
