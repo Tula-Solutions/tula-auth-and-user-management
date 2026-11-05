@@ -16,8 +16,18 @@ const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#'
 
 /** The clock skew allowed on every assertion time, in milliseconds (ADR 0067). */
 export const SAML_CLOCK_SKEW_MS = 120_000
-/** The largest base64 `SAMLResponse` accepted, in characters. */
-export const SAML_RESPONSE_MAX_LENGTH = 512 * 1024
+/**
+ * The longest an assertion may live. The replay guard remembers an id until the assertion
+ * expires, so an unbounded `NotOnOrAfter` would pin a key (and Redis memory) for years.
+ */
+export const SAML_MAX_ASSERTION_LIFETIME_MS = 60 * 60 * 1000
+
+/**
+ * The largest base64 `SAMLResponse` accepted, in characters. The ACS route's form body is
+ * already capped at 64 KiB (`MAX_BODY_BYTES`, `index.ts`), so this equals it: a larger bound
+ * would be dead code (TULA-157, H-027). It still guards a caller that bypasses the route.
+ */
+export const SAML_RESPONSE_MAX_LENGTH = 64 * 1024
 
 const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success'
 const CM_BEARER = 'urn:oasis:names:tc:SAML:2.0:cm:bearer'
@@ -89,6 +99,11 @@ export interface SamlExpectations {
   requestId: string | null
   /** The identity provider's entity id: the one issuer accepted. */
   idpEntityId: string
+  /**
+   * Scopes the replay key to one connection (`<environmentId>:<connectionId>`), so that the same
+   * assertion id at two connections of one IdP is not a replay, and a key never crosses tenants.
+   */
+  replayScope: string
   /** The identity provider's signing certificates (PEM or bare base64); any one may sign. */
   certificates: readonly string[]
 }
@@ -427,7 +442,7 @@ async function check(
 
   // Last, so that nothing a forger can send burns an id: only a response that is signed,
   // current and addressed to this connection reaches the guard.
-  const key = `saml:${sha256Hex(`${expected.idpEntityId}\0${assertionId}`)}`
+  const key = `saml:${sha256Hex(`${expected.replayScope}\0${expected.idpEntityId}\0${assertionId}`)}`
   if (!(await deps.proofReplay.remember(key, new Date(expiry + SAML_CLOCK_SKEW_MS)))) {
     refuse('replayed')
   }
@@ -491,6 +506,9 @@ function checkConfirmation(subject: Element, expected: SamlExpectations, now: nu
   const notOnOrAfter = time(data.getAttribute('NotOnOrAfter'), 'subject_confirmation_invalid')
   if (now >= notOnOrAfter + SAML_CLOCK_SKEW_MS) {
     refuse('expired')
+  }
+  if (notOnOrAfter - now > SAML_MAX_ASSERTION_LIFETIME_MS) {
+    refuse('subject_confirmation_invalid')
   }
   const notBefore = data.getAttribute('NotBefore')
   if (notBefore && now < time(notBefore, 'subject_confirmation_invalid') - SAML_CLOCK_SKEW_MS) {

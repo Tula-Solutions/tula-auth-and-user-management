@@ -55,6 +55,29 @@ function children(parent: Element, ns: string, local: string): Element[] {
   return found
 }
 
+/** The deepest element nesting real metadata has is well under this (TULA-157, H-023). */
+const MAX_XML_DEPTH = 32
+
+/**
+ * Whether the document nests elements deeper than `MAX_XML_DEPTH`, counted on the text before
+ * a parser (and its recursion) sees it. Over-counting is harmless: a start tag counts, an end
+ * or self-closing tag does not, and comments and CDATA are skipped so they cannot hide one.
+ */
+function exceedsDepth(xml: string): boolean {
+  let depth = 0
+  for (const m of xml.matchAll(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(\/?)[^>]*?(\/?)>/g)) {
+    if (m[1] === undefined) {
+      continue
+    }
+    if (m[1] === '/') {
+      depth = Math.max(0, depth - 1)
+    } else if (m[2] !== '/' && !m[0].startsWith('<?') && ++depth > MAX_XML_DEPTH) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Read an identity provider's metadata: its entity id, its HTTP-Redirect single sign-on URL
  * and its **signing** certificates (a key marked `use="encryption"` is never taken).
@@ -72,6 +95,9 @@ export function parseIdpMetadata(xml: string): IdpMetadata {
   // Before any parser sees it, as the response verifier does: a DTD is where entities live.
   if (/<!\s*(DOCTYPE|ENTITY)/i.test(xml)) {
     throw new SamlMetadataError('forbidden_xml')
+  }
+  if (exceedsDepth(xml)) {
+    throw new SamlMetadataError('malformed')
   }
   let root: Element | null
   let doctype: unknown
