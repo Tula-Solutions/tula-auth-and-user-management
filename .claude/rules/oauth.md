@@ -280,7 +280,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   anyone with a session can succeed here with their own inbox, and a success clears the
   key); the code is checked; the address is stored. The limits are per user (a minute's
   cooldown, `EMAIL_ADDITION_EMAILS_PER_HOUR`) and per address under a keyed hash
-  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key.
+  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key, and per environment (`EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR`, TULA-157 H-204).
   **`<UserProfile>`'s "Email address" section is drawn only for an account with no
   address** (`components/email-address.tsx`): no rule of its own, every call through
   `useStepUp`, words that never say a code was sent, keyed by the session id. A declined
