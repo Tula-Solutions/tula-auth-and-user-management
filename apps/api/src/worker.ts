@@ -2,6 +2,7 @@ import { type Container, createContainer } from '~/container'
 import { loadEnv } from '~/env'
 import { bootJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import { shutdownOnSignal } from '~/lib/shutdown'
 import { WorkerNotSeparateError } from '~/process'
 import { createWorkerApp } from '~/worker-app'
@@ -26,6 +27,12 @@ function build(): Container {
   }
 }
 const container = build()
+
+// The worker reads webhook rows under row-level security too (H-227).
+await container.verifyDatabaseRole().catch((error: unknown) => {
+  logger.error('refusing to start', { err: errorReason(error) })
+  process.exit(1)
+})
 
 // Liveness and readiness for the orchestrator and the image's HEALTHCHECK. Nothing of the API
 // is on this port, and it needs no route to the outside: do not publish it.

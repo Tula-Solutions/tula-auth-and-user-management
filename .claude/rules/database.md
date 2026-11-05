@@ -94,3 +94,9 @@ paths:
   characters on a `hybrid` session) and the trigger `sessions_device_thumbprint_immutable`
   (hand-written in the migration: Drizzle declares no triggers), and add no store method
   that updates the column. `packages/db/src/session-device-binding.test.ts` holds both.
+
+- **Cache markers in Redis** (`adapters/cache/versioned.ts`): the shared version marker per
+  id (an environment id) is bumped on a change and never deleted by the code today. A future
+  path that deletes an environment (ADR 0032 leaves deletion out) must also drop its marker
+  and its cached settings and signing keys, in the same change; a marker left behind is
+  harmless to correctness (it is only compared) but is never cleaned up.

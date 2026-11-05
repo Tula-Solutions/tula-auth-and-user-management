@@ -35,6 +35,7 @@ import { PostgresOrganizationDomainStore } from '~/adapters/postgres/organizatio
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
+import { assertRuntimeRole } from '~/adapters/postgres/runtime-role'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSetupLinkStore } from '~/adapters/postgres/setup-links'
@@ -138,6 +139,8 @@ export interface Container {
   deps: Deps
   /** What this process does (`planProcess`): what it serves and which jobs it starts. */
   plan: ProcessPlan
+  /** Refuses (throws) a database login that would bypass row-level security; call before serving. */
+  verifyDatabaseRole: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -320,6 +323,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
   return {
     deps,
     plan,
+    verifyDatabaseRole: () => assertRuntimeRole(database.db),
     close: async () => {
       mailer.close()
       redis?.close()
