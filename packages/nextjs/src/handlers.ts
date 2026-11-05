@@ -238,6 +238,30 @@ function warnTokenTooLarge(config: TulaConfig): void {
   )
 }
 
+/**
+ * The session id (`sid`) of the access token a request holds, read without verifying it:
+ * only to tell whether an answer replaces that session, never to trust it.
+ *
+ * @param request - The request (its bearer token wins over the cookie, as for the API).
+ * @param cookieToken - The access token of the request's cookies.
+ * @returns The `sid`, or `undefined` when there is no readable token.
+ */
+function heldSessionId(request: Request, cookieToken: string | undefined): string | undefined {
+  const bearer = request.headers.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1]
+  const payload = (bearer ?? cookieToken)?.split('.')[1]
+  if (!payload) {
+    return undefined
+  }
+  try {
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+      sid?: unknown
+    }
+    return typeof claims.sid === 'string' ? claims.sid : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function forward(request: Request, config: TulaConfig): Promise<Response> {
   const url = new URL(request.url)
   const path = clientPath(url, config.path)
@@ -349,6 +373,17 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
         session = issuedSession(JSON.parse(text))
       } catch {
         session = null
+      }
+      // A new session id with no refresh cookie of its own (the answer set none): the refresh
+      // cookie the request carried belongs to the session being replaced, and left in place
+      // it would refresh that one's tokens into the new user's browser.
+      if (
+        session &&
+        cookies.refresh &&
+        !changes.has(names.refresh) &&
+        session.sessionId !== heldSessionId(request, cookies.access)
+      ) {
+        changes.set(names.refresh, null)
       }
       if (session?.accessToken && isAccessToken(session.accessToken)) {
         changes.set(names.access, {
