@@ -180,7 +180,7 @@ function isAdminPath(path: string): boolean {
  * CORS, decided per request (ADR 0018).
  *
  * - **Preflight** (`OPTIONS`): allowed when the origin is on the deployment's list
- *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*` and `/v1/instance/*`, when
+ *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*`, `/v1/instance/*` and `/v1/agent/*`, when
  *   it is one of the deployment's own origins, matched exactly in every tier (no loopback rule).
  *   Always answered here with 204.
  * - **Any other request** runs first. Its response then gets `Access-Control-Allow-Origin`
