@@ -439,6 +439,25 @@ describe('a sign-in through the connection', () => {
     expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
   })
 
+  test('an expired attempt reaches the provider no more (TULA-157, H-025)', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    idp.lastVerifier = ''
+    deps.clock.advance('11m')
+    expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
+    // No code was exchanged: the token endpoint never saw a request.
+    expect(idp.lastVerifier).toBe('')
+  })
+
+  test('a failed exchange spends the state: the same state cannot be tried again (TULA-157, H-040)', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    const bad = await callback({ ...query, code: 'not-a-grant' })
+    expect(bad.fragment.get('tula_error')).toBe('sso.provider_error')
+    expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
   test('a state for another connection, or of no attempt, gets the static page', async () => {
     const { sso } = await started()
     const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)

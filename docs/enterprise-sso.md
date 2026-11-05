@@ -71,6 +71,9 @@ organization with no mapping leaves a member's role alone. The role is set at ev
 the organization service, so the last manager of an organization is never demoted: that sign-in
 succeeds with the old role.
 
+A member who is in none of the mapped groups is **demoted to `defaultRole`** at the next sign-in, not left
+with the role they had: removing someone from every mapped group in the provider removes their privileges.
+
 <!-- snippet: examples/docs-snippets/sso.ts#sso-group-roles -->
 ```ts
 await admin.call('replaceSsoGroupRoles', {
@@ -173,7 +176,9 @@ to an unknown address, a non-member and a member with a wrong password alike.
 
 With `trustIdpMfa: true` an SSO sign-in records `sso` and `mfa` among the session's authentication
 methods and asks for no further factor, also under `mfa.policy: required`. Leave it off and the
-sign-in goes on to a second factor like any first factor. Turn it on only when the provider really
+sign-in goes on to a second factor like any first factor. With it on, a user's own enrolled
+factors (an authenticator app, a passkey) are not asked for, and the sign-in counts as a recent
+authentication for step-up, so the provider's MFA is the only second step. Turn it on only when the provider really
 requires MFA for these users.
 
 <!-- snippet: examples/docs-snippets/sso.ts#sso-enforce -->
@@ -266,6 +271,13 @@ or a directory-provisioned user is an audit entry, and
 An account a connection or a directory manages cannot change its password from a client while that connection exists or the directory has a live SCIM token: the call answers `user.managed` (403). Administrators can, and deleting the connection lifts the lock.
 
 ## Limits you should know
+
+- Home-realm discovery: starting a sign-in with an address on a verified SSO domain answers with the
+  `sso` step, so anyone can learn that a domain has SSO. That is intended (the browser must be sent to
+  the provider); only the per-IP limit on `/sign-ins` bounds enumeration.
+- Enforcement is by email domain. A texted code or a passkey sign-in reaches an account by phone number or
+  credential and never names an address, so an account **with no email address** is not covered by
+  enforcement through those two methods.
 
 - SAML is SP-initiated only: an IdP-initiated response is refused. Assertions must be signed, with RSA and
   SHA-256 or better, and not encrypted.

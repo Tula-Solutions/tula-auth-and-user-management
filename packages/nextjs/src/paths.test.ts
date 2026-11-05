@@ -233,18 +233,28 @@ describe('configuration', () => {
     const warnings: string[] = []
     const onWarning = (message: string) => warnings.push(message)
     withEnv({ NODE_ENV: 'production', TULA_TRUSTED_PROXY_HOPS: undefined }, () => {
-      resolveConfig({ ...base, onWarning })
-      resolveConfig({ ...base, onWarning })
+      resolveConfig({ ...base, appUrl: APP, onWarning })
+      resolveConfig({ ...base, appUrl: APP, onWarning })
       expect(warnings).toHaveLength(1)
       expect(warnings[0]).toContain('TULA_TRUSTED_PROXY_HOPS')
       expect(warnings[0]).toContain('rate limit')
       // Nothing to say when the app has decided how the address is known.
-      resolveConfig({ ...base, trustedProxyHops: 1, onWarning: (m) => warnings.push(m) })
-      resolveConfig({ ...base, clientIp: () => null, onWarning: (m) => warnings.push(m) })
+      resolveConfig({
+        ...base,
+        appUrl: APP,
+        trustedProxyHops: 1,
+        onWarning: (m) => warnings.push(m),
+      })
+      resolveConfig({
+        ...base,
+        appUrl: APP,
+        clientIp: () => null,
+        onWarning: (m) => warnings.push(m),
+      })
       expect(warnings).toHaveLength(1)
     })
     withEnv({ NODE_ENV: 'development', TULA_TRUSTED_PROXY_HOPS: undefined }, () => {
-      resolveConfig({ ...base, onWarning: (m) => warnings.push(m) })
+      resolveConfig({ ...base, appUrl: APP, onWarning: (m) => warnings.push(m) })
       expect(warnings).toHaveLength(1)
     })
   })
@@ -339,5 +349,40 @@ describe('safeRedirectPath when the URL parser misbehaves', () => {
     } finally {
       globalThis.URL = RealURL
     }
+  })
+})
+
+const APP = 'https://app.example.com'
+
+describe('resolveConfig without an app URL in production', () => {
+  const base = {
+    apiUrl: 'http://api:3003',
+    publishableKey: 'tula_pk_dev_x',
+    environmentId: 'e1',
+    trustedProxyHops: 1,
+  }
+  function warningsFor(extra: Record<string, unknown>, nodeEnv: string): string[] {
+    const before = process.env.NODE_ENV
+    process.env.NODE_ENV = nodeEnv
+    const warnings: string[] = []
+    try {
+      resolveConfig({ ...base, ...extra, onWarning: (m: string) => warnings.push(m) })
+    } finally {
+      process.env.NODE_ENV = before
+    }
+    return warnings
+  }
+
+  test('says once that the origin falls back to the forwarded host', () => {
+    const warnings = warningsFor({}, 'production')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('TULA_APP_URL')
+  })
+
+  test.each([
+    ['an app URL is set', { appUrl: 'https://app.example.com' }, 'production'],
+    ['it is not production', {}, 'development'],
+  ])('is silent when %s', (_name, extra, nodeEnv) => {
+    expect(warningsFor(extra, nodeEnv)).toEqual([])
   })
 })

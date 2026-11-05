@@ -1038,9 +1038,22 @@ export class PostgresOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
-  async findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null> {
+  async findInvitationById(
+    environmentId: string,
+    id: string,
+    emailNormalized?: string
+  ): Promise<InvitationRecord | null> {
     return withTenant(this.db, environmentId, (tx) =>
-      readInvitation(tx, environmentId, eq(organizationInvitations.id, id))
+      readInvitation(
+        tx,
+        environmentId,
+        and(
+          eq(organizationInvitations.id, id),
+          emailNormalized === undefined
+            ? undefined
+            : eq(organizationInvitations.emailNormalized, emailNormalized)
+        )
+      )
     )
   }
 
@@ -1106,14 +1119,20 @@ export class PostgresOrganizationStore implements OrganizationStore {
     id: string,
     userId: string,
     now: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    emailNormalized?: string
   ): Promise<ResolveInvitationOutcome> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const result = await resolveInvitation(
         tx,
         environmentId,
-        eq(organizationInvitations.id, id),
+        and(
+          eq(organizationInvitations.id, id),
+          emailNormalized === undefined
+            ? undefined
+            : eq(organizationInvitations.emailNormalized, emailNormalized)
+        ),
         'declined',
         userId,
         now

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { organizations, scimGroups, scimTokens, users, withTenant } from '@tula-tech/db'
 import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula-tech/db/testing'
+import { and, eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { describeScimStore, type ScimSuiteTenant } from '~/adapters/scim-store.suite'
@@ -39,6 +40,15 @@ describeScimStore('Postgres', async () => {
         .map((entry) => entry.type)
         .reverse(),
     organization,
+    deleteOrganization: async (tenant: ScimSuiteTenant, id: string) => {
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx
+          .delete(organizations)
+          .where(
+            and(eq(organizations.id, id), eq(organizations.environmentId, tenant.environmentId))
+          )
+      )
+    },
     user: (tenant: ScimSuiteTenant) =>
       withTenant(testDb.db, tenant.environmentId, async (tx) => {
         const id = Bun.randomUUIDv7()

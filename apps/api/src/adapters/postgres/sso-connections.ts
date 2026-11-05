@@ -366,6 +366,9 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
         return true
       })
     } catch (error) {
+      // Either unique key means "not linked by this call": `sso_identities_connection_subject_key`
+      // (the subject is already another user's) or `sso_identities_connection_user_key` (the user
+      // already has an identity here). The caller reads the winner back (TULA-157, H-038).
       if (isUniqueViolation(error)) {
         return false
       }

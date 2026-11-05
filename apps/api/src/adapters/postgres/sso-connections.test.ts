@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { organizations, ssoConnections, users, withTenant } from '@tula-tech/db'
 import { createTestDatabase, createTestTenant, type TestDatabase } from '@tula-tech/db/testing'
+import { and, eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresSsoConnectionStore } from '~/adapters/postgres/sso-connections'
 import {
@@ -39,6 +40,15 @@ describeSsoConnectionStore('Postgres', async () => {
         })
       )
       return id
+    },
+    deleteOrganization: async (tenant: SsoSuiteTenant, id: string) => {
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx
+          .delete(organizations)
+          .where(
+            and(eq(organizations.id, id), eq(organizations.environmentId, tenant.environmentId))
+          )
+      )
     },
     user: (tenant: SsoSuiteTenant) =>
       withTenant(testDb.db, tenant.environmentId, async (tx) => {

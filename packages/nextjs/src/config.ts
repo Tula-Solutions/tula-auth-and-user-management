@@ -342,6 +342,16 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
         'TULA_TRUSTED_PROXY_HOPS to the number of such proxies.'
     )
   }
+  // Without `appUrl` the same-origin check trusts `X-Forwarded-Host`, which only a proxy we
+  // cannot see makes safe. A throw would break `next build` (NODE_ENV is production there).
+  if (!appUrl && env('NODE_ENV') === 'production') {
+    warn(
+      'no-app-url',
+      'no appUrl is set, so the app origin is taken from X-Forwarded-Host or Host, which a ' +
+        'proxy that does not overwrite them lets a visitor choose. Set TULA_APP_URL (or the ' +
+        '`appUrl` option) to the https origin the app is served on.'
+    )
+  }
   return {
     apiUrl,
     publishableKey,

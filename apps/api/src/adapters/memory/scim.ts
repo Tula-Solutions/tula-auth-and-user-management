@@ -1,4 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   ScimGroupRecord,
@@ -17,11 +18,29 @@ export class MemoryScimStore implements ScimStore {
   readonly #activityLog: MemoryActivityLog
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    organizations: MemoryOrganizationStore | null = null
+  ) {
     this.#tokens = new Map()
     this.#users = []
     this.#groups = []
     this.#activityLog = activityLog
+    // The foreign key cascades an organization's tokens, directory users and groups.
+    organizations?.onDelete((environmentId, organizationId) => {
+      const gone = (one: { environmentId: string; organizationId: string }) =>
+        one.environmentId === environmentId && one.organizationId === organizationId
+      for (const [key, one] of this.#tokens) {
+        if (gone(one)) {
+          this.#tokens.delete(key)
+        }
+      }
+      for (const list of [this.#users, this.#groups]) {
+        const kept = list.filter((one) => !gone(one))
+        list.length = 0
+        list.push(...(kept as never[]))
+      }
+    })
   }
 
   #user(environmentId: string, organizationId: string, userId: string): ScimUserRecord | undefined {
