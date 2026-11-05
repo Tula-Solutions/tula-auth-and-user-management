@@ -181,6 +181,9 @@ export interface SessionManager {
   /**
    * Ends the session here, in other tabs and on the server. When the server could not be told
    * it throws, the client is signed out all the same, and calling it again tells the server.
+   * A non-browser client holds the undelivered token in memory only (persisting it would put a
+   * token in storage after sign-out), so an app restart before the retry loses it and the
+   * server's session lives until it expires.
    */
   signOut(): Promise<void>
   /** @param issued - Tokens a completed flow returned. */

@@ -129,7 +129,9 @@ do {
 
 **A failed sign-out is not a sign-out.** When the server could not be told, `signOut()`
 throws. The client is signed out all the same, and calling `signOut()` again tells the
-server. Do not show "signed out everywhere" for a call that threw.
+server, but only while the app keeps running: the undelivered token is held in memory,
+not stored, so a restart loses it and the session lives until it expires. Do not show
+"signed out everywhere" for a call that threw.
 
 `signOut()` removes the stored token also when it could not read it. Two cases end in
 `storage.failed` and are not put right by a second call: a stored token that could not be
