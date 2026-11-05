@@ -213,5 +213,17 @@ export async function setActive(
   if (!held) {
     throw new AuthError('organization.not_a_member')
   }
-  return Sessions.setActiveOrganization(deps, tenant, self, held)
+  const active = await Sessions.setActiveOrganization(deps, tenant, self, held)
+  // A removal between the read and the write must not leave a token or a stored choice for an
+  // organization the user no longer belongs to (H-105): look again, and undo the choice.
+  const still = await deps.organizations.findUserMembership(
+    tenant.environmentId,
+    organizationId,
+    self.userId
+  )
+  if (!still) {
+    await Sessions.setActiveOrganization(deps, tenant, self, null)
+    throw new AuthError('organization.not_a_member')
+  }
+  return active
 }
