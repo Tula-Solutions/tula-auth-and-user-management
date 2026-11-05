@@ -3,8 +3,9 @@ import { isAbsolute, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
 import { UsageError } from './args'
+import { printable } from './doctor'
 import type { CliIo } from './framework'
-import { createProcessHost } from './process-host'
+import { createProcessHost, MAX_INPUT_BYTES } from './process-host'
 
 /**
  * What {@link createProcessIo} builds a run's surroundings from: the process's streams,
@@ -36,7 +37,7 @@ export interface ProcessParts {
   /** Read a file as text. */
   readFile: (path: string) => Promise<string>
   /** A file's mode bits. */
-  stat: (path: string) => Promise<{ mode: number }>
+  stat: (path: string) => Promise<{ mode: number; size?: number }>
   /** Call `stop` when the process is asked to end. Returns how to stop listening. */
   onTerminate?: (stop: () => void) => () => void
 }
@@ -93,25 +94,31 @@ function readHidden(parts: ProcessParts, question: string): Promise<string> {
  * ```
  */
 export function createProcessIo(parts: ProcessParts): CliIo {
-  let warned = false
+  const warned = new Set<string>()
   /**
-   * Say, once, that the key file can be read by other users of the machine. The run goes on:
-   * the key has been exposed already, and refusing would not take that back. Skipped where
-   * there are no POSIX modes (Windows reports 0666 for every file).
+   * Look at a file before it is read: say, once per file, that other users of the machine can
+   * read it, and refuse one larger than `MAX_INPUT_BYTES` (a key, a config or a secrets file is
+   * small; a device or a huge file would fill memory). The run goes on after the warning: the
+   * contents have been exposed already, and refusing would not take that back. The mode check
+   * is skipped where there are no POSIX modes (Windows reports 0666 for every file).
    */
-  async function checkMode(path: string): Promise<void> {
-    if (warned || parts.platform === 'win32') {
-      return
-    }
+  async function checkFile(path: string): Promise<void> {
     // A file that cannot be looked at cannot be read either: the read reports that.
-    const mode = await parts.stat(path).then(
-      (stats) => stats.mode,
+    const stats = await parts.stat(path).then(
+      (found) => found,
       () => undefined
     )
+    if (stats?.size !== undefined && stats.size > MAX_INPUT_BYTES) {
+      throw new UsageError(`The file is larger than ${MAX_INPUT_BYTES} bytes.`)
+    }
+    if (warned.has(path) || parts.platform === 'win32') {
+      return
+    }
+    const mode = stats?.mode
     if (mode !== undefined && (mode & 0o077) !== 0) {
-      warned = true
+      warned.add(path)
       parts.stderr.write(
-        `warning: the file given as --secret-key-file is readable by other users (mode ${(mode & 0o777).toString(8).padStart(4, '0')}). Restrict it: chmod 600 <file>.\n`
+        `warning: ${printable(path, 200)} is readable by other users (mode ${(mode & 0o777).toString(8).padStart(4, '0')}). Restrict it: chmod 600 <file>.\n`
       )
     }
   }
@@ -148,12 +155,15 @@ export function createProcessIo(parts: ProcessParts): CliIo {
       let text = ''
       for await (const chunk of parts.stdin) {
         text += String(chunk)
+        if (text.length > MAX_INPUT_BYTES) {
+          throw new UsageError(`Standard input is larger than ${MAX_INPUT_BYTES} bytes.`)
+        }
       }
       return text
     },
     readFile: async (path) => {
       const absolute = isAbsolute(path) ? path : resolve(parts.cwd, path)
-      await checkMode(absolute)
+      await checkFile(absolute)
       return parts.readFile(absolute)
     },
   }

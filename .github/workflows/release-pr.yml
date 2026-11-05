@@ -60,14 +60,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: develop
           fetch-depth: 0
           # The token is not left in the checkout's config while `bun install` and
           # `changeset version` run; the push step passes it for that one command.
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version-file: package.json }
       # No lifecycle scripts: the root's `prepare` installs the Husky hooks, which would run
       # the type checker on the automation's commit. The pull request's `verify` runs it all.

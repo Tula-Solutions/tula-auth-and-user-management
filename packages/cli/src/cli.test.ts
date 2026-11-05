@@ -91,6 +91,7 @@ describe('parseArgs', () => {
     [['-x'], 'Unknown option -x.'],
     [['--env'], '--env needs a value.'],
     [['--env', '--yes'], '--env needs a value.'],
+    [['--env', 'a', '--env=b'], '--env was given more than once.'],
     [['--yes=1'], '--yes takes no value.'],
     [['--constructor'], 'Unknown option --constructor.'],
   ] as [string[], string][])('%p is refused: %s', (argv, message) => {

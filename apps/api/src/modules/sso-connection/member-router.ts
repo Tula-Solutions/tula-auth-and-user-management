@@ -65,8 +65,9 @@ const needs =
   'never returned.'
 
 const stepUp =
-  'Switching enforcement off, trusting the provider for MFA and naming a break-glass role are ' +
-  'weakenings: they need a **recent authentication** (`auth.step_up_required`, 403) and the ' +
+  'Activating a connection, changing what an active one accepts (issuer, secret, domains, ' +
+  'mapping), switching enforcement off, trusting the provider for MFA and naming a ' +
+  'break-glass role are weakenings: they need a **recent authentication** (`auth.step_up_required`, 403) and the ' +
   'audit entry says `weakened: true`.'
 
 const limit = (name: string, max: number) =>

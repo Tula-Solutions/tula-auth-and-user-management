@@ -79,7 +79,7 @@ const SECRET_FLAGS: ReadonlyMap<string, string> = new Map([
  * @param argv - The arguments after the command's name.
  * @param options - The options the command takes, by name.
  * @returns The options that were given and the positional arguments.
- * @throws UsageError for an unknown option, a missing value, or a value given to a flag.
+ * @throws UsageError for an unknown option, a missing value, a value given to a flag, or an option given twice.
  *
  * @example
  * ```ts
@@ -132,6 +132,11 @@ export function parseArgs(
     const value = equals === -1 ? argv[index + 1] : argument.slice(equals + 1)
     if (value === undefined || (equals === -1 && value.startsWith('--'))) {
       throw new UsageError(`--${name} needs a value.`)
+    }
+    // A repeat would silently keep the last one; a script that assembles a command line from
+    // two sources should be told rather than guess which one counts.
+    if (Object.hasOwn(flags, name)) {
+      throw new UsageError(`--${name} was given more than once.`)
     }
     flags[name] = value
     if (equals === -1) {

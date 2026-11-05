@@ -1,4 +1,5 @@
 import { basename, dirname, resolve } from 'node:path'
+import { holdsLiteralCredential, isCredentialSetting } from './npm-config'
 import type { Manifest } from './publish-manifest'
 
 // The decisions of a release, as pure functions: what `scripts/packages.ts release` refuses,
@@ -393,11 +394,15 @@ function isSet(env: Readonly<Record<string, string | undefined>>, name: string):
  * @param env - The process's environment. Only the presence of five variables is looked at.
  * @param npmVersion - What `npm --version` printed, or `null` when npm is not there. Only
  *   read when npm is the CLI.
+ * @param configFiles - The contents of the npm configuration files npm would read (`readNpmConfigFiles`). One that holds
+ *   a literal credential is refused like a token in the environment; a `${VAR}` placeholder
+ *   (what `setup-node` writes) is not a credential. The value is never echoed.
  * @returns The CLI, whether provenance is attached, and anything that forbids the upload.
  */
 export function chooseChannel(
   env: Readonly<Record<string, string | undefined>>,
-  npmVersion: string | null
+  npmVersion: string | null,
+  configFiles: readonly string[] = []
 ): Channel {
   if (env.GITHUB_ACTIONS !== 'true') {
     return {
@@ -421,6 +426,18 @@ export function chooseChannel(
         `${name} is set: the workflow publishes through trusted publishing and must hold no long-lived token`
       )
     }
+  }
+  // npm reads any `npm_config_*` variable as a setting, so a token can come in under a
+  // name other than the two above (`npm_config__authToken`, a registry-scoped key).
+  for (const key of Object.keys(env)) {
+    if (isCredentialSetting(key) && isSet(env, key)) {
+      problems.push(`${key} is set: the workflow must hold no long-lived npm credential`)
+    }
+  }
+  if (configFiles.some(holdsLiteralCredential)) {
+    problems.push(
+      'an npm configuration file holds a literal npm credential: the workflow must hold no long-lived token'
+    )
   }
   if (npmVersion === null) {
     problems.push('npm is not installed in this job')
