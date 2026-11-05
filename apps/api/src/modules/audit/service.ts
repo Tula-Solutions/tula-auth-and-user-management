@@ -189,9 +189,16 @@ export const EXPORT_CSV_COLUMNS = [
 ] as const
 
 /**
+ * A formula trigger, after any run of white space, zero-width or byte-order characters:
+ * spreadsheets skip a leading space and read the full-width forms of `=+-@` as the ASCII ones.
+ */
+const FORMULA_START = /^[\s\u00a0\u200b-\u200d\u2060\ufeff]*[=+\-@\t\r\uff1d\uff0b\uff0d\uff20]/
+
+/**
  * One CSV cell.
  *
- * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`:
+ * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return (or those after white
+ * space or a lookalike full-width form) is prefixed with `'`:
  * a spreadsheet would run it as a formula, and the user agent and the metadata are text a
  * stranger chose (OWASP "CSV injection"). Quoting follows RFC 4180.
  *
@@ -202,7 +209,7 @@ export function csvCell(value: string | null): string {
   if (value === null || value === '') {
     return ''
   }
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  const safe = FORMULA_START.test(value) ? `'${value}` : value
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
 }
 
