@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { Hono } from 'hono'
+import { base32Decode, totp } from '~/lib/totp'
 import { requestMayUseSessionCookie } from '~/middleware/cors'
+import * as Audit from '~/modules/audit/service'
+import * as Mfa from '~/modules/mfa/service'
+import * as Sessions from '~/modules/session/service'
 import { createTestDeps, TEST_TENANT } from '~/testing'
 
 /** Ask `requestMayUseSessionCookie` about one request, through a real Hono context. */
@@ -46,5 +50,80 @@ describe('H-097: only the start of an attempt fixes its device key', () => {
           !line.includes("'deviceThumbprint'")
       )
     expect(writes).toEqual([])
+  })
+})
+
+describe('H-103: a revoked session spends no step-up proof', () => {
+  const tenant = {
+    projectId: TEST_TENANT.projectId,
+    environmentId: TEST_TENANT.environmentId,
+    apiKeyId: 'key_1',
+  }
+
+  async function setup() {
+    const deps = createTestDeps()
+    deps.environments.add({
+      id: tenant.environmentId,
+      projectId: tenant.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    const id = deps.ids.next()
+    await deps.users.create(
+      {
+        id,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+      },
+      Audit.none('fixture')
+    )
+    const actor = {
+      type: 'user' as const,
+      id,
+      ipAddress: '203.0.113.7',
+      userAgent: 'tula-tests/1.0',
+    }
+    const enrolment = await Mfa.startTotp(deps, tenant, id)
+    const { codes } = await Mfa.confirmTotp(
+      deps,
+      tenant,
+      { userId: id },
+      totp(base32Decode(enrolment.secret), deps.clock.now()),
+      actor
+    )
+    deps.clock.advance('30s')
+    const open = () =>
+      Sessions.create(deps, tenant, {
+        userId: id,
+        client: 'web',
+        userAgent: 'Mozilla/5.0',
+        authMethods: ['pwd', 'otp', 'mfa'],
+      })
+    return { deps, id, codes, open, actor }
+  }
+
+  test('a backup code offered on a revoked session still works on a live one', async () => {
+    const { deps, id, codes, open, actor } = await setup()
+    const dead = await open()
+    await Sessions.revoke(deps, tenant, { userId: id, sessionId: dead.sessionId, actor })
+    const live = await open()
+    const ctx = { ipAddress: '203.0.113.7', userAgent: 'tula-tests/1.0' }
+    const proof = { method: 'backup_code', code: codes[0] as string } as const
+
+    await expect(
+      Mfa.stepUp(deps, tenant, { userId: id, sessionId: dead.sessionId }, proof, ctx)
+    ).rejects.toMatchObject({ code: 'session.revoked' })
+    await expect(
+      Mfa.stepUp(deps, tenant, { userId: id, sessionId: live.sessionId }, proof, ctx)
+    ).resolves.toBeDefined()
   })
 })

@@ -1814,6 +1814,12 @@ export async function stepUp(
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)
   }
+  // A revoked or expired session must not spend a proof (a backup code, a passkey challenge, an
+  // emailed or texted code, a guess of the lockout budget): check it before any is taken.
+  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  if (!current || current.userId !== userId || !isActive(current, deps.clock.now())) {
+    throw new AuthError('session.revoked')
+  }
   if (proof.method === 'password' || proof.method === 'email_code') {
     const lockKey = stepUpLockKey(scope.environmentId, userId)
     const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
@@ -1821,11 +1827,6 @@ export async function stepUp(
       throw new RateLimitError(lock.retryAfterMs)
     }
     if (proof.method === 'email_code') {
-      // A revoked or expired session must not spend the code: check it before the token.
-      const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-      if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-        throw new AuthError('session.revoked')
-      }
       const token = await Verification.verifyCode(deps, scope, {
         purpose: 'step_up',
         subject: { userId },
@@ -1863,11 +1864,6 @@ export async function stepUp(
     }
     await requireSmsFactor(deps, scope, user.phoneNumber)
     const smsLockKey = await countGuess(deps, scope, userId)
-    // A revoked or expired session must not spend the code.
-    const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-    if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-      throw new AuthError('session.revoked')
-    }
     const texted = await verifySmsCode(deps, scope, userId, {
       purpose: SMS_STEP_UP_PURPOSE,
       askedBy: { sessionId: self.sessionId },
