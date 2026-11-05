@@ -463,6 +463,54 @@ describe('setup portal', () => {
     expect(untouched?.name).toBe('Okta')
   })
 
+  test('a mapping to a role that does not exist is refused, and nothing is saved (H-041)', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    const c = await connect(made.token)
+    const res = await portal(made.token, `/connections/${c.id}/group-roles`, {
+      method: 'PUT',
+      ...body({ mappings: [{ group: 'Staff', role: 'ghost' }] }),
+    })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(((await res.json()) as { code: string }).code).toBe('organization.role_unknown')
+    expect(await deps.ssoConnections.listGroupRoles(TENANT.environmentId, o.id)).toEqual([])
+  })
+
+  test('a role that became privileged after the page loaded is refused at save time (H-042)', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    const c = await connect(made.token)
+    const created = await OrganizationRoles.create(
+      deps,
+      TENANT,
+      { key: 'viewer', name: 'Viewer', permissions: [] },
+      TEST_ACTOR
+    )
+    const path = `/connections/${c.id}/group-roles`
+    const put = () =>
+      portal(made.token, path, {
+        method: 'PUT',
+        ...body({ mappings: [{ group: 'Staff', role: 'viewer' }] }),
+      })
+    expect((await put()).status).toBe(200)
+    await OrganizationRoles.update(
+      deps,
+      TENANT,
+      'viewer',
+      created.version,
+      { permissions: ['org:sys:memberships:manage'] },
+      TEST_ACTOR
+    )
+    // The saved mapping is now privileged: it is locked, and a request that re-sends it is kept;
+    // a new group asking for the same role is refused.
+    const refused = await portal(made.token, path, {
+      method: 'PUT',
+      ...body({ mappings: [{ group: 'Other', role: 'viewer' }] }),
+    })
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { code: string }).code).toBe('sso.role_not_allowed')
+  })
+
   test('a link maps groups to unprivileged roles only; privileged mappings are locked and kept', async () => {
     const o = await org()
     const made = await link(o.id)
