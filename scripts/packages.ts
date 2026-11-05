@@ -22,6 +22,7 @@ import {
   planRelease,
   printableCommand,
   refusals,
+  registryLatest,
   registryStates,
   releaseReport,
   type StagedPackage,
@@ -348,7 +349,8 @@ async function main(argv: readonly string[]): Promise<number> {
     staged,
     await registryStates(staged, fetch as unknown as Fetcher),
     channel,
-    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) })
+    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) }),
+    await registryLatest(staged, fetch as unknown as Fetcher)
   )
   process.stdout.write(releaseReport(args, plan, { head: after.head, root }))
   process.stdout.write(

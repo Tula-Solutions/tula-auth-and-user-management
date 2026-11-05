@@ -786,6 +786,38 @@ describe('cookies', () => {
     expect(cookies).toHaveLength(2)
   })
 
+  describe('an answer that issues a session id and no refresh cookie', () => {
+    const jwt = (sid: string) => `h.${btoa(JSON.stringify({ sid })).replace(/=+$/, '')}.s`
+    const issue = () =>
+      setup(() =>
+        Response.json({
+          sessionId: 'sB',
+          accessToken: 'aaa.bbb.ccc',
+          accessTokenExpiresAt: expiresAt(),
+        })
+      )
+
+    test('removes the refresh cookie of the session it replaces (H-304)', async () => {
+      const { handlers } = issue()
+      const response = await handlers.POST(
+        post('/v1/client/sessions/step-up', {
+          headers: { cookie: `tula_rt=refreshA; tula_at=${jwt('sA')}` },
+        })
+      )
+      expect(cookiesOf(response)).toContain('tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+    })
+
+    test('keeps the refresh cookie when the session id is the one the request holds', async () => {
+      const { handlers } = issue()
+      const response = await handlers.POST(
+        post('/v1/client/sessions/step-up', {
+          headers: { cookie: `tula_rt=refreshB; tula_at=${jwt('sB')}` },
+        })
+      )
+      expect(cookiesOf(response).some((line) => line.startsWith('tula_rt='))).toBe(false)
+    })
+  })
+
   test('sign-out clears the refresh, session and access-token cookies', async () => {
     const { handlers } = setup(
       () =>

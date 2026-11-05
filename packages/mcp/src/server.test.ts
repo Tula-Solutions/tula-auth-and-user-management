@@ -267,6 +267,11 @@ describe('the protocol', () => {
     ['a user id that is not one path segment', 'get_user', { userId: '../settings' }],
     ['a missing user id', 'get_user', {}],
     ['a date that is not a date', 'list_audit_entries', { from: 'yesterday' }],
+    [
+      'H-259: an audit action the contract does not define',
+      'list_audit_entries',
+      { action: 'session.no_such_action' },
+    ],
     ['an audit size past the cap', 'list_audit_entries', { size: 101 }],
     ['an organization size past the cap', 'list_organizations', { size: 51 }],
     ['a member size past the cap', 'list_organization_members', { organizationId: 'x', size: 101 }],

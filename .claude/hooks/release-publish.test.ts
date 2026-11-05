@@ -12,6 +12,8 @@ import {
   publishCommand,
   type RegistryState,
   refusals,
+  registryLatest,
+  registryLatestUrl,
   registryStates,
   registryUrl,
   releaseReport,
@@ -782,5 +784,59 @@ describe('what a person reads first', () => {
     expect(releaseReport({ publish: false, otp: null }, one, context)).toContain(
       '1 package would be;'
     )
+  })
+})
+
+// H-341: DIST_TAG is `latest`, so publishing a version below the registry's current latest
+// would move the tag backward for everyone who installs without a version.
+describe('a version below the registry latest', () => {
+  const lower = (what: string | null) =>
+    new Map<string, string | null>(
+      packages.map((pkg) => [pkg.name, pkg.name === contract.name ? what : null])
+    )
+  const plan = (latest: Map<string, string | null>, states = absent) =>
+    planRelease(packages, states, local, [], latest)
+
+  test.each([
+    ['0.2.0', true],
+    ['0.1.2', true],
+    ['0.1.1', false],
+    ['0.1.0', false],
+    [null, false],
+  ])('latest %p refuses: %p', (latest, refused) => {
+    const result = plan(lower(latest))
+    expect(result.refusals.length > 0).toBe(refused)
+    if (refused) {
+      expect(result.refusals.join('\n')).toContain('@tula-tech/contract@0.1.1')
+      expect(result.refusals.join('\n')).toContain('below')
+      expect(uploadCommands({ publish: true, otp: null }, result, staging)).toEqual([])
+    }
+  })
+
+  test('an unanswered question about latest refuses (fail closed)', () => {
+    expect(plan(lower('unknown')).refusals.join('\n')).toContain('latest')
+  })
+
+  test('a version already on the registry is not judged against latest', () => {
+    const states = new Map(absent)
+    states.set(contract.name, 'published')
+    expect(plan(lower('0.2.0'), states).refusals).toEqual([])
+  })
+
+  test('registryLatest reads dist-tags: 200 latest, 404 none, anything else unknown', async () => {
+    const answers: Record<string, unknown> = {
+      [registryLatestUrl('@tula-tech/contract')]: [200, { latest: '0.3.0' }],
+      [registryLatestUrl('@tula-tech/core')]: [404, {}],
+      [registryLatestUrl('@tula-tech/react')]: [500, {}],
+    }
+    const fetcher: Fetcher = async (url) => {
+      const [status, body] = answers[url] as [number, unknown]
+      return { status, json: async () => body }
+    }
+    expect([...(await registryLatest(packages, fetcher))]).toEqual([
+      ['@tula-tech/contract', '0.3.0'],
+      ['@tula-tech/core', null],
+      ['@tula-tech/react', 'unknown'],
+    ])
   })
 })

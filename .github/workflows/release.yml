@@ -58,6 +58,9 @@ jobs:
         # Fails when a package outside `RELEASED_PACKAGES` (the two held-back ones included)
         # is not private, and when a released one is: scripts/publish-manifest.ts.
         run: bun run packages:states
+      - name: The create-tula templates match examples/*
+        # A template that drifted from its example would ship stale in the published scaffold.
+        run: bun run --filter create-tula generate:check
       - name: Build, pack and check every package; report what would be published
         run: bun run release:dry-run
       - name: Keep the tarballs for inspection

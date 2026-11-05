@@ -30,7 +30,7 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 | `TULA_API_URL` (or `TULA_API_URL_<NAME>` with `--env <name>`) | Where the Tula API is. https, or this machine. |
 | `TULA_AGENT_KEY` (or `TULA_AGENT_KEY_<NAME>`), or `--agent-key-file <path>` | The read tools, the propose tools **and** the sign-in test. An agent key (`tula_ak_…`) reads what a secret key reads, asks for changes, and runs a sign-in test where the environment allows one; it changes nothing else. The key decides the environment. **Use this one for an assistant.** |
 | `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools and the sign-in test, when there is no agent key. It does not propose. |
-| `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
+| `TULA_ADMIN_TOKEN` (not read beside an agent key), or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
 
 - Without a key the read tools and the draft tool answer `not_configured`; the scaffold tools work with no
   configuration at all. Without an agent key the propose tools answer `not_configured`.

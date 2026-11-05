@@ -113,6 +113,7 @@ describe('a version is pushed once', () => {
       version: '0.1.0-alpha.2',
       channel: 'alpha',
       publish: true,
+      moveChannel: true,
     })
     expect(planImage('0.1.0-alpha.2', ['0.1.0-alpha.1', 'alpha']).publish).toBe(true)
   })
@@ -122,12 +123,29 @@ describe('a version is pushed once', () => {
       version: '0.1.0-alpha.2',
       channel: 'alpha',
       publish: false,
+      moveChannel: true,
     })
   })
 
   // Only the whole tag counts: `0.1.0-alpha.2` is not there because `0.1.0-alpha.20` is.
   test('a tag that merely starts like the version does not count', () => {
     expect(planImage('0.1.0-alpha.2', ['0.1.0-alpha.20', '0.1.0-alpha']).publish).toBe(true)
+  })
+
+  // H-345: rebuilding an older release must not take `latest` back from a newer one.
+  test.each([
+    ['0.1.1', ['0.1.2', 'latest'], false],
+    ['0.1.1', ['0.1.0', '0.1.1', 'latest'], true],
+    ['0.2.0', ['0.1.9', 'latest'], true],
+    ['0.10.0', ['0.9.0'], true],
+    ['0.9.0', ['0.10.0'], false],
+    // another channel's versions say nothing about this one's tag
+    ['0.1.1', ['0.2.0-alpha.1', 'alpha'], true],
+    ['0.2.0-alpha.1', ['0.2.0-alpha.2', 'alpha'], false],
+    ['0.2.0-alpha.3', ['0.2.0-alpha.2', 'alpha'], true],
+    ['0.2.0-alpha.2', ['0.1.5', 'latest'], true],
+  ])('%s against %j moves its channel: %p', (version, tags, moves) => {
+    expect(planImage(version, tags).moveChannel).toBe(moves)
   })
 
   test('the tags are what the registry listed, one a line', () => {
@@ -234,7 +252,11 @@ describe('the image workflow', () => {
     expect(step?.env?.CHANNEL).toBe('${{ needs.plan.outputs.channel }}')
     expect(step?.run).toContain('--tag "$IMAGE:$VERSION"')
     expect(step?.run).toContain('--tag "$IMAGE:$CHANNEL"')
-    expect(step?.run).toContain('test "$(ls | wc -l)" -eq 2')
+    // One digest per platform, and the channel tag only where the plan says to move it.
+    expect(step?.run).toContain('for arch in amd64 arm64')
+    expect(step?.run).toContain('[ "$MOVE_CHANNEL" = true ]')
+    expect(step?.run).toContain('"${sources[@]}"')
+    expect(step?.run).not.toMatch(/printf .*\*/)
     expect(active.match(/--tag /g)).toHaveLength(2)
     // An expression inside a shell line is expanded before the shell reads it: every value
     // a `run` uses arrives through `env`.
