@@ -58,6 +58,8 @@ const idp = {
   namedIssuer: null as string | null,
   /** The authorization endpoint its discovery document names; its own `/authorize` when `null`. */
   authorizationEndpoint: null as string | null,
+  tokenEndpoint: null as string | null,
+  jwksUri: null as string | null,
   keys: [] as { privateKey: CryptoKey; jwk: JWK }[],
   /** Index of the key that signs. */
   signer: 0,
@@ -97,8 +99,8 @@ beforeAll(async () => {
         return Response.json({
           issuer: idp.namedIssuer ?? idp.base,
           authorization_endpoint: idp.authorizationEndpoint ?? `${idp.base}/authorize`,
-          token_endpoint: `${idp.base}/token`,
-          jwks_uri: `${idp.base}/jwks`,
+          token_endpoint: idp.tokenEndpoint ?? `${idp.base}/token`,
+          jwks_uri: idp.jwksUri ?? `${idp.base}/jwks`,
         })
       }
       if (pathname === '/jwks') {
@@ -183,6 +185,8 @@ beforeEach(async () => {
   Object.assign(idp, {
     namedIssuer: null,
     authorizationEndpoint: null,
+    tokenEndpoint: null,
+    jwksUri: null,
     signer: 0,
     published: [0],
     jwksFetches: 0,
@@ -644,6 +648,7 @@ describe('the ID token', () => {
     ['a wrong issuer', { iss: 'https://evil.test' }],
     ['a wrong audience', { aud: 'someone-else' }],
     ['an azp that is not the client', { azp: 'someone-else' }],
+    ['several audiences and no azp (H-034)', { aud: [CLIENT_ID, 'other'] }],
     ['a nonce that is not the attempt’s', { nonce: 'not-the-nonce' }],
     ['no nonce', { nonce: undefined }],
     ['an expired token', { exp: 1 }],
@@ -660,6 +665,18 @@ describe('the ID token', () => {
     )
   })
 
+  test.each([
+    ['token_endpoint', 'tokenEndpoint'],
+    ['jwks_uri', 'jwksUri'],
+  ] as const)(
+    'a discovery document whose %s is on another origin is refused (TULA-157, H-209)',
+    async (_n, field) => {
+      idp[field] = 'https://evil.test/x'
+      const { sso } = await started()
+      expect(((await sso.json()) as { code: string }).code).toBe('sso.provider_error')
+    }
+  )
+
   test('a discovery document with an authorization endpoint that is no URL is a provider error, not a 500', async () => {
     idp.authorizationEndpoint = 'not a url'
     const { sso } = await started()
@@ -675,17 +692,33 @@ describe('the ID token', () => {
     expect(back.fragment.get('tula_error')).toBe('sso.provider_error')
   })
 
+  test('several audiences with an azp that is the client are accepted (H-034)', async () => {
+    idp.claims = { aud: [CLIENT_ID, 'other'], azp: CLIENT_ID }
+    await signedIn()
+  })
+
   test('an unknown kid makes the key set be fetched again once, and a rotated key is taken', async () => {
     await signedIn()
     expect(idp.jwksFetches).toBe(1)
+    deps.clock.advance(60_000)
     idp.published = [0, 1]
     idp.signer = 1
     await signedIn()
     expect(idp.jwksFetches).toBe(2)
     // A key the fresh set does not have either: refused, with one more fetch and no more.
+    deps.clock.advance(60_000)
     idp.signer = 2
     expect(await codeOf()).toBe('sso.provider_error')
     expect(idp.jwksFetches).toBe(3)
+  })
+
+  test('an unknown kid cannot make the key set be fetched again within the cooldown (H-035)', async () => {
+    await signedIn()
+    expect(idp.jwksFetches).toBe(1)
+    idp.signer = 2
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(idp.jwksFetches).toBe(1)
   })
 
   test('the documents come from cache: one discovery and one key set for two sign-ins', async () => {

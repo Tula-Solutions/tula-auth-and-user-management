@@ -239,3 +239,28 @@ this file under "Area rules" and does not repeat it.
   second step (`sessions.md`, "The ban window"), so a banned user reaches the claims at most
   inside the access-token TTL, on a token that already holds them. A check there would add a
   user read to every token build for no window the denylist does not already close.
+
+- Decision (TULA-157, H-017): **changed**. The SAML replay key is
+  `saml:sha256(environmentId:connectionId \0 idpEntityId \0 assertionId)` (`replayScope` in
+  `SamlExpectations`), so one IdP serving two connections, or two environments, cannot burn
+  the other's assertion id.
+- Decision (TULA-157, H-024): **changed**. An assertion whose `NotOnOrAfter` is more than
+  `SAML_MAX_ASSERTION_LIFETIME_MS` (one hour) away is refused, so a far-future date cannot
+  pin a replay key for ever.
+- Decision (TULA-157, H-027): `SAML_RESPONSE_MAX_LENGTH` is 64 KiB, the global body limit
+  (`MAX_BODY_BYTES`), so it is no longer a dead, larger number.
+- Decision (TULA-157, H-028): **changed, narrower than the ticket**. The SP metadata route
+  is 404 for a `disabled` connection only. A `draft` is still served: the admin registers
+  the SP metadata with the IdP before activating.
+- Decision (TULA-157, H-006) / H-246: nothing to build. `env.ts` already requires
+  `REDIS_URL` outside the `local` tier, and the replay guard is run against FakeRedis and
+  real Redis by `adapters/proof-replay.suite.ts`.
+- Decision (TULA-157, H-209): **changed**. Discovery's `token_endpoint` and `jwks_uri` must
+  share the issuer's origin. Caveat: an IdP that serves them elsewhere (Google Workspace:
+  `accounts.google.com` vs `oauth2.googleapis.com`) is refused as `discovery_failed`; use
+  its OAuth provider entry, or relax the rule if that connection type is wanted.
+- Decision (TULA-157, H-034): **changed**. An ID token with several audiences needs an
+  `azp` equal to the client id (OIDC Core 3.1.3.7).
+- Decision (TULA-157, H-035): **changed**. An unknown `kid` refetches the key set only if
+  the cached set is at least 30 s old (`JWKS_REFETCH_COOLDOWN_MS`), so forged kids cannot
+  drive a fetch per attempt; a real rotation is picked up on the next try after that.

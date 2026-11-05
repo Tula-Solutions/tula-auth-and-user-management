@@ -43,6 +43,8 @@ const MAX_DOCUMENT_BYTES = 256 * 1024
 
 /** How long a discovery document or a key set is reused for one issuer. */
 const CACHE_MS = 10 * 60 * 1000
+/** How soon after a key set was fetched an unknown `kid` may fetch it again (TULA-157, H-035). */
+const JWKS_REFETCH_COOLDOWN_MS = 30_000
 
 /** Seconds of clock difference accepted on `exp` and `iat`, as for an OAuth provider. */
 const CLOCK_TOLERANCE_SECONDS = 30
@@ -367,6 +369,12 @@ async function discover(
   ) {
     throw refused('discovery', 'document', 'discovery_failed')
   }
+  // The server calls these with a secret and trusts keys from them: they stay where the issuer is.
+  // The authorization endpoint is only a redirect for the browser, so it may live elsewhere.
+  const origin = URL.parse(issuer)?.origin
+  if (!origin || URL.parse(t)?.origin !== origin || URL.parse(j)?.origin !== origin) {
+    throw refused('discovery', 'endpoint_origin', 'discovery_failed')
+  }
   return { issuer: named, authorizationEndpoint: a, tokenEndpoint: t, jwksUri: j }
 }
 
@@ -382,6 +390,12 @@ function keysOf(deps: FetchDeps & Pick<Deps, 'clock'>, jwksUri: string): JWTVeri
       return await (await set(false))(header, token)
     } catch (error) {
       if (!(error instanceof errors.JWKSNoMatchingKey)) {
+        throw error
+      }
+      // A token with a made-up kid must not make us call the provider on every attempt: a set
+      // fetched within the cooldown is the answer (a rotation shows up on the next minute's try).
+      const kept = cache.get(jwksUri)
+      if (kept && deps.clock.now().getTime() - (kept.until - CACHE_MS) < JWKS_REFETCH_COOLDOWN_MS) {
         throw error
       }
       return (await set(true))(header, token)
@@ -497,7 +511,12 @@ export async function exchange(
   if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, params.nonce)) {
     throw refused('id_token', 'nonce', 'response_not_to_this_request')
   }
-  if (payload.azp !== undefined && payload.azp !== connection.clientId) {
+  // OIDC Core 3.1.3.7: several audiences need an azp, and it must be this client (H-034).
+  const several = Array.isArray(payload.aud) && payload.aud.length > 1
+  if (
+    (several && payload.azp === undefined) ||
+    (payload.azp !== undefined && payload.azp !== connection.clientId)
+  ) {
     throw refused('id_token', 'azp', 'wrong_audience')
   }
   if (seen) {
