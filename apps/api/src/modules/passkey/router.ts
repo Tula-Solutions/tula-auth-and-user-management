@@ -244,7 +244,8 @@ router.delete(
       c.get('tenant'),
       c.get('session').sub,
       c.req.valid('param').passkeyId,
-      userActor(c)
+      userActor(c),
+      c.get('session').sid
     )
     return c.body(null, 204)
   }

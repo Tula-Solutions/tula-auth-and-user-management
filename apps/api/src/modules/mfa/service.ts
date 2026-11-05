@@ -1170,13 +1170,31 @@ export async function confirmSms(
     throw new AuthError('mfa.enrolment_expired')
   }
   await deps.lockout.clear(lockKey)
+  // Fails closed, as `confirmTotp` does (H-094, ADR 0016): a session that never proved the
+  // factor must not survive it being on. One retry, then the factor goes again and the user
+  // enrols afresh (`method: 'self'`: the event has no value for an incomplete enrolment, and
+  // a contract change is not worth one for this).
   try {
     await sweep()
-  } catch (error) {
-    logger.warn('could not sweep the sessions again after turning a texted second factor on', {
-      environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
-    })
+  } catch {
+    try {
+      await sweep()
+    } catch (error) {
+      await deps.users.disableSmsFactor(
+        scope.environmentId,
+        userId,
+        deps.clock.now(),
+        Audit.entry(deps, scope, {
+          type: 'user.sms_factor_removed',
+          actor,
+          target: { type: 'user', id: userId },
+          data: { method: 'self' },
+        })
+      )
+      throw new ServiceUnavailableError({
+        internalMessage: `could not end the sessions after turning a texted second factor on: ${error instanceof Error ? error.name : 'unknown'}`,
+      })
+    }
   }
   try {
     // The session that enrolled has just proven the factor. `sms`, never `mfa`.

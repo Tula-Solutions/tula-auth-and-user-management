@@ -967,8 +967,9 @@ export async function setEmail(
  * Set a user's password from a server or the dashboard (an admin reset). A user who has no
  * password gets their first one.
  *
- * Every session of the user ends: whoever knew the old password is signed out everywhere. The
- * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
+ * Every session of the user ends, before the new hash is stored and again after it (a sweep
+ * that fails first leaves the old password in force; H-096): whoever knew the old password is
+ * signed out everywhere. The sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
  * The user is emailed that an administrator set their password (ADR 0023).
  *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
@@ -987,7 +988,12 @@ export async function setPassword(
   actor: Actor
 ): Promise<void> {
   const user = await requireUser(deps, scope, userId)
-  await replacePassword(deps, scope, user, password, actor, 'admin_reset')
+  // Sessions end before the store and again after it, as a reset does (H-096): a failed sweep
+  // never leaves the new password beside live old sessions, and a sign-in with the old password
+  // that landed in between is caught by the second one.
+  await replacePassword(deps, scope, user, password, actor, 'admin_reset', async () => {
+    await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+  })
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   // Guesses at the old password must not keep the user out of the new one they were just given.
   // (`replacePassword` refused an account with no address, so there is one to clear for.)
@@ -1153,6 +1159,9 @@ export async function replaceExpiredPassword(
  * nobody anything about anyone else; it is given before the lockout is counted, since nothing
  * was guessed.
  *
+ * The other sessions are swept before the store and again after it, and the lockout is
+ * cleared last, only once the change succeeded (H-096, H-170).
+ *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
  *   clock.
  * @param scope - The project and environment.
@@ -1201,12 +1210,19 @@ export async function changePassword(
   ) {
     throw new AuthError('auth.invalid_credentials')
   }
-  await deps.lockout.clear(lockKey)
-  await replacePassword(deps, scope, found.user, input.newPassword, actor, 'self')
-  await Sessions.revokeOthers(deps, scope, {
-    userId: self.userId,
-    currentSessionId: self.sessionId,
-    reason: 'password_changed',
-    actor,
+  const sweep = () =>
+    Sessions.revokeOthers(deps, scope, {
+      userId: self.userId,
+      currentSessionId: self.sessionId,
+      reason: 'password_changed',
+      actor,
+    })
+  // Other sessions end before the store and again after it (H-096), as a reset's do.
+  await replacePassword(deps, scope, found.user, input.newPassword, actor, 'self', async () => {
+    await sweep()
   })
+  await sweep()
+  // Cleared only once the change went through (H-170): a policy or history refusal leaves the
+  // guess budget as it was.
+  await deps.lockout.clear(lockKey)
 }

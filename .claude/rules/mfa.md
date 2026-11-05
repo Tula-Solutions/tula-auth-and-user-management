@@ -91,6 +91,11 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Nothing removes a second factor except its owner (after a step-up) or an admin reset.** A
   password reset stops at `needs_second_factor`; there is no emailed MFA bypass; the policy
   `off` still asks enrolled users for their factor.
+- **Turning the texted factor on ends the user's other sessions; a failed sweep undoes it.**
+  The enable is committed first, then the sweep runs, and if the sweep cannot finish the
+  factor is switched off again (503, nothing half-applied). Decision (TULA-157, H-094): the
+  undo is recorded as `user.sms_factor_removed` with `method: 'self'`, an existing event, so
+  that the contract does not move.
 
 ## What to test
 

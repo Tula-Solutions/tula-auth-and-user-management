@@ -24,6 +24,7 @@ import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { PasskeyChallengePurpose, PasskeyRecord } from '~/ports/passkey-store'
@@ -594,13 +595,14 @@ export async function rename(
  * a verified address where the email code is on, a connected provider, another passkey); the
  * check runs inside the store's transaction. Works with passkeys switched off, so that a
  * user can always remove what they have. Recorded as `user.passkey_removed`, and the owner is
- * told.
+ * told. The user's other sessions end (`mfa_changed`); the one that asked stays.
  *
  * @param deps - Passkey store, users, settings, provider store, notices, ids and clock.
  * @param scope - The project and environment.
  * @param userId - The signed-in user.
  * @param passkeyId - The passkey.
  * @param actor - The user with the request's origin.
+ * @param currentSessionId - The session that asked; it is the one kept.
  * @throws NotFoundError when the user has no such passkey.
  * @throws AuthError `passkey.last_sign_in_method` when nothing else would let them in.
  */
@@ -616,11 +618,14 @@ export async function remove(
     | 'config'
     | 'mailer'
     | 'rateLimiter'
+    | 'sessions'
+    | 'revokedSessions'
   >,
   scope: Scope,
   userId: string,
   passkeyId: string,
-  actor: Actor
+  actor: Actor,
+  currentSessionId: string
 ): Promise<void> {
   const settings = await Settings.current(deps, scope)
   const providers = await OAuth.enabledProviders(deps, scope)
@@ -642,6 +647,14 @@ export async function remove(
   if (outcome === 'last_method') {
     throw new AuthError('passkey.last_sign_in_method')
   }
+  // A stolen session must not outlive the removal of the credential the owner is cleaning up;
+  // the same reason as a change to two-step verification (H-093).
+  await Sessions.revokeOthers(deps, scope, {
+    userId,
+    currentSessionId,
+    reason: 'mfa_changed',
+    actor,
+  })
   const user = await deps.users.findById(scope.environmentId, userId)
   if (user) {
     Notices.mfaChanged(deps, scope, user, { change: 'passkey_removed', at: deps.clock.now() })
