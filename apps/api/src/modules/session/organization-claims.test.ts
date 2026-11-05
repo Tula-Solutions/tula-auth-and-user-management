@@ -239,8 +239,10 @@ describe('setting the active organization', () => {
       async () => {
         configure({}, otherTenant)
         const foreign = await organization(otherTenant)
-        await addUser(MAYA, 'maya@northline.app', otherTenant)
-        await join(foreign, MAYA, 'admin', otherTenant)
+        // Maya's account there is another user: a user id is unique across environments.
+        const mayaElsewhere = '00000000-0000-7000-8000-0000000000b1'
+        await addUser(mayaElsewhere, 'maya@northline.app', otherTenant)
+        await join(foreign, mayaElsewhere, 'admin', otherTenant)
         return foreign.id
       },
     ],

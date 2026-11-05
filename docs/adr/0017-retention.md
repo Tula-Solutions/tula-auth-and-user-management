@@ -401,3 +401,11 @@ its expiry (`EXPIRED_PROPOSAL_RETENTION`), whatever became of it, by
 other purge. A proposal can be approved for ten minutes, so thirty days later nothing
 about it is open. The audit entries about a deleted proposal (what was asked, who
 approved, what was done) stay for as long as the environment keeps audit entries.
+
+**The instance audit log has no database floor (H-231).** `audit_logs` is bounded by the
+restrictive policy `audit_logs_retention_floor`; `instance_audit_logs` has `DELETE` for
+`tula_app` (migration 0016) and no such policy, because the table has no row-level security by
+design (it holds no tenant rows). A floor would mean enabling RLS on it plus a permissive
+policy for `SELECT` and `INSERT`, which is not a mirror of the audit log's policy. Accepted
+for now: a compromised API role could delete the instance log, but it could also write to it.
+If the instance log becomes evidence, enable RLS on it and add the restrictive floor.
