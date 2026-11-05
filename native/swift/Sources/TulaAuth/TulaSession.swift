@@ -98,9 +98,11 @@ public actor TulaSession: TulaRedacted {
     /// A refresh token issued to a refresh that lost to a sign-out, kept so that the sign-out
     /// can revoke it.
     private var orphan: String?
-    /// The refresh token of a sign-out the server was never told of. Memory only; nothing but
-    /// `signOut()` reads it, and no refresh presents it.
-    private var undelivered: String?
+    /// The refresh tokens of sign-outs the server was never told of, oldest first, at most
+    /// `maxUndelivered`. Memory only; nothing but `signOut()` reads them, no refresh presents
+    /// one, and a new session does not forget them (TULA-157, H-315).
+    private var undelivered: [String] = []
+    private static let maxUndelivered = 8
     private var listeners: [Int: AsyncStream<AuthState>.Continuation] = [:]
     private var listenerIds = 0
 
@@ -422,7 +424,8 @@ public actor TulaSession: TulaRedacted {
         } catch {
             let code = (error as? TulaError)?.code ?? ""
             if generation == mine, !code.hasPrefix("session.") {
-                undelivered = presented
+                undelivered = Array((undelivered.filter { $0 != presented } + [presented])
+                    .suffix(Self.maxUndelivered))
             }
         }
     }
@@ -434,8 +437,6 @@ public actor TulaSession: TulaRedacted {
         guard lifetime(of: issued) != nil else {
             throw TulaError.client(TulaClientErrorCode.responseInvalid)
         }
-        // A new session: an earlier one's sign-out is no longer this client's to retry.
-        undelivered = nil
         let installed = commit(issued)
         let failure = await persist(issued)
         await settle(installed)
@@ -497,26 +498,32 @@ public actor TulaSession: TulaRedacted {
                 failure = TulaError.client(TulaClientErrorCode.storageFailed)
             }
         }
-        let newest = orphan ?? presented ?? undelivered
+        // Every token this client never managed to revoke, the newest first: a new sign-in
+        // must not leave an earlier session alive on the server.
+        var owed: [String] = []
+        for token in [orphan ?? presented].compactMap({ $0 }) + undelivered.reversed()
+        where !owed.contains(token) {
+            owed.append(token)
+        }
         orphan = nil
-        if let newest {
+        var kept: [String] = []
+        for token in owed {
             do {
                 _ = try await transport.call(
                     TulaOperations.signOut,
-                    body: RefreshTokenRequest(refreshToken: newest),
+                    body: RefreshTokenRequest(refreshToken: token),
                     as: NoAnswer.self
                 )
-                undelivered = nil
             } catch {
                 let refusal = error as? TulaError ?? TulaError.client(TulaClientErrorCode.networkFailed)
-                failure = refusal
-                // The token was just dropped, so it is held for the retry, unless the API
-                // said the session is over or a sign-in finished meanwhile.
-                if generation == mine {
-                    undelivered = refusal.code.hasPrefix("session.") ? nil : newest
+                failure = failure ?? refusal
+                // Held for the retry, unless the API said that session is over.
+                if !refusal.code.hasPrefix("session.") {
+                    kept.append(token)
                 }
             }
         }
+        undelivered = Array(kept.prefix(Self.maxUndelivered).reversed())
         // A device key that cannot be had would fail the next sign-in too: with nobody
         // signed in here, what the store keeps of it is removed.
         if generation == mine, let proofs = transport.proofs {
