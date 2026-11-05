@@ -64,6 +64,7 @@ import { sha256Hex } from '~/lib/crypto'
 import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
+import { localTierIsExposed } from '~/lib/outbound-tier'
 import { createSecretBox } from '~/lib/secret-box'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import type { SmsSender } from '~/ports/sms-sender'
@@ -164,6 +165,13 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     requireTls: env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'prod',
   })
   const keyedHash = createKeyedHash(env.TULA_MASTER_KEY)
+  if (localTierIsExposed(env)) {
+    // Loud on every boot, for the API and the worker: the `local` outbound tier allows
+    // loopback targets for webhooks and hooks, which a reachable deployment must not.
+    logger.warn(
+      "ENVIRONMENT is local but PUBLIC_URL is not a loopback address: webhooks and hooks may reach this host's loopback services. Set ENVIRONMENT to dev, staging or prod for any deployment other people can reach."
+    )
+  }
   // State that API instances must agree on lives in Redis when it is configured. Without it
   // (allowed in `local` and `dev` only, see `env.ts`) it is held in this process's memory.
   const redis = env.REDIS_URL ? connectRedis(env.REDIS_URL, clock) : null
