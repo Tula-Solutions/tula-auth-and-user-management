@@ -267,8 +267,9 @@ this file under "Area rules" and does not repeat it.
   (`organization.role_in_use`); a pending invitation, an SSO connection's `default_role` /
   `break_glass_role` and an `organization_group_roles` row refer to the role by **key**, on
   purpose, and stay deletable. Recommended and left as is: an invitation to a deleted role is
-  refused at acceptance (`organization.invitation_role_gone`), a group mapping to one is skipped
-  at sign-in, and blocking the delete on them would let any pending invitation pin a role for
+  refused at acceptance (`organization.invitation_role_gone`), a sign-in that reaches one (a group mapping,
+  or the connection's default or break-glass role) fails closed, because `ensureMember` rethrows
+  `organization.role_unknown`, and blocking the delete on them would let any pending invitation pin a role for
   its 7 days. Recorded; code unchanged. A follow-up could list those references in the 409's
   `params` so the operator sees them.
 - Decision (TULA-157, H-069): the per-organization invitation counter is charged before the
