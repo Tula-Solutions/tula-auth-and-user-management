@@ -1131,6 +1131,30 @@ describe('connected accounts', () => {
     expect(again.status).toBe(404)
   })
 
+  test('unlinking ends the user’s other sessions and keeps the one that asked', async () => {
+    const token = await passwordSession()
+    const mine = decodeJwt<AccessTokenClaims>(token)
+    const started = await json<FlowAttempt>(
+      await client('POST', '/sign-ins', { identifier: EMAIL })
+    )
+    const other = await json<FlowAttempt>(
+      await client(
+        'POST',
+        `/sign-ins/${started.id}/password`,
+        { password: PASSWORD },
+        { secret: started.attemptSecret }
+      )
+    )
+    const elsewhere = decodeJwt<AccessTokenClaims>(other.session?.accessToken as string)
+    deps.oauth.google.profile = { subject: 'mine', email: null, emailVerified: false }
+    const identity = await json<Identity>(await finish(token, await link(token)))
+    const res = await client('DELETE', `/me/identities/${identity.id}`, undefined, { token })
+    expect(res.status).toBe(204)
+    const now = deps.clock.now()
+    expect(await deps.revokedSessions.has(elsewhere.sid, now)).toBe(true)
+    expect(await deps.revokedSessions.has(mine.sid, now)).toBe(false)
+  })
+
   test('refuses to remove the last way to sign in', async () => {
     const { session } = await completed()
     const [identity] = await list(session.accessToken as string)
