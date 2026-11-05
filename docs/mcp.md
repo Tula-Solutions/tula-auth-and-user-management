@@ -34,6 +34,9 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 
 - Without a key the read tools and the draft tool answer `not_configured`; the scaffold tools work with no
   configuration at all. Without an agent key the propose tools answer `not_configured`.
+- **A secret key alone gives the server the whole admin read client** (every `GET` the key may make, not
+  only the tools listed here). An agent key reads the same and can change nothing else, so it is the safer one
+  to hand an assistant.
 - **With an agent key the secret key is not read**, even if it is set: the server then
   holds nothing that can approve a proposal, or change anything beyond a sign-in test, and says on standard error
   that it left the secret key alone. Keep the secret key out of an assistant's environment
