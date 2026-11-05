@@ -96,6 +96,7 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
       name: 'Okta',
       prefix: 'tula_scim_dev',
       tokenHash: Bun.randomUUIDv7(),
+      viaSetupLink: false,
       lastUsedAt: null,
       revokedAt: null,
       createdAt: now,
@@ -138,6 +139,14 @@ export function describeScimStore(name: string, setup: () => Promise<ScimSuiteCo
       expect(await ctx.store.findTokenByHash(ctx.b.environmentId, record.tokenHash)).toBeNull()
       expect(await ctx.store.findTokenByHash(ctx.a.environmentId, 'unknown')).toBeNull()
       expect(await ctx.recorded()).toEqual(['scim_token.created'])
+    })
+
+    test('keeps whether a setup link minted the token', async () => {
+      const record = token({ viaSetupLink: true })
+      await ctx.store.insertToken(record, entry(ctx.a, 'scim_token.created', record.id))
+      expect(
+        (await ctx.store.findTokenByHash(ctx.a.environmentId, record.tokenHash))?.viaSetupLink
+      ).toBe(true)
     })
 
     test('lists an organization’s tokens newest first, revoked ones included', async () => {

@@ -1,6 +1,7 @@
 import type { Deps } from '~/dependencies'
 import * as Organizations from '~/modules/organization/service'
 import { roleForGroups } from '~/modules/sso/service'
+import { invalidValue } from './errors'
 import type { ScimContext } from './service'
 
 /** The role of a provisioned member when the organization has no SSO connection at all. */
@@ -68,6 +69,17 @@ export async function plan(
   names: string[]
 ): Promise<RoleChange | null> {
   const to = await resolve(deps, ctx, names)
+  // The portal lock (ADR 0067) holds where a role is applied, not only where a mapping is saved:
+  // a setup-link token must not turn an operator's privileged mapping into a role.
+  if (
+    ctx.viaSetupLink &&
+    to !== null &&
+    (await Organizations.isPrivilegedRole(deps, ctx.tenant, to))
+  ) {
+    throw invalidValue(
+      'This token cannot apply a privileged role. Use a token an administrator created.'
+    )
+  }
   const member = await deps.organizations.findMembership(
     ctx.tenant.environmentId,
     ctx.organizationId,

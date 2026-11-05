@@ -67,6 +67,7 @@ function context(c: Context<ScimEnv>): Scim.ScimContext {
     tenant: { projectId: tenant.projectId, environmentId: tenant.environmentId },
     organizationId: c.get('scim').organizationId,
     actor: directoryActor(c),
+    viaSetupLink: c.get('scim').viaSetupLink,
   }
 }
 
