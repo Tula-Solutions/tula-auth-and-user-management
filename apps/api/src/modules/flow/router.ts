@@ -793,7 +793,7 @@ router.post(
       ...errors,
     },
   }),
-  limited('sign_in_oauth'),
+  limited('sign_in_sso'),
   publishableKey(),
   validator('param', AttemptIdParamSchema, validationHook),
   validator('header', AttemptHeaderSchema, validationHook),

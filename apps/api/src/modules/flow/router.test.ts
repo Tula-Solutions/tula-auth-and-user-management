@@ -319,6 +319,15 @@ describe('sign-in over HTTP', () => {
     )
   })
 
+  test('the OAuth start and the SSO start have budgets of their own', async () => {
+    const attempt = await json<FlowAttempt>(await post('/sign-ins', { identifier: 'x' }))
+    for (let i = 0; i < Flows.CREDENTIAL_RATE_LIMIT; i++) {
+      await post('/sign-ins/oauth', {})
+    }
+    expect((await post('/sign-ins/oauth', {})).status).toBe(429)
+    expect((await post(`/sign-ins/${attempt.id}/sso`, {})).status).not.toBe(429)
+  })
+
   test('malformed requests from many IPs cannot use up an environment’s ceiling', async () => {
     deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
     deps.environments.add({
