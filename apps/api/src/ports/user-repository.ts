@@ -657,6 +657,18 @@ export interface UserRepository {
   ): Promise<UserRecord | null>
 
   /**
+   * Clear the mark that says a directory created this account, when it is that organization's.
+   *
+   * Not recorded: the mark is bookkeeping for the directory's own repair, not a permission.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param organizationId - The directory's organization; another organization's mark stays.
+   * @returns Nothing.
+   */
+  releaseDirectory(environmentId: string, userId: string, organizationId: string): Promise<void>
+
+  /**
    * The users of an environment whose account holds a phone number, oldest account first.
    *
    * A number is not unique (ADR 0037), so this answers a list. **It is the one read by

@@ -20,6 +20,9 @@ import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
 import { PORTAL_PATH } from './service'
 
+/** Most connections the portal page lists: an unbounded list is an unbounded response (H-056). */
+const MAX_PORTAL_CONNECTIONS = 50
+
 // What a setup link opens (ADR 0067, "Setup links"). Every function here takes the link's
 // organization from the middleware, never from the request, and calls the same connection and
 // test services the admin routes call, with the `setup_link` actor. The body schemas hold the
@@ -94,7 +97,10 @@ export async function show(
     organization: { id: organization.id, name: organization.name },
     domains: domains.filter((one) => one.verifiedAt !== null).map((one) => one.domain),
     expiresAt: scope.expiresAt.toISOString(),
-    connections: await SsoConnections.list(deps, tenant, scope.organizationId),
+    connections: (await SsoConnections.list(deps, tenant, scope.organizationId)).slice(
+      0,
+      MAX_PORTAL_CONNECTIONS
+    ),
   }
 }
 
