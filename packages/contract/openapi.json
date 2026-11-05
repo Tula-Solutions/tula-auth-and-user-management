@@ -27106,7 +27106,7 @@
           "MFA"
         ],
         "summary": "Confirm the authenticator app",
-        "description": "Confirms the pending authenticator with the 6-digit code it shows, turning two-step verification on, and returns ten backup codes **once**. Every other session of the user ends; this one stays signed in. A wrong code is `mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing pending, or after ten minutes, it is `mfa.enrolment_expired` (410).",
+        "description": "Confirms the pending authenticator with the 6-digit code it shows, turning two-step verification on, and returns ten backup codes **once**. Every other session of the user ends; this one stays signed in. A wrong code is `mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing pending, or after ten minutes, it is `mfa.enrolment_expired` (410). Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include the second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
         "security": [
           {
             "publishableKey": [],
