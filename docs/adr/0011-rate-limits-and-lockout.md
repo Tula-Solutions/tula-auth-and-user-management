@@ -104,3 +104,19 @@ the address at all.
   through uncounted. Without `REDIS_URL` (`local` and `dev` only) they are in process memory:
   each instance counts separately and a restart forgets lockouts.
 - Limits are constants in code for now; per-project configuration arrives with the dashboard.
+
+## Decisions recorded by the TULA-157 hardening audit
+
+- **Decision (TULA-157, H-080): keep the shared per-identifier lockout key, and tell operators it
+  is a denial of service by design.** Anyone who knows an address can lock that account's
+  password sign-in for the backoff window with wrong guesses. Recommendation: keep it. A key
+  per IP would let a distributed guess skip the lockout, which is the attack the lockout exists
+  for; the per-IP rate limit and the per-environment ceiling already bound what one source can
+  do. Operators are told in the lockout's documentation that a locked-out user is not told to
+  wait. Recorded only: no code changes, because narrowing the key is a policy change for the owner.
+- **Decision (TULA-157, H-085): clear the lockout where it is cleared today, on a correct
+  password.** The counter guards guesses at the password; someone who has just proved the
+  password has nothing left to guess there, and the second factor has its own per-user limits
+  (`Mfa.stepUpLockKey` and the verifiers' counters), which this clear does not touch. Clearing
+  after the factor step would leave a user who knows the password but is slow at the factor
+  counted as a password guesser. Recommendation: no change. Recorded only.

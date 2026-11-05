@@ -401,6 +401,36 @@ describe('two instances change one user’s password (ADR 0038)', () => {
     }
   })
 
+  // A sign-in verified the old hash and upgrades it while a reset (or an expired password's
+  // replacement) stores a new password. Whichever lands first, the new password ends current
+  // and the old one never comes back; an upgrade that lost is refused, one that won is kept
+  // as the previous password (H-081, ADR 0041).
+  test('a hash upgrade racing a password replacement never brings the old password back', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const user = await seeded()
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        () =>
+          users
+            .first()
+            .upgradePasswordHash(
+              tenant.environmentId,
+              user.id,
+              '$argon2id$old',
+              '$argon2id$up',
+              later(1_000)
+            ),
+        () => change(users.second(), user.id, '$argon2id$new')
+      )
+      expect(results).toEqual(order === 'a-first' ? [true, 'replaced'] : [false, 'replaced'])
+      expect(await users.first().storedPasswords(tenant.environmentId, user.id, 24)).toEqual({
+        current: '$argon2id$new',
+        previous: [order === 'a-first' ? '$argon2id$up' : '$argon2id$old'],
+      })
+    }
+  })
+
   // A password change holds its user's rows while it moves them. A purge that waited for them
   // could deadlock with it; it passes them over (`FOR UPDATE SKIP LOCKED`) and takes them in a
   // later round. Without that this test ends at the bound: the purge waits for the hold.
