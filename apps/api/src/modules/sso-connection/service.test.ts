@@ -226,6 +226,21 @@ describe('SSO connection admin service', () => {
     ).rejects.toMatchObject({ code: 'sso.test_required' })
   })
 
+  test('the test fingerprint depends on the sealed client secret, so a new secret resets a passing test (H-039)', async () => {
+    const base = {
+      protocol: 'oidc' as const,
+      issuer: 'https://idp.example.test',
+      clientId: 'c',
+      saml: null,
+      defaultRole: 'org:member',
+      domains: [],
+      attributeMapping: {},
+    }
+    const a = Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-1' } as never)
+    expect(Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-1' } as never)).toBe(a)
+    expect(Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-2' } as never)).not.toBe(a)
+  })
+
   test('a mark for settings that changed meanwhile is not written', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   type CurrentUser,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -440,6 +440,17 @@ describe('weakenings need a recent authentication', () => {
       const res = await client('PATCH', `${base(org)}/${made.id}`, change, stale)
       expect(await codeOf(res)).toBe('auth.step_up_required')
     }
+  })
+
+  test('an update reads the connection once, so the checks and the write see the same record (H-030)', async () => {
+    const { maya, org, made } = await world()
+    const token = await aged(maya)
+    const find = spyOn(deps.ssoConnections, 'find')
+    expect(
+      (await client('PATCH', `${base(org)}/${made.id}`, { name: 'Renamed' }, token)).status
+    ).toBe(200)
+    expect(find).toHaveBeenCalledTimes(1)
+    find.mockRestore()
   })
 
   test('a change that is not a weakening does not ask', async () => {
