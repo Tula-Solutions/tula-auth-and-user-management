@@ -109,8 +109,13 @@ export async function offered(
  * Whether the connection's organization still holds `domain`: a verified, unlapsed row of its
  * own (ADR 0065). The connection's stored list is only a filter; ownership is read here, on
  * every use, because a lapse is a matter of time and no write marks it.
+ *
+ * @param deps - Domain store and clock.
+ * @param connection - The connection whose organization must hold the domain.
+ * @param domain - The domain to check.
+ * @returns Whether the organization holds it, verified and unlapsed.
  */
-async function holdsDomain(
+export async function holdsDomain(
   deps: Pick<Deps, 'organizationDomains' | 'clock'>,
   connection: SsoConnectionRecord,
   domain: string
