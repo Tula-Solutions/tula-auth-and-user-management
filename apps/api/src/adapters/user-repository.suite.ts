@@ -1593,6 +1593,20 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
     })
 
+    test('releases a directory mark only for the organization that holds it', async () => {
+      const org = Bun.randomUUIDv7()
+      const input = { ...user(ctx.a), managedByDirectoryId: org }
+      await ctx.users.create(input, Audit.none('fixture'))
+      const mark = async (environmentId: string) =>
+        (await ctx.users.findById(environmentId, input.id))?.managedByDirectoryId ?? null
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, Bun.randomUUIDv7())
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.b.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBeNull()
+    })
+
     test('sets the names, and another environment, or a missing user, changes nothing', async () => {
       const input = user(ctx.a)
       await ctx.users.create(input, Audit.none('fixture'))

@@ -116,4 +116,21 @@ describe('SCIM hardening (TULA-171)', () => {
     expect(lookups).not.toHaveBeenCalled()
     expect(res.body.scimType).toBe('invalidValue')
   })
+
+  test('H-053: a delete that keeps the account releases the directory mark', async () => {
+    const id = await provision('kept@acme.test')
+    const other = await Organizations.create(deps, TENANT, { name: 'B', slug: 'bee' }, TEST_ACTOR)
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      other.id,
+      { userId: id, role: 'member' },
+      TEST_ACTOR
+    )
+    expect((await scim('DELETE', `/Users/${id}`)).status).toBe(204)
+    const kept = await deps.users.findById(TENANT.environmentId, id)
+    expect(kept).not.toBeNull()
+    // Left set, a later POST would take the repair branch and skip the verified-domain check.
+    expect(kept?.managedByDirectoryId ?? null).toBeNull()
+  })
 })

@@ -636,5 +636,7 @@ export async function remove(deps: Deps, ctx: ScimContext, userId: string) {
     await Users.remove(deps, ctx.tenant, userId, ctx.actor)
   } else {
     await deps.scim.deleteUser(environmentId, ctx.organizationId, userId)
+    // Kept for another organization: no longer ours, or a later POST would repair-adopt it.
+    await deps.users.releaseDirectory(environmentId, userId, ctx.organizationId)
   }
 }
