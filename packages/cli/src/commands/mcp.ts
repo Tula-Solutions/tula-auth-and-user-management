@@ -112,6 +112,12 @@ export async function buildMcpServer(context: CommandContext) {
       Boolean(io.env[`TULA_SECRET_KEY_${suffix(name)}`]?.trim()) ||
       Boolean(io.env.TULA_SECRET_KEY?.trim()))
 
+  // An agent's environment must not hand it the instance admin token by accident (H-258).
+  const agentIgnoredAdminToken =
+    agentConfigured &&
+    flags['admin-token-file'] === undefined &&
+    Boolean(io.env.TULA_ADMIN_TOKEN?.trim())
+
   let doctor: ((run: { signal: AbortSignal }) => Promise<unknown>) | null = null
   try {
     const named = io.env[`TULA_API_URL_${suffix(name)}`]?.trim()
@@ -119,7 +125,13 @@ export async function buildMcpServer(context: CommandContext) {
       flags['api-url'] === undefined && named ? { ...flags, 'api-url': named } : flags,
       io
     )
-    const instance = await resolveInstance({ apiUrl, flags, io, output })
+    // Without the token the doctor still runs the checks a machine can make alone.
+    const instance = await resolveInstance({
+      apiUrl,
+      flags,
+      io: agentIgnoredAdminToken ? { ...io, env: { ...io.env, TULA_ADMIN_TOKEN: undefined } } : io,
+      output,
+    })
     // The server aborts the signal when a run is out of time or its call was cancelled.
     doctor = ({ signal }) => examine({ apiUrl, instance, io, signal })
   } catch (error) {
@@ -139,11 +151,10 @@ export async function buildMcpServer(context: CommandContext) {
         'key out of the environment an agent runs in: it is what approves a proposal.'
     )
   }
-  if (agentConfigured && doctor && io.env.TULA_ADMIN_TOKEN?.trim()) {
+  if (agentIgnoredAdminToken) {
     context.output.error(
-      'tula mcp: the instance admin token is set beside an agent key. No tool can use it for ' +
-        'anything but the deployment checks, but it is a credential of a person: prefer to ' +
-        'leave it out of an agent’s environment.'
+      'tula mcp: an agent key is configured, so the admin token was ignored (it is a ' +
+        'credential of a person). Pass --admin-token-file to enable run_doctor.'
     )
   }
   for (const why of new Set(Object.values(unavailable))) {
@@ -202,7 +213,7 @@ export const mcpCommand: Command = {
     'With it the secret key is not read at all.\n\n' +
     'The API URL comes from --api-url, TULA_API_URL_<NAME> or TULA_API_URL; the secret key ' +
     'from --secret-key-file, TULA_SECRET_KEY_<NAME> or TULA_SECRET_KEY; the instance admin ' +
-    'token (run_doctor only) from --admin-token-file or TULA_ADMIN_TOKEN. None is required: ' +
+    'token (run_doctor only) from --admin-token-file or TULA_ADMIN_TOKEN (with an agent key, only --admin-token-file). None is required: ' +
     'without a key the read tools answer "not configured" and the scaffold tools still work. ' +
     'Standard output carries only the protocol; everything else is written to standard error.',
   options: {

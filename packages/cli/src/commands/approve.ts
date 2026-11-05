@@ -328,7 +328,7 @@ function render(line: (text: string) => void, proposal: Proposal, about: string,
   line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
   line(`  Operation      ${printable(proposal.operation, 40)}`)
   line(`  About          ${about}`)
-  line(`  What it does   ${printable(proposal.summary, 400)}`)
+  line(`  Agent says     ${printable(proposal.summary, 400)}`)
   line(`  Status         ${statusWords(proposal)}`)
   if (status === 'pending') {
     line(

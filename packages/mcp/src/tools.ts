@@ -1,4 +1,4 @@
-import { OAUTH_PROVIDERS } from '@tula-tech/contract'
+import { ActivityTypeSchema, OAUTH_PROVIDERS } from '@tula-tech/contract'
 import * as z from 'zod'
 import { detectFramework, SCAFFOLD_FRAMEWORKS, type ScaffoldFramework } from './detect'
 import { ToolError } from './errors'
@@ -382,11 +382,9 @@ const providerInput = z.strictObject({
   provider: z.enum(OAUTH_PROVIDERS).describe('The provider, as list_oauth_providers names it.'),
 })
 const auditInput = z.strictObject({
-  action: z
-    .string()
-    .regex(/^[a-z_]{1,40}\.[a-z_]{1,60}$/)
-    .optional()
-    .describe('One action, e.g. "session.created" or "user.password_changed".'),
+  action: ActivityTypeSchema.optional().describe(
+    'One action, e.g. "session.created" or "user.password_changed".'
+  ),
   actorId: id.optional().describe('Who did it.'),
   targetId: id.optional().describe('What it was done to.'),
   actorType: z.enum(['user', 'admin', 'system', 'agent', 'instance_admin']).optional(),
@@ -728,8 +726,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     run: async ({ reads }, input: z.infer<typeof auditInput>) => {
       const answer = await reads().read('listAuditLogs', {
         query: given({
-          // The API validates the action against its own list; an unknown one is its error.
-          action: input.action as never,
+          action: input.action,
           actorId: input.actorId,
           targetId: input.targetId,
           actorType: input.actorType,

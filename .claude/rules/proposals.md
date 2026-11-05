@@ -111,6 +111,12 @@ decision in ADR 0053.
   scenario and per operation): a step that asks for another has to fit the ten, is added
   to that table, and is left to a route test where one shows the same. Never raise either
   limit for a scenario.
+  **Decision (TULA-157, H-262): the volume is bounded by those two counts and by nothing
+  else.** At most ten proposals a minute per environment wait for a person, and a proposal
+  that is never approved expires on its own (`expiresAt`); no cap on the total
+  pending is added, because a person who sees a flood rejects or ignores it and the
+  per-minute counts already stop a loop from growing it faster than that. Recommendation:
+  add a cap on pending proposals only if operators report a queue they cannot clear.
 - **Approval is a human's credential and only that** (`PROPOSAL_APPROVER_TYPES`: `admin`,
   a secret key, and `instance_admin`, a dashboard session). The approve route is a `POST`
   under `/v1/admin/`, which the middleware already refuses to an agent key, and

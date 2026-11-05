@@ -41,6 +41,8 @@ describe('cleanText', () => {
   test.each([
     ['a secret key', `tula_sk_live_${'a'.repeat(32)}`],
     ['a secret key inside text', `key is tula_sk_dev_${'b'.repeat(20)} ok`],
+    ['a secret key with digits in its environment segment', `tula_sk_stage2_${'a'.repeat(32)}`],
+    ['an agent key with digits in its environment segment', `tula_ak_stage2_${'a'.repeat(32)}`],
     ['an agent key', `tula_ak_live_${'a'.repeat(32)}`],
     ['an agent key inside text', `key is tula_ak_dev_${'b'.repeat(20)} ok`],
     ['a JWT', 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ'],
@@ -528,6 +530,11 @@ describe('redactor', () => {
     expect(
       redact({ a: 'x hunter2hunter2 y', b: [{ c: 'hunter2hunter2' }], d: 3, e: null, f: 'tok' })
     ).toEqual({ a: `x ${REDACTED} y`, b: [{ c: REDACTED }], d: 3, e: null, f: 'tok' })
+  })
+
+  test('H-119: a short configured secret is replaced, a three-letter one is not', () => {
+    const redact = redactor(['abcd1', 'tok'])
+    expect(redact({ a: 'x abcd1 y tok' })).toEqual({ a: `x ${REDACTED} y tok` })
   })
 
   test('many secrets over a large value stay fast', () => {

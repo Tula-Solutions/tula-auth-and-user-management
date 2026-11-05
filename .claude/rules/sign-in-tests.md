@@ -99,3 +99,10 @@ user, made by the server in its own process and reported step by step. The MCP t
 - **Never word a `passed` report as more than it is**: no application page, SDK, mail
   relay or webhook receiver was exercised, and no passkey, emailed link, texted code or
   provider is ever run.
+
+- **Decision (TULA-157, H-260): an abandoned run's cleanup stays by address.** When a step
+  that creates the user is still at work at the deadline and no user exists yet, the run
+  reports `cleanup: 'failed'` with no `userId`, and the retention job finds the user by its
+  throwaway address. Recording the id would need the step to publish it before the deadline,
+  which the flow engine does not do; the address is unique per run, so targeted deletion by
+  address is as precise. Recommendation: leave the code alone; recorded only.

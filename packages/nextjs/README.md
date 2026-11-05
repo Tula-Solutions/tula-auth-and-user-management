@@ -206,6 +206,18 @@ and the session continues on its refresh cookie.
   default); do not use a profile with `refresh.reuseGracePeriod: null` behind it. A refresh
   waits at most 8 seconds whatever `timeoutSeconds` says, and one that got no answer at all is
   sent once more at once: both stay inside that window.
+  The single flight is per process: with several Next.js instances, two of them can present the
+  same refresh token, and only the API's reuse grace window keeps the second from being treated as
+  reuse. Flights are keyed by API URL, environment and token, and the one that starts a flight
+  sends its own client address and `Origin` for everyone who joins it, so the API's per-IP
+  rate-limit counts that first caller.
+- **Over plain http, a sibling origin can plant cookies.** Without `https` the cookie names have
+  no `__Host-` prefix, so a page on another port or subdomain of the same host can write
+  `tula_at` or `tula_at_1` with garbage. That can force a refresh or a sign-out (a denial of
+  service); it cannot forge a session, because every token is verified. Use https in production.
+- **`x-tula-auth` is stripped only where the interceptor runs.** The header is sealed with an
+  HMAC bound to the session cookie, but a route outside the interceptor's `matcher` receives
+  whatever the browser sent. Such a route must not read `x-tula-auth` as input: call `auth()`.
 - **Set `TULA_APP_URL`** to the app's public origin. It decides whether the `__Host-` cookie
   names are used and which `Origin` the handler accepts, the same way in the interceptor, the
   handler and `auth()`. Set the variable, not only the `appUrl` option of the interceptor and
