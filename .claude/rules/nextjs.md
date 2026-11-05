@@ -158,3 +158,13 @@ What the section above does not say (moved from `sdk.md`).
   the client. A failed sign-out must not make the browser forget a session the server still
   holds (the user could not retry it); a 401 means the session is already dead and the stale
   cookies are dropped by the next failed refresh. Recorded, not changed.
+- Decision (TULA-157, H-298): the sealed `x-tula-auth` header gets no timestamp or nonce of
+  its own. It is an HMAC over the claims bound to a digest of the session cookie, so a replay
+  needs that cookie, and the claims' own `exp` (about 60 s) bounds how long it holds. A
+  sealed-at time would only matter for an app that forwards request headers to an untrusted
+  party, and that party would hold the cookie too. Recorded, not changed.
+- Decision (TULA-157, H-299): the seal key stays `HMAC(key = "tula-nextjs-auth-v1:" + secret key)`
+  with no KDF. HMAC takes a key of any length and the secret key is high-entropy random, so
+  the fixed prefix is the domain separation that keeps the key from being used for anything
+  else; HKDF would add a step with no strength to gain. Changing it would invalidate every
+  header in flight. Recorded, not changed.
