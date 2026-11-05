@@ -190,6 +190,12 @@ it ("Signing in with a texted code", at the end of this section).
   environment and the identifier, never the attempt's id, which anyone mints); a new limit is a row of `enforceLimits` at its place in that order, with a test
   that fails when it is taken out and a row in the tables of ADR 0037 and
   `docs/phone-numbers.md`.
+- Decision (TULA-157, H-210, recorded, no code): whether a number is new to an asker is read
+  from the latest verification token's destination (`newNumber: last?.destination !==
+  phoneNumber`). When the retention job prunes that token the asker's "new numbers" allowance
+  (3 a day) starts again. Recommendation: leave it. The number, address, destination-prefix,
+  environment and daily limits still bound the spend, and a token is pruned only after
+  expiry, long after a day's allowance matters.
 - **Every limit on that path fails closed, and answers alike.** A limiter that cannot count,
   and a count that cannot be taken (the database unreachable, its turn not had in time) are
   `service.unavailable` and nothing is sent: never `whenUnavailable: 'allow'` here. Every

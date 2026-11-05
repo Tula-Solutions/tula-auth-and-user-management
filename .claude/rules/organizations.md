@@ -126,6 +126,12 @@ this file under "Area rules" and does not repeat it.
   organization with `createdBy` gets the lower cap and shares `CODES_PER_CREATOR_PER_DAY` with
   the creator's others; `domain_taken` for another organization's live verification spends the
   hourly allowance first (a probe). Keep both, and a limiter key holds ids only.
+- Decision (TULA-157, H-202, recorded, no code): the 200 codes a day an environment may send
+  for domain claims (`CODES_PER_ENVIRONMENT_PER_DAY`) are shared, so enough creator accounts
+  could spend them and block other tenants' claims for the day. Each creator is held to 20
+  and each organization to 10 or 30, so it takes ten creators, and each needs a sign-in
+  and an organization. Availability only, no mail beyond the cap. Recommendation: keep the
+  number and watch it; raise it, or make it a setting, when an environment hits it in real use.
 
 ## What to test
 
