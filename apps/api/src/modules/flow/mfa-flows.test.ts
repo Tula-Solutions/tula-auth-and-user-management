@@ -372,7 +372,7 @@ describe('a user with a real second factor', () => {
       Audit.none('fixture')
     )
     const err = await rejection(second(attempt, 'backup_code', codes[0] as string))
-    expect(err.toJSON()).toMatchObject({ status: 403, code: 'auth.user_banned' })
+    expect(err.toJSON()).toMatchObject({ code: 'mfa.invalid_code' })
     expect(deps.activityLog.ofType('user.backup_code_used')).toEqual([])
   })
 
