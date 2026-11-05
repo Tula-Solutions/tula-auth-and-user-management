@@ -154,3 +154,13 @@ removed app's are refused at once. Nothing else is built on an app.
   every access token and the address of the server's requests to itself, where `fetch`
   would send the credentials as basic authentication: never loosen it, and a new request
   the server makes to itself is built from it and nothing else.
+
+- Decision (TULA-157, H-147): **recommended, not built**: registering or changing a native app
+  in a way that widens the origins a passkey response is accepted from (a new `appId`, team
+  id, package or certificate fingerprint; ADR 0027, ADR 0040) should need a recent
+  authentication when it is done from the dashboard's session, and an `--allow-weaker`-style
+  confirmation in `tula apply`. A secret key (server to server) has no step-up to give, so the
+  guard would reach the dashboard path only; that is a change to `secretKey()`'s
+  session branch and to the dashboard screens, so it is left for the owner. Until then the
+  audit entry records the change and `native_app_passkeys` in `tula doctor` warns of the
+  widened set.
