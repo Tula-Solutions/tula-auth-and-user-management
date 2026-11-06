@@ -11,7 +11,7 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
  * @param value - The address to check.
  * @returns `true` only for a parseable `https:` URL, or an `http:` URL whose host is loopback.
  */
-export function isHttpsUrl(value: string): boolean {
+export function isSignInPopupUrl(value: string): boolean {
   try {
     const url = new URL(value)
     return (

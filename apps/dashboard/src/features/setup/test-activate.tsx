@@ -3,7 +3,7 @@ import { messageFor } from '~/api/errors'
 import type { SsoConnection, SsoTestResult, SsoTestStart } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { Section } from '~/components/page'
-import { isHttpsUrl } from '~/lib/https-url'
+import { isSignInPopupUrl } from '~/lib/https-url'
 import { SETUP_TEST_CHANNEL, setupRequest } from './setup-api'
 
 /** How often the setup tab asks for the result of a test it started, in milliseconds. */
@@ -72,7 +72,7 @@ export function TestAndActivate({
       const started = await setupRequest<SsoTestStart>(`/connections/${connection.id}/tests`, {
         method: 'POST',
       })
-      if (!isHttpsUrl(started.authorizationUrl)) {
+      if (!isSignInPopupUrl(started.authorizationUrl)) {
         throw new Error('The sign-in address was not an https address.')
       }
       testId.current = started.testId

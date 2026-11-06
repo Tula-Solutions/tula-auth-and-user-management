@@ -9,7 +9,7 @@ import {
 import { ActionButton } from '~/components/action-button'
 import { SETUP_TEST_CHANNEL } from '~/features/setup/setup-api'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
-import { isHttpsUrl } from '~/lib/https-url'
+import { isSignInPopupUrl } from '~/lib/https-url'
 import { printable, printableName } from '~/lib/printable'
 import { refreshSso } from './queries'
 
@@ -81,7 +81,7 @@ export function TestSignIn({ connection }: { connection: SsoConnection }) {
       { id: connection.id, data: {} },
       {
         onSuccess: (started) => {
-          if (!isHttpsUrl(started.authorizationUrl)) {
+          if (!isSignInPopupUrl(started.authorizationUrl)) {
             popup?.close()
             setFailure('The sign-in address was not an https address.')
             return

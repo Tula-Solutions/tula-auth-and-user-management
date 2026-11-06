@@ -54,7 +54,7 @@ loads with this file; here is only what it does not say.
   on the general settings screen ("AI agents"), inside the same draft. Switching it on is
   the contract's weakening `agents.proposalsInProduction`, said by `describeWeakening`;
   the screen has no rule of its own.
-- No `dangerouslySetInnerHTML` anywhere. A link's `https:` URL is checked with `isHttpsUrl`.
+- No `dangerouslySetInnerHTML` anywhere. A link's `https:` URL is checked with `isHttpsUrl` (`~/lib/format`). The SSO test pop-up's address alone is checked with `isSignInPopupUrl` (`~/lib/https-url`), which also accepts http on loopback, for a local stack's identity provider (H-194); never use it for a link.
 - Colours only through the variables in `styles.css`. No literal colour in a component.
 - Every interactive element is keyboard-operable and labelled: `Field` / `TextField` /
   `SelectField` / `SwitchRow` for form controls, `ActionButton` for anything that can be
