@@ -41,7 +41,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and what is not built yet. |
+| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and its limits. |
 
 ## Bringing users across
 
@@ -83,7 +83,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula-tech/admin`, what is stored, and what is not built yet (retries among them). |
+| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula-tech/admin`, retries, the delivery log, what is stored, and its limits. |
 
 ## Questions for your backend
 

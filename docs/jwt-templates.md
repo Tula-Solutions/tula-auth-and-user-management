@@ -228,9 +228,10 @@ backend, and a claim read in the browser decides nothing.
   | A sign-in or a step-up | One. |
   | **Every authenticated request of a stateful session** | **One, each time.** A stateful profile already reads the session per request; this makes it two. |
 
-## Not built
+## Limits
 
-- Claims from user metadata: it does not exist yet. (An organization's claims are written by the
-  server, not by a template: see above.)
-- Custom claims in the browser SDKs, and a second token (an "API token" with another audience
-  or lifetime). A template shapes the session's own access token and nothing else.
+- A template cannot read user metadata. (An organization's claims are written by the server,
+  not by a template: see above.)
+- The browser SDKs do not add claims of their own, and there is no second token (an "API
+  token" with another audience or lifetime): a template shapes the session's own access token
+  and nothing else.

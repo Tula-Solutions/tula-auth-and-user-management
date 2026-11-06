@@ -38,29 +38,17 @@ export function findInternalReferences(files: ReadonlyMap<string, string>): Inte
 }
 
 /**
- * Fail the build when a published file names the repository's bookkeeping more often than its baseline allows.
+ * Fail the build when a published file names the repository's bookkeeping.
  *
- * The baseline is the worklist of the content cleanup: a file may keep the lines it has today and
- * never gain one. Pass an empty baseline for the strict check.
+ * The site is a product's documentation: a reader has no use for an ADR, a ticket, an audit id
+ * or a link into a directory the site does not publish, so none may appear, in any page, Markdown
+ * twin or file for agents.
  *
  * @param files - Published files by path.
- * @param baseline - How many offending lines each file may still have.
- * @throws RenderError listing every offending file and line of a file over its baseline.
+ * @throws RenderError listing every offending file and line.
  */
-export function checkInternalReferences(
-  files: ReadonlyMap<string, string>,
-  baseline: Readonly<Record<string, number>> = {}
-): void {
-  const found = findInternalReferences(files)
-  const counts = new Map<string, number>()
-  for (const hit of found) {
-    counts.set(hit.file, (counts.get(hit.file) ?? 0) + 1)
-  }
-  const over = found.filter(
-    (hit) =>
-      (counts.get(hit.file) ?? 0) >
-      (Object.hasOwn(baseline, hit.file) ? (baseline[hit.file] as number) : 0)
-  )
+export function checkInternalReferences(files: ReadonlyMap<string, string>): void {
+  const over = findInternalReferences(files)
   if (over.length > 0) {
     throw new RenderError(
       'internal references',

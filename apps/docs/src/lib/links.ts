@@ -21,11 +21,6 @@ export interface LinkEnvironment {
    * @returns Its heading ids and explicit anchors, or `null` when it is not Markdown.
    */
   anchorsOf(file: string): ReadonlySet<string> | null
-  /**
-   * Transitional: send a link into an unpublished directory to GitHub instead of failing.
-   * Only while the internal-references baseline still lists pages; the strict build leaves it off.
-   */
-  allowUnpublished?: boolean
 }
 
 /** Where a link ends up. */
@@ -93,7 +88,6 @@ export function resolveLink(from: string, target: string, environment: LinkEnvir
   }
   // A reader of the site cannot follow a link into what the site does not publish.
   if (
-    environment.allowUnpublished !== true &&
     EXCLUDED_DIRECTORIES.some(
       (dir) => resolved === `docs/${dir}` || resolved.startsWith(`docs/${dir}/`)
     )

@@ -320,9 +320,9 @@ app's name is put into every message as it is, a name may be a domain name, and 
 client may turn one into a link. Treat a secret key and a dashboard session accordingly, and watch
 for `emails.templates` in the audit log.
 
-## Not built
+## Limits
 
-- "Send me a test", and a preview of the HTML part.
-- Your own HTML, and templates per language.
-- Translating the button of a sign-in link, and the facts and the last sentence under a
-  notice.
+- There is no "send me a test", and the preview shows the text part, not the HTML part.
+- The HTML layout is the server's own, and a wording is not kept per language.
+- The button of a sign-in link, and the facts and the last sentence under a notice, are not
+  translated.

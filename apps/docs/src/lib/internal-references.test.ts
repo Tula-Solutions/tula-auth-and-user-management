@@ -51,10 +51,9 @@ describe('checkInternalReferences', () => {
     expect(() => checkInternalReferences(files)).toThrow(/a\.md:1[\s\S]*b\.html:2/)
   })
 
-  test('a file may keep the lines its baseline allows and never gain one', () => {
-    const files = new Map([['a.md', 'ADR 0001\nADR 0002']])
-    expect(() => checkInternalReferences(files, { 'a.md': 2 })).not.toThrow()
-    expect(() => checkInternalReferences(files, { 'a.md': 1 })).toThrow(RenderError)
-    expect(() => checkInternalReferences(files, { 'b.md': 2 })).toThrow(RenderError)
+  test('one offending line anywhere fails: there is no allow-list', () => {
+    expect(() => checkInternalReferences(new Map([['llms-full.txt', 'ok\nTULA-5']]))).toThrow(
+      /llms-full\.txt:2/
+    )
   })
 })

@@ -155,15 +155,6 @@ describe('resolveLink', () => {
     expect(() => resolveLink(from, target, environment)).toThrow('not published')
   })
 
-  test('the transitional switch sends such a link to GitHub', () => {
-    expect(
-      resolveLink('docs/quickstart.md', 'plans/phase-1.md', {
-        ...environment,
-        allowUnpublished: true,
-      })
-    ).toMatchObject({ kind: 'repository' })
-  })
-
   test('an anchor of a Markdown file the site does not render is checked as well', () => {
     expect(() =>
       resolveLink('docs/quickstart.md', '../packages/core/README.md#gone', environment)

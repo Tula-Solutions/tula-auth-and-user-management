@@ -449,14 +449,17 @@ The [Invitations](organization-profile.md#invitations) and
 both, and `client.organizations.invitations` and `client.organizations.domains` in
 `@tula-tech/core` are the calls under them.
 
-## Not built
+## Limits
 
-These are outside this version on purpose, so that you do not look for them: SAML and SCIM,
-billing and plans, settings or branding that differ per organization, nested organizations, DNS
-verification of a domain, and prebuilt organization screens in the Swift, Kotlin and Expo SDKs.
-Their clients have the calls (`organizations` on each) but draw nothing: see
-[Swift](swift.md#organizations), [Kotlin](kotlin.md#organizations) and
-[Expo](expo.md#organizations).
+- Organizations have no billing or plans, no settings or branding of their own, and cannot be
+  nested.
+- A domain is verified with an emailed code, not a DNS record ([verified domains](verified-domains.md)).
+- The Swift, Kotlin and Expo SDKs have the organization calls (`organizations` on each client)
+  but no prebuilt organization screens: see [Swift](swift.md#organizations),
+  [Kotlin](kotlin.md#organizations) and [Expo](expo.md#organizations).
+
+Single sign-on and directory sync for an organization are in [Enterprise SSO](enterprise-sso.md)
+and [SCIM](scim.md).
 
 ## See also
 

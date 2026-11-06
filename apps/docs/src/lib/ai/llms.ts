@@ -1,4 +1,3 @@
-import { REPO_BRANCH, REPO_URL } from '../config'
 import type { NavGroup, NavItem } from '../nav'
 import { fileUrl, twinUrl, type Urls } from './urls'
 
@@ -104,7 +103,6 @@ export function buildLlmsTxt(input: LlmsInput): string {
         ]
       : []),
   ]
-  const repository = `${REPO_URL}/tree/${REPO_BRANCH}`
   return [
     '# Tula Auth',
     '',
@@ -118,11 +116,6 @@ export function buildLlmsTxt(input: LlmsInput): string {
     ...own,
     '',
     ...sections,
-    '## Optional',
-    '',
-    `- [Architecture decisions](${repository}/docs/adr): one record per decision, with the reasoning the pages above link to.`,
-    `- [Plans](${repository}/docs/plans): what was built, in what order, and what was not verified.`,
-    '',
   ].join('\n')
 }
 
