@@ -292,3 +292,10 @@ describe('a proposal as the API answers it', () => {
     expect(ProposalSchema.safeParse({ ...proposal, ...change }).success).toBe(false)
   })
 })
+
+test('the rejected status is documented without a reason: a rejection takes none', async () => {
+  const source = await Bun.file(new URL('./proposal.ts', import.meta.url)).text()
+  const line = source.split('\n').find((l) => l.includes('`rejected`: '))
+  expect(line).toBeDefined()
+  expect(line ?? '').not.toMatch(/reason/i)
+})

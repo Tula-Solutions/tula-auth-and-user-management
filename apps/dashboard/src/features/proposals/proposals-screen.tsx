@@ -385,12 +385,14 @@ export function ProposalsScreen() {
                 </ul>
               )}
               <p
-                data-testid='proposals-no-dismiss'
+                data-testid='proposals-ending-note'
                 className='max-w-prose text-sm text-muted-foreground'
               >
-                A waiting proposal you do not want can be rejected. Otherwise it expires by itself
-                ten minutes after it was asked for, with nothing changed. Revoking the agent’s key,
-                under{' '}
+                {waiting.length > 0
+                  ? 'A waiting proposal you do not want can be rejected. Otherwise it '
+                  : 'A proposal '}
+                expires by itself ten minutes after it was asked for, with nothing changed. Revoking
+                the agent’s key, under{' '}
                 <EnvironmentLink to='/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'>
                   API keys
                 </EnvironmentLink>

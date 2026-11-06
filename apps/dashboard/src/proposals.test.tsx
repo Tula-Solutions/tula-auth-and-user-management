@@ -107,13 +107,21 @@ describe('the list', () => {
     expect(location()).toBe(`${DEV_PATH}/proposals`)
     await screen.findByText('No proposal is waiting')
     expect(screen.getByText('No earlier proposal: none has expired or been approved.')).toBeTruthy()
-    const note = screen.getByTestId('proposals-no-dismiss').textContent ?? ''
-    expect(note).toContain('can be rejected')
+    const note = screen.getByTestId('proposals-ending-note').textContent ?? ''
+    expect(note).not.toContain('can be rejected')
     expect(note).toContain('expires by itself ten minutes after it was asked for')
+    expect(note).toContain('ends all its proposals')
     expect(screen.queryAllByRole('button', { name: /dismiss|reject/i })).toHaveLength(0)
     expect(api.callsTo('GET', '/v1/admin/proposals').at(-1)?.headers.get(ENVIRONMENT)).toBe(
       IDS.development
     )
+  })
+
+  test('with a proposal waiting, the note says it can be rejected and the card has the button', async () => {
+    withProposals([{}])
+    const card = await onlyCard()
+    expect(screen.getByTestId('proposals-ending-note').textContent).toContain('can be rejected')
+    expect(within(card).getByRole('button', { name: /^Reject / })).toBeTruthy()
   })
 
   test('a waiting proposal says the server’s sentence, the exact operation, the target as it is now, the agent and the time left', async () => {
