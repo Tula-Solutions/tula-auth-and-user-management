@@ -21,6 +21,13 @@ answer inside a deadline.
 With a secret key. An environment has **one hook per point**; the server makes the signing
 secret and returns it **once**:
 
+<!-- tabs -->
+```sh
+curl -X POST "$TULA_API_URL/v1/admin/hooks" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{"point":"before_session","url":"https://api.example.com/tula/before-session"}'
+```
+
 <!-- snippet: examples/docs-snippets/admin.ts#hook-register -->
 ```ts
 const { data: hook } = await admin.call('createHook', {
@@ -37,13 +44,31 @@ await storeSecret(hook.secret)
 ```
 <!-- /snippet -->
 
-or without the SDK:
-
-```bash
-curl -X POST https://auth.example.com/v1/admin/hooks \
-  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-  -d '{"point":"before_session","url":"https://api.example.com/tula/before-session"}'
+<!-- snippet: examples/docs-snippets/python/hooks.py#hook-register -->
+```python
+body = {
+    # `before_sign_up`, `before_session` or `before_token`: one hook per point.
+    "point": "before_sign_up",
+    "url": "https://api.example.com/tula/before-sign-up",
+    # Optional: 2000 unless given, at least 100, never more than 5000.
+    "deadlineMs": 2000,
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/hooks",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    hook = json.load(response)
+# The only time the secret is returned: put it in your secret manager now.
+secret = hook["secret"]
 ```
+<!-- /snippet -->
+<!-- /tabs -->
 
 | Field | |
 | --- | --- |

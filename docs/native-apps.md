@@ -39,11 +39,38 @@ shows under "App signing key certificate".
 
 With a secret key:
 
+<!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
   -d '{ "platform": "ios", "teamId": "A1B2C3D4E5", "bundleId": "app.northline.ios" }'
 ```
+
+<!-- snippet: examples/docs-snippets/native-apps.ts#native-app-register -->
+```ts
+const { data: app } = await admin.call('createNativeApp', {
+  body: { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/native_apps.py#native-app-register -->
+```python
+body = {"platform": "ios", "teamId": "A1B2C3D4E5", "bundleId": "app.northline.ios"}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/native-apps",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    app = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 | Route | What it does |
 | --- | --- |
@@ -73,11 +100,38 @@ paths** of your domain that the app opens: each starts with `/`, holds letters, 
 `-`, `.`, `_`, `~` in segments joined by `/`, is at most 255 characters, and has no
 wildcard, no query, no fragment and no trailing slash. `/` alone is refused.
 
+<!-- tabs -->
 ```sh
 curl -X PATCH "$TULA_API_URL/v1/admin/native-apps/$APP_ID" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
   -d '{ "appLinkPaths": ["/oauth/callback"] }'
 ```
+
+<!-- snippet: examples/docs-snippets/native-apps.ts#native-app-link-paths -->
+```ts
+await admin.call('updateNativeApp', {
+  params: { id: appId },
+  body: { appLinkPaths: ['/oauth/callback'] },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/native_apps.py#native-app-link-paths -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/native-apps/{app_id}",
+    data=json.dumps({"appLinkPaths": ["/oauth/callback"]}).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PATCH",
+)
+with urllib.request.urlopen(request) as response:
+    app = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 What that does differs by platform, and the difference matters:
 

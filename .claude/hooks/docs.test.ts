@@ -1039,9 +1039,14 @@ describe('language tabs', () => {
   )) {
     for (const [method, operation] of Object.entries(item)) {
       if (operation.operationId) {
-        operations.set(operation.operationId, `${method.toUpperCase()} ${path}`)
+        operations.set(operation.operationId, `${method.toUpperCase()} ${shape(path)}`)
       }
     }
+  }
+
+  /** A path with every parameter (`{id}`, `$ID`, `<id>`, an f-string's `{id}`) written `{}`. */
+  function shape(path: string): string {
+    return path.replace(/\$\{?\w+\}?|<[^>]*>|\{[^}]*\}/g, '{}')
   }
 
   /** The `METHOD /path` a sample of a tabs group calls, or `undefined` for one it cannot read. */
@@ -1050,12 +1055,12 @@ describe('language tabs', () => {
       const operation = /admin\.(?:call|stream)\(\s*'(\w+)'/.exec(code)?.[1]
       return operation ? operations.get(operation) : undefined
     }
-    const path = /\/v1\/[\w\-/.]+/.exec(code)?.[0]
+    const path = /\/v1\/[^\s"'?]+/.exec(code)?.[0]
     const method =
       lang === 'python'
         ? /method="(\w+)"/.exec(code)?.[1]
         : (/-X (\w+)/.exec(code)?.[1] ?? (code.includes(' -d ') ? 'POST' : 'GET'))
-    return path && method ? `${method.toUpperCase()} ${path}` : undefined
+    return path && method ? `${method.toUpperCase()} ${shape(path)}` : undefined
   }
 
   test('every sample of a tabs group calls the same method and path', () => {

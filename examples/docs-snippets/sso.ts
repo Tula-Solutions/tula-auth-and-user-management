@@ -86,3 +86,36 @@ export async function setupLink(organizationId: string) {
   // #endregion
   return link.url
 }
+
+/** Create an OIDC connection for an organization's domain. */
+export async function createOidcConnection(organizationId: string) {
+  // #region sso-create-oidc
+  const { data: connection } = await admin.call('createSsoConnection', {
+    body: {
+      organizationId,
+      name: 'Acme Okta',
+      issuer: 'https://acme.okta.com',
+      clientId: '<client id>',
+      clientSecret: '<client secret>',
+      domains: ['acme.com'],
+    },
+  })
+  // #endregion
+  return connection
+}
+
+/** Create a SAML connection from the identity provider's metadata URL. */
+export async function createSamlFromMetadataUrl(organizationId: string) {
+  // #region sso-create-saml-url
+  const { data: connection } = await admin.call('createSsoConnection', {
+    body: {
+      organizationId,
+      protocol: 'saml',
+      name: 'Acme Entra',
+      saml: { metadataUrl: 'https://login.example.com/acme/metadata' },
+      domains: ['acme.com'],
+    },
+  })
+  // #endregion
+  return connection
+}

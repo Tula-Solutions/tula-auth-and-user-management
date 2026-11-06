@@ -522,3 +522,31 @@ export async function importUsers(rows: { email: string; bcryptHash: string; nam
   // #endregion
   return { data, refused }
 }
+
+/** Import users whose hashes are Firebase's scrypt, with the project's parameters. */
+export async function importFirebaseUsers() {
+  // #region user-import-firebase
+  const { data } = await admin.call('importUsers', {
+    body: {
+      firebaseScrypt: {
+        signerKey: '<base64_signer_key>',
+        saltSeparator: '<base64_salt_separator>',
+        rounds: 8,
+        memCost: 14,
+      },
+      users: [
+        {
+          email: 'maya@northline.app',
+          emailVerified: true,
+          password: {
+            algorithm: 'firebase_scrypt',
+            hash: '<passwordHash>',
+            params: { salt: '<salt>' },
+          },
+        },
+      ],
+    },
+  })
+  // #endregion
+  return data
+}

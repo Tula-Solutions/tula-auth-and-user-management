@@ -180,11 +180,33 @@ API key belongs to) has a settings document, read and replaced with its secret k
 
 Read the document; the `ETag` is its revision:
 
-```bash
-curl -si http://localhost:3003/v1/admin/settings -H "Authorization: Bearer $TULA_SECRET_KEY"
+<!-- tabs -->
+```sh
+curl -si "$TULA_API_URL/v1/admin/settings" -H "Authorization: Bearer $TULA_SECRET_KEY"
 # ETag: "0"
 # {"revision":0,"settings":{"version":1,"app":{"name":"Tula","supportEmail":null},"password":{…},…}}
 ```
+
+<!-- snippet: examples/docs-snippets/self-host.ts#self-host-settings-read -->
+```ts
+const { data, etag } = await admin.call('getEnvironmentSettings')
+// etag: '"0"', data: { revision: 0, settings: { version: 1, … } }
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/self_host.py#self-host-settings-read -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/settings",
+    headers={"Authorization": f"Bearer {SECRET_KEY}"},
+    method="GET",
+)
+with urllib.request.urlopen(request) as response:
+    etag = response.headers["ETag"]  # '"0"'
+    document = json.load(response)  # {"revision": 0, "settings": {"version": 1, …}}
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 Replace it, naming the revision you read in `If-Match`. The body is the **whole** document:
 anything you leave out goes back to its default, and an unknown key is refused. Two defaults
@@ -208,8 +230,9 @@ If the API logs `stored environment settings held list entries that are not vali
 ignored`, a stored origin or redirect URL is one this version does not accept. The environment
 keeps working without those entries; read the settings and `PUT` them back to clean the row.
 
-```bash
-curl -s -X PUT http://localhost:3003/v1/admin/settings \
+<!-- tabs -->
+```sh
+curl -s -X PUT "$TULA_API_URL/v1/admin/settings" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" \
   -H 'Content-Type: application/json' -H 'If-Match: "0"' \
   -d '{
@@ -217,6 +240,39 @@ curl -s -X PUT http://localhost:3003/v1/admin/settings \
     "urls": { "allowedOrigins": ["https://app.acme.example"] }
   }'
 ```
+
+<!-- snippet: examples/docs-snippets/self-host.ts#self-host-settings-replace -->
+```ts
+await admin.call('replaceEnvironmentSettings', {
+  headers: { 'If-Match': ifMatch(revision) },
+  body: {
+    app: { name: 'Acme', supportEmail: 'help@acme.example' },
+    urls: { allowedOrigins: ['https://app.acme.example'] },
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/self_host.py#self-host-settings-replace -->
+```python
+body = {
+    "app": {"name": "Acme", "supportEmail": "help@acme.example"},
+    "urls": {"allowedOrigins": ["https://app.acme.example"]},
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/settings",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+        "If-Match": etag,
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 Without `If-Match` the answer is 428 (`precondition.required`); with a revision that is no
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
@@ -252,10 +308,31 @@ A user who has lost both their authenticator and their backup codes cannot get i
 that would turn two factors back into one. Reset them with the secret key, which also signs
 them out everywhere and emails them:
 
-```bash
-curl -i -X DELETE "$TULA_URL/v1/admin/users/$USER_ID/factors" \
+<!-- tabs -->
+```sh
+curl -i -X DELETE "$TULA_API_URL/v1/admin/users/$USER_ID/factors" \
   -H "Authorization: Bearer $TULA_SECRET_KEY"
 ```
+
+<!-- snippet: examples/docs-snippets/admin.ts#reset-factors -->
+```ts
+// Removes the user's authenticator, backup codes and passkeys, and signs them out everywhere.
+await admin.call('resetUserFactors', { params: { userId } })
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/self_host.py#self-host-reset-factors -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/users/{user_id}/factors",
+    headers={"Authorization": f"Bearer {SECRET_KEY}"},
+    method="DELETE",
+)
+with urllib.request.urlopen(request) as response:
+    can_still_sign_in = response.headers["x-tula-can-still-sign-in"]
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 The reset removes the user's passkeys too, even one that was their only way to sign in. The
 answer is `204` with the header `x-tula-can-still-sign-in`: on `false` nothing the environment
@@ -430,11 +507,35 @@ How long a session lives, and how it is held, is set per environment in `session
   app and the API must be on the same site, and a backend of yours sees the cookie only when
   the API is served under the app's own host (a reverse proxy). It checks it with:
 
-  ```bash
-  curl -s -X POST http://localhost:3003/v1/admin/sessions/verify \
-    -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
-    -d '{"token":"<the cookie\'s value>"}'
-  ```
+<!-- tabs -->
+```sh
+curl -s -X POST "$TULA_API_URL/v1/admin/sessions/verify" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
+  -d '{"token":"<cookie value>"}'
+```
+
+<!-- snippet: examples/docs-snippets/self-host.ts#self-host-verify-session -->
+```ts
+const { data: claims } = await admin.call('verifySession', { body: { token: cookie } })
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/self_host.py#self-host-verify-session -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/sessions/verify",
+    data=json.dumps({"token": cookie}).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    claims = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
   which answers with the claims an access token would carry (`sub`, `sid`, `auth_time`,
   `amr`, `sp`), or 401. It costs one database read per request; keep `hybrid` unless you need
@@ -442,10 +543,29 @@ How long a session lives, and how it is held, is set per environment in `session
 - **`maxPerUser`** limits a user's live sessions. With `refuse_newest` a user at the limit is
   told to sign out elsewhere or reset their password; you can end their sessions yourself:
 
-  ```bash
-  curl -s -X DELETE http://localhost:3003/v1/admin/users/<user id>/sessions \
-    -H "Authorization: Bearer $TULA_SECRET_KEY"
-  ```
+<!-- tabs -->
+```sh
+curl -s -X DELETE "$TULA_API_URL/v1/admin/users/$USER_ID/sessions" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY"
+```
+
+<!-- snippet: examples/docs-snippets/admin.ts#revoke-sessions -->
+```ts
+await admin.call('revokeUserSessions', { params: { userId } })
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/self_host.py#self-host-revoke-sessions -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/users/{user_id}/sessions",
+    headers={"Authorization": f"Bearer {SECRET_KEY}"},
+    method="DELETE",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
 - A longer timeout, token lifetime or step-up window, a raised limit and a profile opened to
   clients are recorded in the audit log with `weakened: true`.
 
