@@ -94,8 +94,8 @@ export const INVITATIONS_MANAGE_PERMISSION: SystemPermission = 'org:sys:invitati
 export const ORGANIZATION_MANAGE_PERMISSION: SystemPermission = 'org:sys:organization:manage'
 
 /**
- * The permission that lets a member delete the organization through the client routes (ADR
- * 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+ * The permission that lets a member delete the organization through the client routes.
+ * Read from the membership now, never from a token's claims alone.
  */
 export const ORGANIZATION_DELETE_PERMISSION: SystemPermission = 'org:sys:organization:delete'
 

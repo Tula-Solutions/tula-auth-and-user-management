@@ -13,6 +13,9 @@ describe('findInternalReferences', () => {
     '[plan](docs/plans/phase-1.md)',
     '[map](../codebase-map/README.md)',
     '<a href="/docs/internal/releasing/">releasing</a>',
+    'delete the organization (Orgs 07). Read from',
+    'invitation token (Orgs 04).',
+    'the SAML verifier (SSO 01)',
   ])('flags %s', (line) => {
     expect(findInternalReferences(new Map([['a.md', line]]))).toHaveLength(1)
   })
@@ -22,8 +25,18 @@ describe('findInternalReferences', () => {
     'the H-12 heading and TULA- alone',
     'Tula auth plans for the future',
     'a link to docs/methods/password.md',
+    'Orgs 7 and SSO login are fine',
+    'the orgs 07 lower case word',
+    'Choose SSO 1 or two',
   ])('lets %s through', (line) => {
     expect(findInternalReferences(new Map([['a.md', line]]))).toEqual([])
+  })
+
+  test('flags an id split by a line break, at the line where it starts', () => {
+    const found = findInternalReferences(
+      new Map([['a.md', 'fine\nthrough the client routes (ADR\n0065).\nok']])
+    )
+    expect(found.map((hit) => hit.line)).toEqual([2])
   })
 
   test('reports the file, the line number and the text', () => {

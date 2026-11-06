@@ -5951,8 +5951,8 @@ const OAuthStartSchema
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member delete the organization through the client routes (ADR
-0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member delete the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_DELETE_PERMISSION: SystemPermission
@@ -6003,8 +6003,7 @@ const ORGANIZATION_ID_CLAIM: "org_id"
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-Name of the URL-fragment parameter carrying an organization invitation's token
-Orgs 04).
+Name of the URL-fragment parameter carrying an organization invitation's token.
 
 The link in the invitation email is the app's own redirect URL followed by
 `#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
@@ -15205,8 +15204,7 @@ const ticket = new URLSearchParams(location.hash.slice(1)).get(OAUTH_TICKET_PARA
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-Name of the URL-fragment parameter carrying an organization invitation's token
-Orgs 04).
+Name of the URL-fragment parameter carrying an organization invitation's token.
 
 The link in the invitation email is the app's own redirect URL followed by
 `#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
@@ -15723,8 +15721,8 @@ const MEMBERSHIPS_READ_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member delete the organization through the client routes (ADR
-0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member delete the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_DELETE_PERMISSION: SystemPermission

@@ -300,8 +300,7 @@ const Organizations = z.object({
   /**
    * Whether a signed-in user may create an organization themselves. `false` (the default)
    * reserves creation for the operator's backend and the dashboard. Switching it on is a
-   * weakening. (The client route that creates one is Orgs 07; this is the switch it will
-   * read.)
+   * weakening. The client route that creates an organization reads this switch.
    */
   allowUserCreated: z.boolean().default(false),
   /**

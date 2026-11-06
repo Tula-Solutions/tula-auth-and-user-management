@@ -1,3 +1,4 @@
+import { EXCLUDED_DIRECTORIES } from './config'
 import { RenderError } from './markdown'
 
 /**
@@ -5,11 +6,15 @@ import { RenderError } from './markdown'
  * An ADR, a ticket, an audit finding and a link into a directory the site leaves out mean
  * nothing outside the repository, and the link would not resolve there.
  */
+const DIRECTORIES = EXCLUDED_DIRECTORIES.join('|')
 const INTERNAL = [
-  /\bADR[ -]?\d{4}\b/i,
-  /\bTULA-\d+\b/,
-  /\bH-\d{3}\b/,
-  /docs\/(?:adr|plans|codebase-map|internal)\b|(?:^|[/"'(])(?:adr|plans|codebase-map|internal)\/[\w.-]+/,
+  // `\s` and not a space: a line wrap in a comment can split "ADR" from its number.
+  /\bADR[\s-]?\d{4}\b/gi,
+  /\bTULA-\d+\b/g,
+  /\bH-\d{3}\b/g,
+  // A plan's step id, as the headings of docs/plans name them ("Orgs 07", "SSO 03").
+  /\b(?:Orgs|SSO)\s\d{2}\b/g,
+  new RegExp(`docs/(?:${DIRECTORIES})\\b|(?:^|[/"'(])(?:${DIRECTORIES})/[\\w.-]+`, 'gm'),
 ]
 
 /** One line of a published file that names the repository's bookkeeping. */
@@ -28,11 +33,16 @@ export interface InternalReference {
 export function findInternalReferences(files: ReadonlyMap<string, string>): InternalReference[] {
   const found: InternalReference[] = []
   for (const [file, text] of files) {
-    text.split('\n').forEach((line, index) => {
-      if (INTERNAL.some((pattern) => pattern.test(line))) {
-        found.push({ file, line: index + 1, text: line.trim().slice(0, 160) })
+    const lines = new Set<number>()
+    for (const pattern of INTERNAL) {
+      for (const match of text.matchAll(pattern)) {
+        lines.add(text.slice(0, match.index).split('\n').length)
       }
-    })
+    }
+    const all = text.split('\n')
+    for (const line of [...lines].sort((x, y) => x - y)) {
+      found.push({ file, line, text: (all[line - 1] ?? '').trim().slice(0, 160) })
+    }
   }
   return found
 }
