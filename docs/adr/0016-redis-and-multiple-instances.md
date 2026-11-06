@@ -151,3 +151,14 @@ every timer. The retention job runs on one instance at a time through a Postgres
   and clients should treat it as "retry shortly".
 - With `REDIS_URL` unset (`local`, `dev`) everything in "Context" still applies; that
   configuration is for one instance.
+
+## Addendum: the audit export's slots (TULA-197)
+
+An environment may have `MAX_CONCURRENT_EXPORTS` audit-log exports streaming at once, counted
+across every instance. The rate limiter's `hit` cannot express that (a window never gives a
+count back), so `ExportLeases` is a port of its own: `acquire` takes a slot as a lease with a
+term, `renew` extends it while the stream is read, `release` returns it when the stream ends,
+fails or the client leaves. A process that dies mid-export frees its slot when the term ends.
+The Redis key is `tula:export:<environment id>` (a hash of lease id to expiry) and holds nothing
+else. When Redis cannot answer, an export is refused with `service.unavailable`; nothing counts
+in process memory.

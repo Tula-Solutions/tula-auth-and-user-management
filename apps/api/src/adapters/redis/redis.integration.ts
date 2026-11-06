@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test'
+import { describeExportLeases } from '~/adapters/export-leases.suite'
 import { describeLockout, SUITE_LOCKOUT_POLICY } from '~/adapters/lockout.suite'
 import { FixedClock } from '~/adapters/memory/clock'
 import { describeProofReplayGuard } from '~/adapters/proof-replay.suite'
 import { describeRateLimiter } from '~/adapters/rate-limiter.suite'
 import { CLOCK_SKEW_ALLOWANCE_MS } from '~/adapters/redis/commands'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
+import { RedisExportLeases } from '~/adapters/redis/export-leases'
 import { RedisLockout } from '~/adapters/redis/lockout'
 import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
@@ -95,6 +97,32 @@ if (!reachable) {
     }
   })
 
+  describeExportLeases('redis', async () => {
+    const clock = new FixedClock()
+    return {
+      clock,
+      leases: new RedisExportLeases(first, clock, namespace),
+      peer: new RedisExportLeases(second, clock, namespace),
+      // A real server expires the key by its own clock, not the test's.
+      movesTime: false,
+    }
+  })
+
+  describe('redis: export leases', () => {
+    test('a third export on another connection is refused, and its key expires on its own', async () => {
+      const clock = new FixedClock()
+      const env = crypto.randomUUID()
+      const a = new RedisExportLeases(first, clock, namespace)
+      const b = new RedisExportLeases(second, clock, namespace)
+      expect(await a.acquire(env, 2, 60_000)).not.toBeNull()
+      expect(await b.acquire(env, 2, 60_000)).not.toBeNull()
+      expect(await a.acquire(env, 2, 60_000)).toBeNull()
+      const ttl = (await first.send('PTTL', [`${namespace}:export:${env}`])) as number
+      expect(ttl).toBeGreaterThan(0)
+      expect(ttl).toBeLessThanOrEqual(60_000)
+    })
+  })
+
   describe('redis: the proof replay guard', () => {
     test('its key expires on its own, a little after the proof could last be accepted', async () => {
       const clock = new FixedClock()
@@ -175,6 +203,7 @@ if (!reachable) {
         () => new RedisRevokedSessions(down, clock, namespace).add('s1', clock.now()),
         () => new RedisSigningKeyVersions(down, namespace).current('e1'),
         () => new RedisProofReplayGuard(down, clock, namespace).remember('p1', clock.now()),
+        () => new RedisExportLeases(down, clock, namespace).acquire('e1', 2, 1_000),
       ]
       for (const attempt of attempts) {
         const error = await attempt().then(
