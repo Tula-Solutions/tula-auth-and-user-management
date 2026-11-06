@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { buildErrorCodesPage, errorCodeEntries } from './error-codes'
-import { buildIndex, MAX_TEXT, score, search } from './search'
+import { buildIndex, label, MAX_TEXT, score, search } from './search'
 
 const errors = buildErrorCodesPage(errorCodeEntries())
 const pages = [
@@ -95,5 +95,64 @@ describe('search', () => {
 
   test('the number of results is limited', () => {
     expect(search(index, 'a', 3).length).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('a query that names a page leads with that page', () => {
+  const page = (title: string, route: string, extra: string[]) => ({
+    title,
+    route,
+    sections: [
+      { id: null, title, text: `About ${title}.` },
+      ...extra.map((heading) => ({
+        id: heading.toLowerCase().replace(/\s+/g, '-'),
+        title: heading,
+        text: '',
+      })),
+    ],
+  })
+  // Other pages come first and have sections whose headings contain the word, as the real docs do.
+  const site = buildIndex(
+    [
+      page('Sign-in methods', '/methods/', [
+        'passkey',
+        'Passkeys as a second step',
+        'Sessions after sign-in',
+      ]),
+      page('Organizations', '/organizations/', ['SCIM provisioning setup', 'Webhooks for members']),
+      page('Quickstart', '/quickstart/', ['Self-hosting the server', 'Self-host with Compose']),
+      page('Passkeys', '/methods/passkeys/', []),
+      page('Sessions', '/methods/sessions/', []),
+      page('Webhooks', '/webhooks/', []),
+      page('SCIM provisioning', '/scim/', []),
+      page('Self-hosting Tula Auth', '/self-host/', []),
+    ],
+    '/'
+  )
+
+  test.each([
+    ['passkey', '/methods/passkeys/'],
+    ['sessions', '/methods/sessions/'],
+    ['webhooks', '/webhooks/'],
+    ['scim', '/scim/'],
+    ['self-host', '/self-host/'],
+  ])('%s', (query, route) => {
+    expect(search(site, query)[0]?.u).toBe(route)
+  })
+})
+
+describe('label', () => {
+  test('a heading match shows the heading and its page', () => {
+    expect(label({ t: 'Switch it on', p: 'Password', u: '/m/#x', x: '' })).toEqual({
+      title: 'Switch it on',
+      where: 'Password',
+    })
+  })
+
+  test('a page match shows the page title and says it is a page', () => {
+    expect(label({ t: 'Password', p: 'Password', u: '/m/', x: '' })).toEqual({
+      title: 'Password',
+      where: 'Page',
+    })
   })
 })

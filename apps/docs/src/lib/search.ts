@@ -75,6 +75,13 @@ export function score(entry: SearchEntry, query: string): number {
   const page = entry.p.toLowerCase()
   const text = entry.x.toLowerCase()
   let total = title === whole ? 1000 : 0
+  // A page whose title starts with the query (`passkey` for Passkeys, `self-host` for
+  // Self-hosting) leads, ahead of any section that merely contains the word. A page's own
+  // entry is the one with no anchor.
+  // It outranks even a heading equal to the query (a reference section named `passkey`).
+  if (!entry.u.includes('#') && loose(title).startsWith(loose(whole))) {
+    total = 2000
+  }
   if (total === 0 && matches(title, whole)) {
     total += 100
   }
@@ -90,6 +97,16 @@ export function score(entry: SearchEntry, query: string): number {
     }
   }
   return total
+}
+
+/**
+ * What a result says about itself: its title and where it is.
+ *
+ * @param entry - An index entry.
+ * @returns The heading (or page title) and the page it is on, or `Page` for a page itself.
+ */
+export function label(entry: SearchEntry): { title: string; where: string } {
+  return { title: entry.t, where: entry.u.includes('#') ? entry.p : 'Page' }
 }
 
 /**

@@ -303,6 +303,14 @@ test.describe('the documentation site', () => {
     await expect(page.locator('[id="password.too_short"]')).toBeInViewport()
   })
 
+  test('searching a page by name leads with that page', async ({ page }) => {
+    await page.goto(at('/'))
+    await page.getByRole('searchbox', { name: 'Search the documentation' }).fill('passkey')
+    const first = page.getByRole('list', { name: 'Search results' }).getByRole('link').first()
+    await expect(first).toHaveAttribute('href', at('/methods/passkeys/'))
+    await expect(first).toContainText('Passkeys')
+  })
+
   test('search finds prose, and Escape closes the results', async ({ page }) => {
     await page.goto(at('/'))
     const box = page.getByRole('searchbox', { name: 'Search the documentation' })
