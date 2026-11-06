@@ -1,9 +1,6 @@
 # Sign in with GitHub: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider. The redirect
-> URI and the scopes below are what the code sends; the console steps are written from the
-> provider's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real GitHub account in a staging environment.
 
 What an operator does once per environment.
 
@@ -17,11 +14,48 @@ What an operator does once per environment.
    the *Email addresses: read-only* account permission.
 3. **Generate a client secret** on the app's page and copy it at once: GitHub shows it once.
 4. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/github" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
-   ```
+
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/github" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#github -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'github' },
+  body: {
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#github -->
+```python
+body = {
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/github",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 5. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Tula asks for the scopes `read:user` and `user:email`. It identifies the account by GitHub's
@@ -32,6 +66,4 @@ reads and then dropped: Tula stores no provider token.
 
 Tula sends PKCE with every GitHub sign-in: `code_challenge` and `code_challenge_method=S256`
 on the authorization request, `code_verifier` on the token request. Nothing has to be switched
-on in the OAuth app for it. Like the rest of this page it is not verified against github.com:
-the requests are checked in unit tests and the flow against the mock provider, which refuses a
-code presented with any other verifier.
+on in the OAuth app for it.

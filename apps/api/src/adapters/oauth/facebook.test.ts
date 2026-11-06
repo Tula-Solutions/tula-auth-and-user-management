@@ -10,13 +10,14 @@ import {
   FACEBOOK_SCOPES,
   isFacebookUserId,
 } from './facebook'
+import { MAX_PROFILE_BYTES } from './profile-read'
 
 const REDIRECT_URI = 'https://auth.northline.app/v1/oauth/callback/facebook'
 const CLIENT_ID = '1234567890123456'
 const SECRET = 'facebook-app-secret'
 const ACCESS_TOKEN = 'facebook-access-token-canary'
-/** Where `arctic`'s client exchanges the code: the version in it is the library's. */
-const TOKEN_URL = 'https://graph.facebook.com/v16.0/oauth/access_token'
+/** Where the code is exchanged: on the pinned Graph API version, like the profile read. */
+const TOKEN_URL = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/oauth/access_token`
 const PROOF = createHmac('sha256', SECRET).update(ACCESS_TOKEN).digest('hex')
 const USER_URL = `https://graph.facebook.com/v25.0/me?fields=id%2Cname&appsecret_proof=${PROOF}`
 const credentials = { clientId: CLIENT_ID, clientSecret: SECRET }
@@ -68,7 +69,7 @@ function facebook(overrides: Record<string, Answer> = {}): Call[] {
         url,
         body: input instanceof Request ? await input.clone().text() : '',
         headers: input instanceof Request ? input.headers : new Headers(init?.headers),
-        signal: init?.signal ?? undefined,
+        signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
       })
       const route = routes[url]
       if (!route) {
@@ -115,7 +116,9 @@ describe('the authorization URL', () => {
         redirectUri: REDIRECT_URI,
       })
     )
-    expect(url.origin + url.pathname).toBe('https://www.facebook.com/v16.0/dialog/oauth')
+    expect(url.origin + url.pathname).toBe(
+      `https://www.facebook.com/${FACEBOOK_GRAPH_VERSION}/dialog/oauth`
+    )
     expect(Object.fromEntries(url.searchParams)).toEqual({
       response_type: 'code',
       client_id: CLIENT_ID,
@@ -281,6 +284,11 @@ describe('refusals', () => {
     [
       'a token endpoint that is down',
       { [TOKEN_URL]: () => new Response('x', { status: 502 }) },
+      'unavailable',
+    ],
+    [
+      'a token answer that is not JSON',
+      { [TOKEN_URL]: () => new Response('<html>', { status: 200 }) },
       'unavailable',
     ],
     [
@@ -451,6 +459,27 @@ describe('a Facebook that never answers', () => {
       await failureOf(createFacebookProvider(TIMEOUT).exchange(credentials, exchangeInput))
     ).toBe('unavailable')
     expect(performance.now() - since).toBeLessThan(2000)
+  })
+
+  test('the token request is cancelled at the deadline, not left running', async () => {
+    const calls = facebook({ [TOKEN_URL]: hang })
+    expect(
+      await failureOf(createFacebookProvider(TIMEOUT).exchange(credentials, exchangeInput))
+    ).toBe('unavailable')
+    await Bun.sleep(30)
+    expect(calls.find((call) => call.url === TOKEN_URL)?.signal?.aborted).toBe(true)
+  })
+
+  test('a token answer over the size cap is unavailable', async () => {
+    const calls = facebook({
+      [TOKEN_URL]: () =>
+        jsonResponse({ access_token: ACCESS_TOKEN, padding: 'a'.repeat(MAX_PROFILE_BYTES) }),
+    })
+    expect(await failureOf(createFacebookProvider().exchange(credentials, exchangeInput))).toBe(
+      'unavailable'
+    )
+    // Refused at the token answer: the profile is never asked for with such a token.
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL])
   })
 
   test('a body that never finishes is unavailable too', async () => {

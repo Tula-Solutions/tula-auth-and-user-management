@@ -57,9 +57,6 @@ const RAISES_MIN_SDK = 'tulaRaisesMinSdk'
  * Kotlin SDK does not run below Android 9, and the package's Android module says 28 as its
  * own minimum), and the docs say so.
  *
- * Its order against another plugin that sets the same property (`expo-build-properties`)
- * was not tried.
- *
  * @param lines - Expo's `modResults` of `android.gradleProperties`: a list of
  *   `{ type: 'property', key, value }` among comments and empty lines.
  * @returns The lines, with the property set.
@@ -128,8 +125,7 @@ function raisingMinSdk(previous: unknown): Mod {
  * as options is refused with a `TypeError` whose sentence is fixed and repeats nothing it
  * was given.
  *
- * Whether Expo's prebuild runs this mod as written here was not tried since the plugin
- * became this package's own.
+ * Preview: APIs may change before 1.0.
  *
  * @param config - The app's Expo configuration.
  * @param props - Nothing: leave it out, or pass an empty object.

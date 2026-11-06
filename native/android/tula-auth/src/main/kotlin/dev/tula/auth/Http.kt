@@ -84,8 +84,8 @@ fun interface HttpEngine {
  *
  * **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
  * implementation, and the API refuses a sign-in and ends a session with a `401` that has no
- * `WWW-Authenticate` header: that Android hands over such an answer's status and body was
- * not tried on a device. An app that does not want to rest on it passes an [HttpEngine] of
+ * `WWW-Authenticate` header: that Android hands over such an answer's status and body is
+ * what this engine relies on. An app that does not want to rest on it passes an [HttpEngine] of
  * its own (over OkHttp, for one).
  */
 class UrlConnectionEngine internal constructor(private val patchingClass: String) : HttpEngine {

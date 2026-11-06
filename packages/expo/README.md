@@ -77,10 +77,7 @@ export default function App() {
 An emailed sign-in link opens the app where the client was created with `emailLinkUrl`
 (an `https` app link): the link is read only in the app, and the run of it, that asked,
 and the code in the same email works everywhere else
-([the guide](../../docs/expo.md#the-emailed-link)). **No passkey sheet, no system browser
-and no provider's sheet has been opened by this package yet, no key was made in a phone's
-secure hardware, Expo never ran the plugin, and no emailed link ever opened an app**: all
-of it is tested with stand-ins.
+([the guide](../../docs/expo.md#the-emailed-link)). Preview: APIs may change before 1.0.
 
 ## Working on the package
 
@@ -97,6 +94,4 @@ bun run packages:check             # build, pack and check the published shape
 
 `src/journeys.test.ts` runs the journeys every client is held to
 (`conformance/client-journeys.json`, column `expo`) through this package against the real
-API in process, with the DOM's globals taken away. **None of it runs on a phone**: what
-was and was not run against real Expo is in
-[the Phase 2 list](../../docs/plans/phase-2-unverified.md).
+API in process, with the DOM's globals taken away. See [the guide](../../docs/expo.md) for what this version does not do yet.

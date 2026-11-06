@@ -13,12 +13,55 @@ page with the values to paste, from [Okta](../sso-providers/okta.md) to [Ping](.
    must be on too.
 2. Verify the organization's domain, then create a connection with the admin API (a secret key):
 
-```bash
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
 curl -X POST "$TULA_API_URL/v1/admin/sso-connections" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{"organizationId":"<org id>","name":"Acme Okta","issuer":"https://acme.okta.com",
        "clientId":"<client id>","clientSecret":"<client secret>","domains":["acme.com"]}'
 ```
+
+<!-- snippet: examples/docs-snippets/sso.ts#sso-create-oidc -->
+```ts
+const { data: connection } = await admin.call('createSsoConnection', {
+  body: {
+    organizationId,
+    name: 'Acme Okta',
+    issuer: 'https://acme.okta.com',
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+    domains: ['acme.com'],
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/sso.py#sso-create-oidc -->
+```python
+body = {
+    "organizationId": "<org id>",
+    "name": "Acme Okta",
+    "issuer": "https://acme.okta.com",
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+    "domains": ["acme.com"],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/sso-connections",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    connection = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 3. Give the provider the redirect URI `PUBLIC_URL/v1/sso/callback/<connection id>`.
 4. `PATCH` the connection to `status: "active"`. A connection moves draft, active, disabled and never back
@@ -36,12 +79,51 @@ document), `metadataUrl` (fetched by the server under the Outbound rules and fet
 and one or two `certificates`). Only **signing** certificates are taken, at most two; a DTD or an entity in
 the metadata is refused (`sso.saml_invalid`).
 
-```bash
+<!-- tabs -->
+```sh
 curl -X POST "$TULA_API_URL/v1/admin/sso-connections" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{"organizationId":"<org id>","protocol":"saml","name":"Acme Entra",
        "saml":{"metadataUrl":"https://login.example.com/acme/metadata"},"domains":["acme.com"]}'
 ```
+
+<!-- snippet: examples/docs-snippets/sso.ts#sso-create-saml-url -->
+```ts
+const { data: connection } = await admin.call('createSsoConnection', {
+  body: {
+    organizationId,
+    protocol: 'saml',
+    name: 'Acme Entra',
+    saml: { metadataUrl: 'https://login.example.com/acme/metadata' },
+    domains: ['acme.com'],
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/sso.py#sso-create-saml-url -->
+```python
+body = {
+    "organizationId": "<org id>",
+    "protocol": "saml",
+    "name": "Acme Entra",
+    "saml": {"metadataUrl": "https://login.example.com/acme/metadata"},
+    "domains": ["acme.com"],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/sso-connections",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    connection = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 The answer's `saml` object holds what to give the provider: `spEntityId`, `acsUrl` (HTTP-POST binding) and
 `spMetadataUrl`, which serves SP metadata (entity id, the ACS, the `emailAddress` NameID format, signed

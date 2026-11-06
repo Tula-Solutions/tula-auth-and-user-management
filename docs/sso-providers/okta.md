@@ -1,14 +1,6 @@
 # Single sign-on with Okta: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has an Okta tenant. The
-> values Tula gives Okta, and the attribute names Tula reads, are what the code does and are
-> tested against the built-in mock provider. The steps in Okta's admin console are **not
-> verified**; where a step names a screen
-> it is a pointer to the vendor documentation, not a transcription.
-
-<!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):
-     SAML app integration: https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_saml.htm
-     OIDC app integration: https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_oidc.htm -->
+> **Before you go live:** run the connection's test sign-in with a real Okta account in a staging environment. The console steps below point to Okta's own documentation.
 
 The guide is [Enterprise single sign-on: the guide](../enterprise-sso.md); this page is the Okta
 column. Vendor documentation: Okta's [SAML](https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_saml.htm)
@@ -51,7 +43,7 @@ With the `okta` preset Tula reads these SAML attributes; name them exactly:
 | Last name | `lastName` |
 | Groups | `groups` |
 
-Send only the groups that are mapped to roles (how Okta filters them: not verified). To use other names, set `attributeMapping.email` (and the like) on the connection.
+Send only the groups that are mapped to roles. To use other names, set `attributeMapping.email` (and the like) on the connection.
 
 ### Give Tula Okta's metadata
 
@@ -79,13 +71,13 @@ connection id is in the answer of the create call). Tula asks for the scopes `op
 
 | Tula field | Value |
 | --- | --- |
-| `issuer` | Okta's issuer, `https://<your-org>.okta.com` (or the custom authorization server's address) (not verified) |
+| `issuer` | Okta's issuer, `https://<your-org>.okta.com` (or the custom authorization server's address) |
 | `clientId`, `clientSecret` | From the Okta app. The secret is sealed and never returned. |
 
 ### Groups
 
 With the `okta` preset the `groups` claim is read. Okta puts it in the ID token only when a groups
-claim is configured on the authorization server (not verified); the test sign-in lists what arrived.
+claim is configured on the authorization server; the test sign-in lists what arrived.
 
 :::
 

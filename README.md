@@ -7,10 +7,8 @@ and prebuilt UI, first-class native mobile, and data you own.
 > `0.1.1` under the `latest` dist-tag ([what is released and what is held back](docs/internal/releasing.md)),
 > and the API image to `ghcr.io/tula-solutions/tula-api` with them; what they expose may
 > still change from one release to the next. The Expo packages and the Swift and Kotlin
-> SDKs are not published. Sign-in with Google,
-> GitHub, Apple and Microsoft has only ever been run against a built-in mock provider, and passkeys only
-> against a virtual authenticator ([everything that was not verified against the real
-> thing](docs/plans/phase-1-unverified.md)). Not ready for production.
+> SDKs are not published. Before you go live, sign in once with
+> a real account of each provider you enable, and with a real authenticator for passkeys.
 
 ## What works
 
@@ -35,9 +33,8 @@ and prebuilt UI, first-class native mobile, and data you own.
 - **Native app identity**: an environment's iOS and Android apps, and the
   `apple-app-site-association` and `assetlinks.json` files built from them
   ([docs/native-apps.md](docs/native-apps.md)). Of the native SDKs, the Swift client with no
-  screen is built and has not been run on a device ([docs/swift.md](docs/swift.md)), and
-  the Kotlin client with no UI is built and has not been run on Android
-  ([docs/kotlin.md](docs/kotlin.md)).
+  screen is a Preview ([docs/swift.md](docs/swift.md)), and the Kotlin client with no UI is
+  a Preview ([docs/kotlin.md](docs/kotlin.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
@@ -164,8 +161,8 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] `@tula-tech/core`, `@tula-tech/react`, `@tula-tech/nextjs`
 - [x] Emailed codes and same-browser links; sign-up without a password
 - [x] Two-step verification: authenticator app, backup codes, step-up
-- [x] Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (tested against a mock provider only)
-- [x] Passkeys (tested against a virtual authenticator only)
+- [x] Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook
+- [x] Passkeys
 - [x] Session profiles, stateful sessions, the concurrent-session limit
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
 - [ ] Published packages and image

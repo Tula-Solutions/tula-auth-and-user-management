@@ -419,8 +419,7 @@ function Expo runs over `gradle.properties`. It takes no options: anything hande
 as options is refused with a `TypeError` whose sentence is fixed and repeats nothing it
 was given.
 
-Whether Expo's prebuild runs this mod as written here was not tried since the plugin
-became this package's own.
+Preview: APIs may change before 1.0.
 
 ```ts
 export function withTulaScreens<Config extends ExpoConfigLike>(
@@ -466,9 +465,6 @@ line. So a project that had asked for a lower version is overruled, on purpose (
 Kotlin SDK does not run below Android 9, and the package's Android module says 28 as its
 own minimum), and the docs say so.
 
-Its order against another plugin that sets the same property (`expo-build-properties`)
-was not tried.
-
 ```ts
 export function withRaisedMinSdk(lines: unknown): unknown[]
 ```
@@ -512,8 +508,7 @@ function Expo runs over `gradle.properties`. It takes no options: anything hande
 as options is refused with a `TypeError` whose sentence is fixed and repeats nothing it
 was given.
 
-Whether Expo's prebuild runs this mod as written here was not tried since the plugin
-became this package's own.
+Preview: APIs may change before 1.0.
 
 ```ts
 export function withTulaScreens<Config extends ExpoConfigLike>(

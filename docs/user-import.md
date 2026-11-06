@@ -19,6 +19,23 @@ This page covers `bcrypt`, `argon2id`, `argon2i`, `pbkdf2_sha256` (Django and ot
 
 With a secret key, on the admin API (an agent key is refused: an import is a write):
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X POST "$TULA_API_URL/v1/admin/users/import" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "users": [{
+    "email": "maya@northline.app",
+    "emailVerified": true,
+    "name": "Maya Chen",
+    "externalId": "auth0|64f1",
+    "metadata": { "plan": "team" },
+    "password": { "algorithm": "bcrypt", "hash": "$2b$10$…" }
+  }] }'
+```
+
 <!-- snippet: examples/docs-snippets/admin.ts#user-import -->
 ```ts
 // Up to 500 users per call. Run it again over the same file after a failure:
@@ -38,21 +55,34 @@ const refused = data.results.filter((result) => result.status === 'refused')
 ```
 <!-- /snippet -->
 
-Or without the SDK:
-
-```sh
-curl -X POST https://auth.example.com/v1/admin/users/import \
-  -H "Authorization: Bearer $TULA_SECRET_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{ "users": [{
-    "email": "maya@northline.app",
-    "emailVerified": true,
-    "name": "Maya Chen",
-    "externalId": "auth0|64f1",
-    "metadata": { "plan": "team" },
-    "password": { "algorithm": "bcrypt", "hash": "$2b$10$…" }
-  }] }'
+<!-- snippet: examples/docs-snippets/python/user_import.py#user-import -->
+```python
+body = {
+    "users": [
+        {
+            "email": "maya@northline.app",
+            "emailVerified": True,
+            "name": "Maya Chen",
+            "externalId": "auth0|64f1",
+            "metadata": {"plan": "team"},
+            "password": {"algorithm": "bcrypt", "hash": "$2b$10$…"},
+        }
+    ]
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/users/import",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    results = json.load(response)["results"]
 ```
+<!-- /snippet -->
+<!-- /tabs -->
 
 ### A row
 
@@ -132,8 +162,9 @@ console) are four values, the same for every user: `base64_signer_key`,
 and a `salt`. Send the parameters **once per call** as `firebaseScrypt`, and each user's two
 values in their row:
 
+<!-- tabs -->
 ```sh
-curl -X POST https://auth.example.com/v1/admin/users/import \
+curl -X POST "$TULA_API_URL/v1/admin/users/import" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -154,6 +185,68 @@ curl -X POST https://auth.example.com/v1/admin/users/import \
     }]
   }'
 ```
+
+<!-- snippet: examples/docs-snippets/admin.ts#user-import-firebase -->
+```ts
+const { data } = await admin.call('importUsers', {
+  body: {
+    firebaseScrypt: {
+      signerKey: '<base64_signer_key>',
+      saltSeparator: '<base64_salt_separator>',
+      rounds: 8,
+      memCost: 14,
+    },
+    users: [
+      {
+        email: 'maya@northline.app',
+        emailVerified: true,
+        password: {
+          algorithm: 'firebase_scrypt',
+          hash: '<passwordHash>',
+          params: { salt: '<salt>' },
+        },
+      },
+    ],
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/user_import.py#user-import-firebase -->
+```python
+body = {
+    "firebaseScrypt": {
+        "signerKey": "<base64_signer_key>",
+        "saltSeparator": "<base64_salt_separator>",
+        "rounds": 8,
+        "memCost": 14,
+    },
+    "users": [
+        {
+            "email": "maya@northline.app",
+            "emailVerified": True,
+            "password": {
+                "algorithm": "firebase_scrypt",
+                "hash": "<passwordHash>",
+                "params": {"salt": "<salt>"},
+            },
+        }
+    ],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/users/import",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    results = json.load(response)["results"]
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 `emailVerified` comes from the export's `emailVerified`. Firebase's own values are `rounds: 8`
 and `memCost: 14`; the server accepts a `memCost` of 12 to 16 and `rounds` of 4 to 16 whose

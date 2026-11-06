@@ -50,3 +50,7 @@ packages/expo-screens/android/vendor/
 .kotlin/
 native/android/*/bin/
 apps/docs/src/styles/tokens.gen.css
+
+# Python bytecode (the docs samples are byte-compiled by a test into a temp directory)
+__pycache__/
+*.pyc

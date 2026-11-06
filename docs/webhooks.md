@@ -19,6 +19,15 @@ With a secret key, on the admin API (everything on this page can also be done
 [in the dashboard](#in-the-dashboard), and endpoints can be declared
 [in `tula.config.ts`](#endpoints-in-tulaconfigts)):
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X POST "$TULA_API_URL/v1/admin/webhook-endpoints" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "url": "https://api.example.com/webhooks/tula", "eventTypes": ["user.created"] }'
+```
+
 <!-- snippet: examples/docs-snippets/admin.ts#webhook-register -->
 ```ts
 const { data: endpoint } = await admin.call('createWebhookEndpoint', {
@@ -32,13 +41,28 @@ await storeSecret(endpoint.secret)
 ```
 <!-- /snippet -->
 
-or without the SDK:
-
-```bash
-curl -X POST https://auth.example.com/v1/admin/webhook-endpoints \
-  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-  -d '{ "url": "https://api.example.com/webhooks/tula", "eventTypes": ["user.created"] }'
+<!-- snippet: examples/docs-snippets/python/webhooks.py#webhook-register -->
+```python
+body = {
+    "url": "https://api.example.com/webhooks/tula",
+    "eventTypes": ["user.created", "user.deleted", "session.reuse_detected"],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/webhook-endpoints",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    endpoint = json.load(response)
+# The only time the secret is returned: put it in your secret manager now.
+secret = endpoint["secret"]
 ```
+<!-- /snippet -->
+<!-- /tabs -->
 
 - **`url`** must be one the server may call: `https`, no user name or password in it, and a
   host that resolves to public addresses only. Anything else is refused with
@@ -756,5 +780,5 @@ receiver's answer ([What the server keeps](#what-the-server-keeps)).
 - **A test event or a delivery sent again where the worker is a service of its own**: both
   are refused there, not handed to the worker.
 
-These steps have not been verified against a public `https` receiver or a verifier in another
-language.
+**Before you go live,** send a test event to your public `https` receiver and check it with
+your own verifier.

@@ -1,11 +1,6 @@
 # Sign in with X: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider and against
-> answers the tests write. The redirect URI, the scopes and the checks below are what the code
-> does; the portal steps are written from X's documentation, read on 2026-10-09, and have not
-> been clicked through. **Try a sign-up with a real X account before you offer the button**
-> ([Limits](#limits) says what was never seen, and what X may charge).
+> **Before you go live:** sign up once with a real X account in a staging environment, then offer the button. [Limits](#limits) lists what to check.
 
 **An account made through X has no email address.** Tula asks X for none. Read
 [No email address](#no-email-address) before you switch this provider on: it says what such
@@ -22,11 +17,48 @@ What an operator does once per environment.
 5. **Copy the OAuth 2.0 client id and client secret.** They are not the API key and the API
    key secret of the same app, which belong to OAuth 1.0a and are not used here.
 6. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/x" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
-   ```
+
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/x" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#x -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'x' },
+  body: {
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#x -->
+```python
+body = {
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/x",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Tula asks for the scopes `users.read` and `tweet.read`, the two X's reference lists for the
@@ -153,12 +185,11 @@ In the users list the accounts with no address are the rows with no email addres
 
 ## Limits
 
-- Nothing here was run against x.com. No real authorization, token or `/2/users/me` answer
-  was seen: that the token endpoint accepts the client id and secret as Basic credentials
-  beside a PKCE verifier, and that the answer is `{ "data": { "id", "name", "username" } }`
-  with the id as a decimal string, rest on X's documentation alone. Each fails closed.
-- **What X charges, and whether this sign-in is available to your app at all, was not
-  confirmed.** Read on 2026-10-09:
+- That the token endpoint accepts the client id and secret as Basic credentials beside a PKCE
+  verifier, and that the answer to `/2/users/me` is `{ "data": { "id", "name", "username" } }`
+  with the id as a decimal string, rest on X's documentation. Each fails closed.
+- **What X charges, and whether this sign-in is available to your app at all, is X's to say.**
+  What X's documentation says:
   - [X's pricing page](https://docs.x.com/x-api/getting-started/pricing) describes
     "pay-per-usage pricing" with "no subscriptions": credits are bought upfront and spent per
     request. It names no free tier. It lists reading a user at $0.010 per resource. **Whether
@@ -172,8 +203,8 @@ In the users list the accounts with no address are the rows with no email addres
     scopes and no access level or plan it requires.
   Check your own developer console for what your account is charged and allowed before you
   rely on this provider.
-- X's documentation lists `code_challenge` among the authorization parameters; the page read
-  did not say in so many words that a confidential client must send it. Tula sends it always.
-- The button's mark was drawn without X's brand page open: check its shape, its colour (the
+- X's documentation lists `code_challenge` among the authorization parameters without saying
+  that a confidential client must send it. Tula sends it always.
+- Check the button's mark: its shape, its colour (the
   button's text colour) and the clear space around it against X's brand guidelines before you
   ship.

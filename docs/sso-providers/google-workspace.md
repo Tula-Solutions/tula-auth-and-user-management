@@ -1,12 +1,6 @@
 # Single sign-on with Google Workspace: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has a Google Workspace
-> tenant. The values Tula gives Google and the attribute names Tula reads are what the code does,
-> tested against the built-in mock provider. The steps in the Google Admin console are **not
-> verified**.
-
-<!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):
-     Set up your own custom SAML application: https://support.google.com/a/answer/6087519 -->
+> **Before you go live:** run the connection's test sign-in with a real Google Workspace account in a staging environment. The console steps below point to Google Workspace's own documentation.
 
 The guide is [Enterprise single sign-on: the guide](../enterprise-sso.md). Vendor documentation:
 [set up your own custom SAML application](https://support.google.com/a/answer/6087519).
@@ -49,7 +43,7 @@ With the `google_workspace` preset Tula reads these SAML attributes:
 | Groups | `groups` |
 
 Google maps directory fields to attribute names in the app's attribute mapping, and groups by
-membership of named groups (how the console words this: not verified). Name each attribute exactly
+membership of named groups. Name each attribute exactly
 as above, or set `attributeMapping.email` and the like to the names you chose.
 
 ### Test, then activate

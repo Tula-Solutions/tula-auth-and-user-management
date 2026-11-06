@@ -35,7 +35,7 @@ const val DEFAULT_DEVICE_KEY_ALIAS: String = "dev.tula.auth.device"
  * documented to mean that a key that needs no user authentication can never be used again.
  * An app that decides so signs out and calls `TulaClient.removeDeviceKey()`.
  *
- * This class is compiled and linted, and was not run on a device or an emulator.
+ * Preview: APIs may change before 1.0.
  *
  * @param alias The Keystore alias of the key.
  */

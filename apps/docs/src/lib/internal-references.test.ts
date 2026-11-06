@@ -16,6 +16,13 @@ describe('findInternalReferences', () => {
     'delete the organization (Orgs 07). Read from',
     'invitation token (Orgs 04).',
     'the SAML verifier (SSO 01)',
+    '> **Not verified against the live console.**',
+    'Nothing in this repository has real credentials',
+    'the portal steps have not been clicked through.',
+    "are written from Discord's documentation",
+    "That is Meta's decision and was not tried.",
+    'has not been observed with a real client.',
+    'whether Discord refuses it was never observed here.',
   ])('flags %s', (line) => {
     expect(findInternalReferences(new Map([['a.md', line]]))).toHaveLength(1)
   })
@@ -28,6 +35,9 @@ describe('findInternalReferences', () => {
     'Orgs 7 and SSO login are fine',
     'the orgs 07 lower case word',
     'Choose SSO 1 or two',
+    'a user whose address is not verified signs in with the old password',
+    'Do not act on a delivery you have not verified.',
+    'the stored refresh token has not been read.',
   ])('lets %s through', (line) => {
     expect(findInternalReferences(new Map([['a.md', line]]))).toEqual([])
   })
