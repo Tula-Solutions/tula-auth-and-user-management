@@ -182,4 +182,27 @@ describe('concurrent exports (H-168)', () => {
       warn.mockRestore()
     }
   })
+
+  test('a release the store cannot make still ends the export whole', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'release').mockRejectedValue(new ServiceUnavailableError())
+    const res = await start()
+    expect(res.status).toBe(200)
+    expect((await res.text()).length).toBeGreaterThan(0)
+  })
+
+  test('a renewal that cannot reach the store is retried, not reported as lost', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'renew').mockRejectedValue(new ServiceUnavailableError())
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const res = await start()
+      deps.clock.advance(11 * 60_000)
+      expect(res.status).toBe(200)
+      await res.text()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })
