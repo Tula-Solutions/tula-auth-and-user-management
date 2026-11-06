@@ -350,15 +350,24 @@ export async function buildSite(
         })
       : new Map<string, string>()
 
-  // A build of the whole site only: a partial one has no twins to read.
+  const index = buildIndex(pages, base)
+  // A build of the whole site only: a partial one has no twins to read. The search index and
+  // the 404 page are published too, so they are read with the rest.
   if (only === undefined) {
-    checkInternalReferences(new Map([...documents, ...ai]))
+    checkInternalReferences(
+      new Map([
+        ...documents,
+        ...ai,
+        ['404.html', notFound],
+        ['search-index.json', JSON.stringify(index)],
+      ])
+    )
   }
 
   return {
     pages,
     nav,
-    index: buildIndex(pages, base),
+    index,
     assets: [...copied].sort(),
     documents,
     notFound,

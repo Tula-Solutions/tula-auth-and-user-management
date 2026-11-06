@@ -84,7 +84,7 @@ export function score(entry: SearchEntry, query: string): number {
   // A page whose title starts with the query (`passkey` for Passkeys, `self-host` for
   // Self-hosting) leads, ahead of any section that merely contains the word. A page's own
   // entry is the one with no anchor.
-  if (!entry.u.includes('#') && loose(title).startsWith(loose(whole))) {
+  if (!entry.u.includes('#') && loose(whole) !== '' && loose(title).startsWith(loose(whole))) {
     total = PAGE_PREFIX_SCORE
   }
   if (total === 0 && matches(title, whole)) {

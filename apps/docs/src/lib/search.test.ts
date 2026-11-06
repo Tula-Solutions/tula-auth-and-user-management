@@ -156,3 +156,19 @@ describe('label', () => {
     })
   })
 })
+
+describe('a query of punctuation only', () => {
+  test('gives no page the lead a page title earns', () => {
+    const site = buildIndex(
+      [
+        {
+          title: 'Passkeys',
+          route: '/passkeys/',
+          sections: [{ id: null, title: 'Passkeys', text: '' }],
+        },
+      ],
+      '/'
+    )
+    expect(score(site[0] as (typeof site)[number], '-')).toBeLessThan(1000)
+  })
+})
