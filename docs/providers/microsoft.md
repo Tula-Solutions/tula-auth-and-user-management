@@ -41,11 +41,48 @@ Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
 5. **API permissions**: the delegated Microsoft Graph permissions `openid`, `profile` and
    `email`. Tula asks for nothing else and calls no Microsoft API with the token.
 6. **Give Tula the credentials**, with the tenant that matches step 2:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/microsoft" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<application (client) id>", "clientSecret": "<secret value>", "tenant": "organizations" }'
-   ```
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/microsoft" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<application (client) id>", "clientSecret": "<secret value>", "tenant": "organizations" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#microsoft -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'microsoft' },
+  body: {
+    clientId: '<application (client) id>',
+    clientSecret: '<secret value>',
+    tenant: 'organizations',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#microsoft -->
+```python
+body = {
+    "clientId": "<application (client) id>",
+    "clientSecret": "<secret value>",
+    "tenant": "organizations",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/microsoft",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 ## The tenant

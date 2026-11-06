@@ -1058,6 +1058,16 @@ describe('language tabs', () => {
     return path && method ? `${method.toUpperCase()} ${path}` : undefined
   }
 
+  /** Whether two calls are one, a `{name}` segment of the OpenAPI path standing for any segment. */
+  function matches(a: string | undefined, b: string | undefined): boolean {
+    const segments = (call: string | undefined) => (call ?? '').split('/')
+    const [x, y] = [segments(a), segments(b)]
+    return (
+      x.length === y.length &&
+      x.every((part, i) => part === y[i] || /^\{\w+\}$/.test(part) || /^\{\w+\}$/.test(y[i] ?? ''))
+    )
+  }
+
   test('every sample of a tabs group calls the same method and path', () => {
     let groups = 0
     for (const file of markdownFiles()) {
@@ -1071,7 +1081,7 @@ describe('language tabs', () => {
         expect(calls.length, where).toBeGreaterThan(1)
         for (const [lang, call] of calls) {
           expect(call, `${where}: a ${lang} sample names no method and path`).toBeDefined()
-          expect(call, `${where}: the ${lang} sample`).toBe(calls[0]?.[1])
+          expect(matches(call, calls[0]?.[1]), `${where}: the ${lang} sample`).toBe(true)
         }
       }
     }

@@ -17,11 +17,46 @@ What an operator does once per environment.
 5. **Copy the OAuth 2.0 client id and client secret.** They are not the API key and the API
    key secret of the same app, which belong to OAuth 1.0a and are not used here.
 6. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/x" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
-   ```
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/x" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#x -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'x' },
+  body: {
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#x -->
+```python
+body = {
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/x",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Tula asks for the scopes `users.read` and `tweet.read`, the two X's reference lists for the
