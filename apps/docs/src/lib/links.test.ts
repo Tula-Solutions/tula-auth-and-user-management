@@ -92,19 +92,6 @@ describe('resolveLink', () => {
       `${REPO}/blob/develop/packages/core/README.md#install`,
       'packages/core/README.md',
     ],
-    // An ADR is a file the site does not render.
-    [
-      'docs/methods/password.md',
-      '../adr/0006-passwords.md#decision',
-      `${REPO}/blob/develop/docs/adr/0006-passwords.md#decision`,
-      'docs/adr/0006-passwords.md',
-    ],
-    [
-      'docs/quickstart.md',
-      'plans/phase-1.md',
-      `${REPO}/blob/develop/docs/plans/phase-1.md`,
-      'docs/plans/phase-1.md',
-    ],
     [
       'docs/quickstart.md',
       '../apps/api/src/index.ts#L10',
@@ -117,8 +104,6 @@ describe('resolveLink', () => {
       `${REPO}/blob/develop/docs/design/Design.pdf`,
       'docs/design/Design.pdf',
     ],
-    // A directory with no page of its own is shown on GitHub.
-    ['docs/quickstart.md', 'adr/', `${REPO}/tree/develop/docs/adr`, 'docs/adr'],
   ])('a link from %s to %s leaves for the repository on GitHub', (from, target, href, file) => {
     expect(resolveLink(from, target, environment)).toEqual({ kind: 'repository', href, file })
   })
@@ -159,12 +144,29 @@ describe('resolveLink', () => {
     )
   })
 
+  test.each([
+    ['docs/methods/password.md', '../adr/0006-passwords.md#decision'],
+    ['docs/quickstart.md', 'plans/phase-1.md'],
+    ['docs/quickstart.md', 'adr/'],
+    ['docs/quickstart.md', 'codebase-map/README.md'],
+    ['docs/quickstart.md', 'internal/releasing.md'],
+  ])('a link from %s to %s, in a directory the site leaves out, fails', (from, target) => {
+    expect(() => resolveLink(from, target, environment)).toThrow(LinkError)
+    expect(() => resolveLink(from, target, environment)).toThrow('not published')
+  })
+
+  test('the transitional switch sends such a link to GitHub', () => {
+    expect(
+      resolveLink('docs/quickstart.md', 'plans/phase-1.md', {
+        ...environment,
+        allowUnpublished: true,
+      })
+    ).toMatchObject({ kind: 'repository' })
+  })
+
   test('an anchor of a Markdown file the site does not render is checked as well', () => {
     expect(() =>
       resolveLink('docs/quickstart.md', '../packages/core/README.md#gone', environment)
-    ).toThrow('does not have')
-    expect(() =>
-      resolveLink('docs/quickstart.md', 'adr/../adr/0006-passwords.md#gone', environment)
     ).toThrow('does not have')
   })
 

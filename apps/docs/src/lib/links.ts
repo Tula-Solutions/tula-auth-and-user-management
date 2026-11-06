@@ -1,5 +1,5 @@
 import { posix } from 'node:path'
-import { REPO_BRANCH, REPO_URL } from './config'
+import { EXCLUDED_DIRECTORIES, REPO_BRANCH, REPO_URL } from './config'
 
 /** What the resolver needs to know about the repository: injected, so it is tested without disk. */
 export interface LinkEnvironment {
@@ -21,6 +21,11 @@ export interface LinkEnvironment {
    * @returns Its heading ids and explicit anchors, or `null` when it is not Markdown.
    */
   anchorsOf(file: string): ReadonlySet<string> | null
+  /**
+   * Transitional: send a link into an unpublished directory to GitHub instead of failing.
+   * Only while the internal-references baseline still lists pages; the strict build leaves it off.
+   */
+  allowUnpublished?: boolean
 }
 
 /** Where a link ends up. */
@@ -85,6 +90,15 @@ export function resolveLink(from: string, target: string, environment: LinkEnvir
     path === '' ? from : posix.normalize(posix.join(posix.dirname(from), path)).replace(/\/$/, '')
   if (resolved.startsWith('..') || posix.isAbsolute(resolved)) {
     throw new LinkError(from, target, 'leaves the repository')
+  }
+  // A reader of the site cannot follow a link into what the site does not publish.
+  if (
+    environment.allowUnpublished !== true &&
+    EXCLUDED_DIRECTORIES.some(
+      (dir) => resolved === `docs/${dir}` || resolved.startsWith(`docs/${dir}/`)
+    )
+  ) {
+    throw new LinkError(from, target, 'points into a directory that is not published')
   }
   const kind = environment.kind(resolved)
   if (kind === null) {

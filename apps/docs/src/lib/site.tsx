@@ -8,6 +8,8 @@ import { buildAiFiles, SITE_ORIGIN, SKILL_SOURCE, twinPath, withAlternate } from
 import { BASE, RELEASE, REPO_BRANCH, REPO_ROOT, REPO_URL, SITE_DESCRIPTION } from './config'
 import { buildErrorCodesPage, ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
 import { checkCacheInputs } from './inputs'
+import { checkInternalReferences } from './internal-references'
+import baseline from './internal-references.baseline.json'
 import type { LinkEnvironment } from './links'
 import {
   createCodeHighlighter,
@@ -117,6 +119,8 @@ export function repositoryEnvironment(
   return {
     routes: new Map(pages.map((page) => [page.file, page.route])),
     base,
+    // An empty baseline is the strict build: a link into an unpublished directory then fails.
+    allowUnpublished: Object.keys(baseline).length > 0,
     kind(path) {
       const absolute = join(REPO_ROOT, path)
       if (!existsSync(absolute)) {
@@ -348,6 +352,11 @@ export async function buildSite(
           copied: [...copied],
         })
       : new Map<string, string>()
+
+  // A build of the whole site only: a partial one has no twins to read.
+  if (only === undefined) {
+    checkInternalReferences(new Map([...documents, ...ai]), baseline)
+  }
 
   return {
     pages,

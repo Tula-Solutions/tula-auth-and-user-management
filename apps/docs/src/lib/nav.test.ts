@@ -14,7 +14,7 @@ const routes = {
 }
 const environment = fakeEnvironment(
   Object.fromEntries(
-    [...Object.keys(routes), 'docs/adr/0001.md'].map((file) => [file, new Set<string>()])
+    [...Object.keys(routes), 'docs/design/x.md'].map((file) => [file, new Set<string>()])
   ),
   [],
   routes
@@ -45,7 +45,7 @@ Intro with a [link](one.md) that is not in a section.
 ## SDK reference
 
 Generated ([how](reference/README.md)): [\`@tula-tech/core\`](reference/core.md), and
-[an ADR](adr/0001.md) that the site does not render.
+[a design note](design/x.md) that the site does not render.
 
 ## Empty
 
