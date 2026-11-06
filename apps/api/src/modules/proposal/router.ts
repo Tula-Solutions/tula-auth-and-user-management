@@ -225,8 +225,7 @@ router.post(
     description:
       'Reject a pending proposal: nothing is carried out and the proposal is decided for ' +
       'good (`rejected`). It takes a secret key or a dashboard session, **never an agent ' +
-      'key** (`auth.invalid_key`). The body may hold a short `reason`, kept in the audit ' +
-      'entry. Refused with `resource.conflict` and a fixed `params.reason`: ' +
+      'key** (`auth.invalid_key`). It takes no body. Refused with `resource.conflict` and a fixed `params.reason`: ' +
       '`already_decided` (approved or rejected before) or `expired`. Nothing is changed by a ' +
       'refused rejection. A rejection and an approval at the same moment: one succeeds.',
     security: openapi.security.admin,

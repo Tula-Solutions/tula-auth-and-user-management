@@ -388,15 +388,15 @@ export function ProposalsScreen() {
                 data-testid='proposals-no-dismiss'
                 className='max-w-prose text-sm text-muted-foreground'
               >
-                There is nothing to do about a proposal you do not want: it cannot be dismissed
-                here, and it expires by itself ten minutes after it was asked for, with nothing
-                changed. To end everything an agent has asked for at once, revoke its agent key
+                A waiting proposal you do not want can be rejected. Otherwise it expires by itself
+                ten minutes after it was asked for, with nothing changed. Revoking the agent’s key,
                 under{' '}
                 <EnvironmentLink to='/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'>
                   API keys
                 </EnvironmentLink>
-                . An approval shows that this dashboard session was used, which the agent’s own
-                tools do not hold; every proposal, approval and outcome is in the{' '}
+                , ends all its proposals. An approval shows that this dashboard session was used,
+                which the agent’s own tools do not hold; every proposal, approval and outcome is in
+                the{' '}
                 <EnvironmentLink to='/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'>
                   audit log
                 </EnvironmentLink>

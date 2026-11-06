@@ -82,9 +82,7 @@ test('a proposal is listed with what it does, approved by name, carried out once
   const key = await agentKey(page)
 
   await open(page, `${ENVIRONMENT_PATH}/proposals`, 'Proposals')
-  await expect(page.getByTestId('proposals-no-dismiss')).toContainText(
-    'it cannot be dismissed here'
-  )
+  await expect(page.getByTestId('proposals-no-dismiss')).toContainText('can be rejected')
   await expectScreenAccessible(page, 'proposals, as first opened')
 
   // Asked to lift a ban that is not there: carried out, and said to change nothing.

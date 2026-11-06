@@ -197,6 +197,19 @@ describe('the event payloads in the OpenAPI document', () => {
     ])
   })
 
+  test('rejecting a proposal takes no body and says nothing of a reason', async () => {
+    // A reason is free text, and free text may not reach an event payload (ADR 0053).
+    const res = await createApp(createTestDeps()).request(OPENAPI_PATH)
+    const document = (await res.json()) as {
+      paths: Record<string, Record<string, { operationId?: string; description?: string }>>
+    }
+    const operation = document.paths['/v1/admin/proposals/{id}/reject']?.post
+    expect(operation?.operationId).toBe('rejectProposal')
+    expect(operation).not.toHaveProperty('requestBody')
+    // `params.reason` is the conflict's error parameter, not a note the caller sends.
+    expect((operation?.description ?? '').replaceAll('params.reason', '')).not.toMatch(/reason/i)
+  })
+
   test('the document is built once and served again', async () => {
     const app = createApp(createTestDeps())
     const first = await (await app.request(OPENAPI_PATH)).text()

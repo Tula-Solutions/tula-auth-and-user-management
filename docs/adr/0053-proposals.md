@@ -796,8 +796,7 @@ proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
 ### Rejecting a proposal (H-183)
 
 A person can turn down a pending proposal: `POST /v1/admin/proposals/:id/reject` behind
-`secretKey()` (an agent key is refused, like every write there), with an optional short
-`reason` (at most 200 characters, never a secret). What "Dismissing a proposal: not built"
+`secretKey()` (an agent key is refused, like every write there). It takes no body. What "Dismissing a proposal: not built"
 once listed is now built, as follows.
 
 - **A status**, `rejected`, in `PROPOSAL_STATUSES`. It is terminal and holds no approver:
@@ -807,11 +806,15 @@ once listed is now built, as follows.
   suite: `status = 'pending'` and not expired, so the row leaves `pending` once and an
   approval and a rejection at once cannot both win (`races.integration.ts` runs them against
   Postgres). The entry `proposal.rejected` is written in the same transaction.
-- **The same refusals as an approval** for a proposal that is not pending.
+- **The same refusals as an approval** for a proposal that is not pending. One difference:
+  reject, unlike approve, does not refuse a proposal whose agent key was revoked (turning it
+  down is harmless).
+- **Deviation from the first plan: no reason is taken**, because free text may not reach an
+  event payload.
 - **Who**: a person only. An agent may not withdraw its own; revoking its key still ends all
   its proposals at once.
 - **The agent sees it** as `status: "rejected"` on the routes it reads and in
-  `@tula-tech/mcp`; the reason is the person's note and is not part of the proposal.
+  `@tula-tech/mcp`; no reason is kept.
 - The dashboard's Proposals screen has a Reject button with a confirmation (the id typed in
   production), and `tula approve` names the status in words.
 

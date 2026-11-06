@@ -108,7 +108,7 @@ describe('the list', () => {
     await screen.findByText('No proposal is waiting')
     expect(screen.getByText('No earlier proposal: none has expired or been approved.')).toBeTruthy()
     const note = screen.getByTestId('proposals-no-dismiss').textContent ?? ''
-    expect(note).toContain('it cannot be dismissed here')
+    expect(note).toContain('can be rejected')
     expect(note).toContain('expires by itself ten minutes after it was asked for')
     expect(screen.queryAllByRole('button', { name: /dismiss|reject/i })).toHaveLength(0)
     expect(api.callsTo('GET', '/v1/admin/proposals').at(-1)?.headers.get(ENVIRONMENT)).toBe(

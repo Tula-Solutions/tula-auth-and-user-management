@@ -379,6 +379,14 @@ describe('approving', () => {
   describe('when the agent key that asked is revoked', () => {
     const revoke = (id: string, key = SK) => call('DELETE', `/v1/admin/api-keys/${id}`, key)
 
+    test('its waiting proposal can still be rejected: turning it down is harmless', async () => {
+      const proposal = await propose((await createUser()).id)
+      expect((await revoke(agentKeyId)).status).toBe(200)
+      const res = await reject(proposal)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ status: 'rejected' })
+    })
+
     test('its waiting proposal cannot be approved: refused, the user untouched, nothing recorded', async () => {
       const maya = await createUser()
       const proposal = await propose(maya.id)

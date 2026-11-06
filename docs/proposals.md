@@ -155,8 +155,8 @@ shows: that a credential the agent's tools do not hold was used
   after the other ways went is `failed` with `failureReason: "last_sign_in_method"`. The
   provider is still on, and the proposal is spent.
 
-To turn one down, `POST /v1/admin/proposals/<id>/reject` (a secret key, an optional
-`{ "reason": "…" }` of at most 200 characters, never a secret). A proposal that is not
+To turn one down, `POST /v1/admin/proposals/<id>/reject` (a secret key; it takes no
+body). A proposal that is not
 pending is refused as an approval would be, and an approval and a rejection at once cannot
 both succeed.
 

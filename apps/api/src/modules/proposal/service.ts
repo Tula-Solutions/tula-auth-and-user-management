@@ -536,8 +536,7 @@ async function changeIsThere(
  * @param actor - The administrator, as their router built it.
  * @returns The proposal, `rejected`.
  * @throws NotFoundError when the proposal is not of this environment.
- * @throws ConflictError `resource.conflict` with `already_decided`, `agent_key_revoked`
- *   or `expired`.
+ * @throws ConflictError `resource.conflict` with `already_decided` or `expired`.
  */
 export async function reject(
   deps: Pick<Deps, 'proposals' | 'clock' | 'ids'>,
