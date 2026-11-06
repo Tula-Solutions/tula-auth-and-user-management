@@ -125,7 +125,11 @@ static HTML. Its commands are in its README.
   needs the reason a record holds, it says the reason in its own words. The ADRs, plans and
   `docs/internal/` stay in the repository for contributors, and `AGENTS.md` and these rules
   link them freely: they are not published. Say what exists, not what is planned: a page's
-  limits go under "Limits", never "Not built".
+  limits go under "Limits", never "Not built". **No note on what the maintainers did or did
+  not test** ("not verified against", "nothing in this repository", "clicked through",
+  "written from X's documentation", "was not tried", "has not been observed"): the same check
+  fails on it. A step a developer must take is said as one ("**Before you go live:** sign up
+  once with a real account"), and a package not yet released is marked **Preview**.
 - **Anchors are GitHub's** (`github-slugger`, `-1` for a repeat), because the docs link to
   `file.md#heading` as GitHub renders it. `docs/**` links keep working in both places.
 - **The Markdown pipeline is unified**: `remark-parse`, `remark-gfm`, `remark-rehype`,
@@ -169,6 +173,12 @@ static HTML. Its commands are in its README.
     region; on GitHub it is a plain code block.
   - **The Markdown twin** drops the `:::` lines, labels each block of a code group with its tab
     in bold, and keeps headings, tables, callouts and fences as written (`twinEdits`).
+- **Language tabs** are `<!-- tabs -->` … `<!-- /tabs -->` around fenced blocks (`sh` cURL, `ts`
+  TypeScript, `python` Python; sync key `language`), built into the same tabs as `:::code-group`.
+  The TypeScript and Python samples are snippet blocks (`examples/docs-snippets/*.ts` on
+  `@tula-tech/admin`, `examples/docs-snippets/python/*.py` on the standard library, regions marked
+  `# #region`), the Python files are byte-compiled and the samples of a group must call one method
+  and path (`.claude/hooks/docs.test.ts`). The twins keep every block under a label line.
 - **Tabs work with no script, and are tabs before they are painted.** The server writes every
   panel under its label (what a reader without script sees, in order). Straight after each group
   an inline `<script>` enhances it: the first group of a page carries the whole runtime

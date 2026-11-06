@@ -39,11 +39,40 @@ shows under "App signing key certificate".
 
 With a secret key:
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
+<!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
   -d '{ "platform": "ios", "teamId": "A1B2C3D4E5", "bundleId": "app.northline.ios" }'
 ```
+
+<!-- snippet: examples/docs-snippets/native-apps.ts#native-app-register -->
+```ts
+const { data: app } = await admin.call('createNativeApp', {
+  body: { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/native_apps.py#native-app-register -->
+```python
+body = {"platform": "ios", "teamId": "A1B2C3D4E5", "bundleId": "app.northline.ios"}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/native-apps",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    app = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 | Route | What it does |
 | --- | --- |
@@ -73,11 +102,38 @@ paths** of your domain that the app opens: each starts with `/`, holds letters, 
 `-`, `.`, `_`, `~` in segments joined by `/`, is at most 255 characters, and has no
 wildcard, no query, no fragment and no trailing slash. `/` alone is refused.
 
+<!-- tabs -->
 ```sh
 curl -X PATCH "$TULA_API_URL/v1/admin/native-apps/$APP_ID" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
   -d '{ "appLinkPaths": ["/oauth/callback"] }'
 ```
+
+<!-- snippet: examples/docs-snippets/native-apps.ts#native-app-link-paths -->
+```ts
+await admin.call('updateNativeApp', {
+  params: { id: appId },
+  body: { appLinkPaths: ['/oauth/callback'] },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/native_apps.py#native-app-link-paths -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/native-apps/{app_id}",
+    data=json.dumps({"appLinkPaths": ["/oauth/callback"]}).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PATCH",
+)
+with urllib.request.urlopen(request) as response:
+    app = json.load(response)
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 What that does differs by platform, and the difference matters:
 
@@ -194,13 +250,11 @@ is the one in the path, and the apps are that environment's rows.
 
 **How current they are.** The server reads the list on every request, so its answer follows
 a change at once; a cache in front of it may serve the old one for five minutes. That is
-all this page can state as checked. The platforms keep their own copies, on schedules that
-are theirs and that were not measured here: Apple documents that devices ask Apple's CDN,
-which fetches your file and caches it; Android documents, for app links, that the file is
-verified when an app is installed or updated, and whether the same holds for the
-credentials relation served here (`get_login_creds`) was not checked. Do not plan on a
+what Tula controls. The platforms keep their own copies, on their own schedules: Apple's
+devices ask Apple's CDN, which fetches your file and caches it; Android verifies the file
+for app links when an app is installed or updated. Do not plan on a
 change, in either direction, being seen at once: assume a removed app keeps working for
-some time, and how long is among [what could not be verified](#what-could-not-be-verified-here).
+some time, and how long is among [what to check on the platforms](#check-on-the-platforms-before-you-ship).
 
 ## Getting the files onto your domain
 
@@ -350,7 +404,7 @@ only from the answer, and a refused one fails like every failed sign-in.
 
 **None of this has been run on a phone or an emulator.** The Android value is as Google
 documents it; the iOS value is not in Apple's documentation at all and is what developers
-report ([below](#what-could-not-be-verified-here)).
+report ([below](#check-on-the-platforms-before-you-ship)).
 
 ## Returning to your app after a provider sign-in
 
@@ -378,7 +432,7 @@ An app link (Android) or universal link (iOS) is an `https` URL of your domain, 
   package name and signing certificate), which is the purpose of that file. Tula builds
   that file and cannot check that your domain serves it, that your app claims the domain,
   or what a device then does. None of this has been tested on a device
-  ([below](#what-could-not-be-verified-here)). A custom scheme is checked by nobody at
+  ([below](#check-on-the-platforms-before-you-ship)). A custom scheme is checked by nobody at
   all: any app on the device can declare `com.northline.app:` and be the one that is
   opened.
 - **Every provider works with it.** A custom scheme is refused for Apple, LinkedIn and
@@ -540,7 +594,7 @@ the two `curl` lines above against your own domain, and the vendors' tools below
 Tula runs on your machine with nothing but Docker, and a sign-in with a password or an
 emailed code works in a simulator or an emulator with no account anywhere. Everything in
 this table is different: it is made at Apple, at Google or at a third party, under an
-account that is yours, and nothing in this repository, in a scaffolded project or in
+account that is yours, and nothing in Tula, in a scaffolded project or in
 `tula dev` makes it for you. No identifier an example ships with is yours either
 (`com.example.tula`, `dev.tula.example.swiftui`, `dev.tula.example.compose`): change it
 before you register anything.
@@ -558,54 +612,42 @@ before you register anything.
 | The tunnel | Neither | Neither | A [Tailscale](https://tailscale.com) account of your own, signed in on your machine, with Funnel allowed for it |
 
 Each SDK's guide says where its side of a row goes: [expo.md](expo.md), [swift.md](swift.md),
-[kotlin.md](kotlin.md). **Nobody has taken any row of this table past its first line on a
-device**: no passkey sheet, no Apple or Google sheet and no system browser has been opened
-by an SDK of this repository, and no file was fetched by Apple or Android
-([below](#what-could-not-be-verified-here)). What a vendor's console asks for
+[kotlin.md](kotlin.md). **Before you go live, take each row past its first line on a
+device**: open the passkey sheet, Apple's or Google's sheet and the system browser from your
+app, and let Apple or Android fetch the association files
+([below](#check-on-the-platforms-before-you-ship)). What a vendor's console asks for
 changes; the vendor's own documentation is the authority for its column.
 
-## What could not be verified here
+## Check on the platforms before you ship
 
-The files were built from the two platforms' published formats and checked against the
-API's own tests. No device and no vendor tool was involved, so the following is stated and
-not proven:
+Tula serves the two association files in the platforms' published formats. What the
+platforms do with them is theirs to decide, so check these on real devices before you rely
+on them:
 
-- That Apple accepts the file as served (the `webcredentials` section alone, `apps` as
-  `<team>.<bundle id>`, `application/json` possibly with a `charset` suffix) and that
-  Android accepts `get_login_creds` as the only relation of a statement.
-- Apple's limits on a bundle ID (the 155 characters, the allowed characters) and Android's
-  on a package name (255 characters) as enforced here. The rules are a floor that keeps
-  what is not an identifier out, not a copy of either store's validation.
-- How long each platform caches, and when each fetches the file again (for Android, whether
-  the install-time verification documented for app links is also what `get_login_creds`
-  gets). Both are theirs to change.
-- That Apple accepts `applinks.details` with exact-path `components` as served, and Android
-  a statement with both relations.
-- **That the platform hands the callback's redirect to your app.** The server answers `303`
-  with the right `Location`. iOS opens a universal link on a tap and, for a sign-in, through
+- **The files are accepted as served.** Apple reads the `webcredentials` and `applinks`
+  sections (`apps` as `<team>.<bundle id>`, exact-path `components`, `application/json`);
+  Android reads a statement with `get_login_creds` and, for links, `handle_all_urls`.
+- **Identifiers.** Tula refuses what is not a bundle ID (at most 155 characters) or a
+  package name (at most 255 characters). The stores' own validation is stricter, and theirs
+  is the one that counts.
+- **Caching.** Each platform caches the files and fetches them again on its own schedule,
+  so a change can take a while to reach installed apps.
+- **The callback reaches your app.** The server answers the provider's callback with a `303`
+  and the right `Location`. iOS opens a universal link on a tap and, for a sign-in, through
   `ASWebAuthenticationSession`'s `https` callback (iOS 17.4 and later); a redirect in an
-  ordinary browser tab may stay in the browser. Android's Custom Tabs have rules of their
-  own for a redirect with no user gesture. How your app opens the sign-in decides, and the
-  native SDKs are where this gets proven.
-
-- **Passkeys from an app.** No passkey ceremony was run on a device or an emulator; the
-  Android origin string and the iOS origin are from the platforms' documentation, and for
-  iOS not even that: Apple's pages do not say what origin its API writes, and
-  `https://<rpId>` is what developers report. If a platform writes something else, every
-  passkey request from its apps is refused (`auth.invalid_credentials`,
+  ordinary browser tab may stay in the browser. Android's Custom Tabs have their own rules
+  for a redirect with no user gesture. How your app opens the sign-in decides; the native
+  SDKs open it the way that works.
+- **Passkeys.** Each platform writes the origin of a passkey request itself: Android its
+  `android:apk-key-hash:` origin, iOS `https://<rpId>`. If a platform writes something
+  else, its requests are refused (`auth.invalid_credentials`,
   `passkey.registration_failed`) and nothing wrong is accepted.
-
-- **Google's ID tokens from an app.** No token Google made was ever verified here: the
-  checks are tested with tokens the tests sign and with the mock provider's. Which client
-  ID Google puts in `aud` and which in `azp` on each platform, and that the nonce arrives
-  as the app passed it, are from documentation and third parties. If either is otherwise, sign-ins are
-  refused and nothing wrong is accepted.
-
-- **Apple's identity tokens from an app.** No token Apple made was ever verified here, and
-  no iOS app was run. That a native token's audience is the bundle ID, and that Apple
-  echoes the request's nonce unchanged, are read from Apple's documentation; that apps
-  hash the nonce is a convention of other backends, not Apple's. If any is otherwise, sign-ins are
-  refused and nothing wrong is accepted.
+- **Google's ID tokens.** Which client ID Google puts in `aud` and which in `azp` on each
+  platform, and that the nonce arrives as the app passed it. If either differs, sign-ins
+  are refused and nothing wrong is accepted.
+- **Apple's identity tokens.** A native token's audience is the bundle ID and Apple echoes
+  the request's nonce unchanged. If either differs, sign-ins are refused and nothing wrong
+  is accepted.
 
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both

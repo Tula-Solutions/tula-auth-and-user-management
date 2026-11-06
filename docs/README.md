@@ -13,6 +13,7 @@ published: those are still used from a checkout of the repository
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
+| [Calling the admin API](admin-api.md) | The secret key, your first call in cURL, TypeScript and Python, errors and rate limits. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
 
 ## Sign-in methods
@@ -96,7 +97,7 @@ by error code. Their code samples are copied from files of this repository by
 | | |
 | --- | --- |
 | [Expo](expo.md) | `@tula-tech/expo`: the headless SDK for an Expo app on iOS and Android. The client, the provider and the hooks, drawing your own screens from the server's step, where the tokens are kept, what happens offline, and what this version does not do yet. |
-| [Swift](swift.md) | The Swift package: `TulaAuth`, the client with no screen (flows drawn from the server's step, the session and its refresh, the refresh token in the Keychain, the errors), and `TulaAuthUI`, SwiftUI screens for sign-in, sign-up and a password reset (the theme, the strings, the slots); what this version does not do and has not been run on. |
+| [Swift](swift.md) | The Swift package: `TulaAuth`, the client with no screen (flows drawn from the server's step, the session and its refresh, the refresh token in the Keychain, the errors), and `TulaAuthUI`, SwiftUI screens for sign-in, sign-up and a password reset (the theme, the strings, the slots); what this version does not do. |
 | [Kotlin](kotlin.md) | The Kotlin SDK for an Android app: the client with no UI (creating it, a flow step by step, the session, the second step, passkeys, Google and the other providers, a session bound to a device key, where the token is kept) and Compose screens for sign-in, sign-up and a password reset (their words, theme and slots, what a rotation costs, the example and its UI tests), and what this version does not do yet. The screens ran on one emulator; nothing ran on a device, and no passkey, provider or device key was run on Android. |
 | [Device binding](device-binding.md) | A session bound to a key the device holds: the proof a client sends when a sign-in starts and at every refresh, the nonce, the answers, what an operator sees, and what binding does and does not show. |
 | [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, how to get them onto your own domain, and how a provider sign-in returns to an app: by an app link (recommended) or a custom scheme. |

@@ -38,6 +38,8 @@ const LANGUAGES: Record<string, string> = {
   // builds compile, which hold a placeholder where a key would go.
   swift: 'swift',
   kt: 'kotlin',
+  // The Python samples of `examples/docs-snippets/python`, byte-compiled by the harness.
+  py: 'python',
 }
 
 /** Whether `file` is `directory` itself or something inside it (both absolute). */
@@ -121,7 +123,7 @@ export function snippetSource(root: string, path: string, from: string): string 
   return real
 }
 
-/** The lines of a file, or of one `// #region name` … `// #endregion` block of it. */
+/** The lines of a file, or of one `// #region name` … `// #endregion` block of it (`#` in Python). */
 function snippetLines(
   root: string,
   path: string,
@@ -139,8 +141,10 @@ function snippetLines(
   if (!region) {
     return lines
   }
-  const start = lines.findIndex((line) => line.trim() === `// #region ${region}`)
-  const end = lines.findIndex((line, index) => index > start && line.trim() === '// #endregion')
+  const marker = (word: string) => (line: string) =>
+    [`// #${word}`, `# #${word}`].includes(line.trim())
+  const start = lines.findIndex((line) => marker(`region ${region}`)(line))
+  const end = lines.findIndex((line, index) => index > start && marker('endregion')(line))
   if (start === -1 || end === -1) {
     throw new Error(`docs: ${from} takes the region \`${region}\` from ${path}, which has none`)
   }

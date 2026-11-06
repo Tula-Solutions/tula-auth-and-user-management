@@ -1,16 +1,13 @@
 # Sign in with Apple: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider. The redirect
-> URI and the scopes below are what the code sends; the console steps are written from the
-> provider's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real Apple account in a staging environment.
 
 What an operator does once per environment. Needs a paid
 Apple Developer account.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
    exactly `PUBLIC_URL/v1/oauth/callback/apple`. Apple requires `https` and a real domain:
-   `localhost` does not work. Use the mock provider locally.
+   `localhost` does not work. Use the development mock provider locally (`OAUTH_MOCK_PROVIDER`, [self-hosting](../self-host.md)).
 2. **Create an App ID** (Certificates, Identifiers & Profiles → Identifiers) with *Sign in
    with Apple* enabled, if your app has none.
 3. **Create a Services ID** (Identifiers → Services IDs). Its identifier, for example
@@ -23,14 +20,59 @@ Apple Developer account.
    right of the developer account page.
 5. **Give Tula the credentials**. `privateKey` is the `.p8` file's whole text, line breaks
    included:
-   ```bash
-   jq -n --rawfile key AuthKey_XXXXXXXXXX.p8 \
-     '{ clientId: "com.example.web", teamId: "<team id>", keyId: "<key id>", privateKey: $key }' |
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/apple" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' -d @-
-   ```
-   A key that is not a P-256 PKCS#8 key is refused at once. The key is stored encrypted and
-   never returned; Tula signs a five-minute client secret with it for each sign-in.
+
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
+jq -n --rawfile key AuthKey_XXXXXXXXXX.p8 \
+  '{ clientId: "com.example.web", teamId: "<team id>", keyId: "<key id>", privateKey: $key }' |
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/apple" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' -d @-
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#apple -->
+```ts
+const key = readFileSync('AuthKey_XXXXXXXXXX.p8', 'utf8')
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'apple' },
+  body: {
+    clientId: 'com.example.web',
+    teamId: '<team id>',
+    keyId: '<key id>',
+    privateKey: key,
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#apple -->
+```python
+with open("AuthKey_XXXXXXXXXX.p8") as file:
+    key = file.read()
+body = {
+    "clientId": "com.example.web",
+    "teamId": "<team id>",
+    "keyId": "<key id>",
+    "privateKey": key,
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/apple",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
+A key that is not a P-256 PKCS#8 key is refused at once. The key is stored encrypted and
+never returned; Tula signs a five-minute client secret with it for each sign-in.
+
 6. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Things specific to Apple: it sends the browser back with a cross-site **form post**, which the
@@ -42,10 +84,6 @@ Communication). If your iOS app offers another social sign-in, App Store Review 
 offer Sign in with Apple as well.
 
 ## Native sign-in with an identity token
-
-> **Not verified against Apple.** No test makes a request to Apple, no token Apple signed
-> was ever checked here, and no iOS app has been run against this. What follows is what
-> the server checks and what Apple's documentation says the sheet sends.
 
 An iOS app can sign in with the system's Sign in with Apple sheet instead of a browser
 tab. The sheet hands the app an **identity token**; the app hands it to Tula, which

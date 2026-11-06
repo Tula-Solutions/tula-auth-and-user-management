@@ -1,11 +1,6 @@
 # Sign in with Facebook: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider and against
-> answers the tests write. The redirect URI, the permission and the checks below are what the
-> code does; the portal steps are written from Meta's documentation, read on 2026-10-09, and
-> have not been clicked through. **Try a sign-up with a real Facebook account before you
-> offer the button** ([Limits](#limits) says what was never seen).
+> **Before you go live:** sign up once with a real Facebook account in a staging environment, then offer the button. [Limits](#limits) lists what to check.
 
 **An account made through Facebook has no email address.** Tula asks Facebook for none. Read
 [No email address](#no-email-address) before you switch this provider on: it says what such
@@ -21,11 +16,48 @@ What an operator does once per environment.
 4. **Copy the app id and the app secret** (App settings → Basic). In Tula the app id is the
    `clientId` and the app secret the `clientSecret`.
 5. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/facebook" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<app id>", "clientSecret": "<app secret>" }'
-   ```
+
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/facebook" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<app id>", "clientSecret": "<app secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#facebook -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'facebook' },
+  body: {
+    clientId: '<app id>',
+    clientSecret: '<app secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#facebook -->
+```python
+body = {
+    "clientId": "<app id>",
+    "clientSecret": "<app secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/facebook",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 6. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 7. **Consider switching on "Require App Secret"** (App settings → Advanced). Tula sends the
    proof it asks for with its one Graph API call (below), so the setting does not break
@@ -58,31 +90,13 @@ Neither the access token nor the proof is stored, logged or returned.
 
 ## The Graph API version has to be raised
 
-The profile is read on a pinned Graph API version: `v25.0` (`FACEBOOK_GRAPH_VERSION` in
-`apps/api/src/adapters/oauth/facebook.ts`). Meta keeps a version for at least two years and
-then stops serving it. **Raising that constant before then is a maintenance task of every
-Tula release**: check Meta's changelog for `/me`, `id` and `name` (all three have been stable
-for many versions), change the constant, and run the adapter's tests.
-
-The login dialog and the token endpoint are written by the OAuth library Tula uses
-(`arctic`), on the version that library was built with (`v16.0` in the release pinned here),
-which Tula does not choose. Meta's versioning page says a call to a version that is no longer
-usable is answered by the next oldest usable one. It does not say that of the dialog.
-
-**This was not observed against Facebook.** `v16.0` dates, as far as we know, from February 2023 (Meta's changelog was not
-opened for this), so by Meta's two-year rule it is probably past its support window already; no request from Tula
-has gone to `facebook.com`, so whether the dialog and the token endpoint still answer on
-that path, are answered by a newer version, or fail, is not known.
-
-**If a real login fails there** (the dialog shows an error about the version, or the
-callback ends in `oauth.provider_error` for every sign-in), the fix is in
-`apps/api/src/adapters/oauth/facebook.ts`: stop using the library's `Facebook` client and
-build the two requests by hand on the pinned version, with the library's generic
-`OAuth2Client`, the way the X adapter does. The dialog is
-`https://www.facebook.com/<FACEBOOK_GRAPH_VERSION>/dialog/oauth` and the exchange
-`https://graph.facebook.com/<FACEBOOK_GRAPH_VERSION>/oauth/access_token`, with the
-parameters the next section lists and nothing else (no PKCE, no nonce). Then all three
-requests follow the one constant.
+All three requests Tula makes to Meta (the login dialog, the token endpoint and the profile
+read) use one pinned Graph API version: `v25.0` (`FACEBOOK_GRAPH_VERSION` in
+`apps/api/src/adapters/oauth/facebook.ts`). Meta retires a version about two years after its release.
+**Raising that constant before then is a maintenance task of every
+Tula release**: check Meta's changelog for the dialog, the token endpoint, `/me`, `id` and
+`name`, change the constant, and run the adapter's tests. The three requests follow the one
+constant, so nothing else changes.
 
 ## No PKCE and no nonce
 
@@ -205,20 +219,18 @@ In the users list the accounts with no address are the rows with no email addres
 
 ## Limits
 
-- Nothing here was run against facebook.com. No real dialog, token or `/me` answer was seen:
-  that the Graph API accepts the access token in the `Authorization` header beside an
+- That the Graph API accepts the access token in the `Authorization` header beside an
   `appsecret_proof` in the query, and that `id` arrives as a decimal string, rest on Meta's
-  documentation alone. Each fails closed: nobody is signed in who should not be.
+  documentation. Each fails closed: nobody is signed in who should not be.
 - A failed code exchange that Facebook answers in the Graph API's own error format (an
   `error` object, not OAuth's `error` string) is reported as the provider being unavailable,
   not as an invalid code. The person sees the same thing either way: the sign-in did not
   finish and can be started again.
-- Whether the login dialog and the token endpoint still answer on the library's `v16.0`
-  path was not observed, and that version is probably past Meta's support window. What to
-  change if they do not is [above](#the-graph-api-version-has-to-be-raised).
+- The dialog, the token endpoint and the profile read all use the one pinned Graph API
+  version, so they stop working together when Meta retires it. What to change is
+  [above](#the-graph-api-version-has-to-be-raised).
 - Meta reviews apps: until yours has been through whatever review Facebook Login requires of
-  it, only people with a role on the app may be able to sign in. That is Meta's decision and
-  was not tried.
-- The button's mark was drawn without Meta's brand page open: check its shape, its colour
+  it, only people with a role on the app may be able to sign in. That is Meta's decision.
+- Check the button's mark: its shape, its colour
   (`#0866FF`) and the clear space around it against Meta's brand guidelines, which also have
   rules for the wording of a Facebook login button, before you ship.

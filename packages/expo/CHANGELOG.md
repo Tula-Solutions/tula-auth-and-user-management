@@ -1,5 +1,12 @@
 # @tula-tech/expo
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [0bc0bae]
+  - @tula-tech/core@0.3.1
+
 ## 0.3.0
 
 ### Patch Changes

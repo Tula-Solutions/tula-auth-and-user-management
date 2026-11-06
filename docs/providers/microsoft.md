@@ -1,10 +1,6 @@
 # Sign in with Microsoft: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider, and no Microsoft tenant: the flow is tested against the API's built-in
-> mock provider and against ID tokens the tests sign themselves. The redirect URI, the scopes
-> and the token checks below are what the code does; the portal steps are written from
-> Microsoft's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real Microsoft account in a staging environment.
 
 > **Required: the `xms_edov` optional claim (step 4). Without it nobody can sign up with
 > Microsoft.** Tula counts a Microsoft address as verified only when the ID token carries
@@ -13,13 +9,12 @@
 > created and no existing user is linked. Adding the claim is part of the setup, not an
 > optimisation.
 >
-> **Personal accounts (`consumers`, and the personal accounts `common` lets in): unknown.**
-> The Microsoft documentation this was written from describes `xms_edov` for an address
-> whose *domain owner* was verified, which is a property of an organization's tenant. It
-> does not say whether a personal account's token (outlook.com, hotmail.com, or a personal
-> account on any other address) ever carries the claim, and no such token was looked at.
-> Until someone checks with a real personal account, assume that **personal accounts may
-> not be able to sign up at all**, and test it before you offer `consumers` or `common`.
+> **Personal accounts (`consumers`, and the personal accounts `common` lets in): test first.**
+> Microsoft documents `xms_edov` for an address whose *domain owner* was verified, which is a
+> property of an organization's tenant. It does not say whether a personal account's token
+> (outlook.com, hotmail.com, or a personal account on any other address) carries the claim.
+> If it does not, **personal accounts cannot sign up**. Sign up with a real personal account
+> before you offer `consumers` or `common`.
 
 What an operator does once per environment. It covers
 Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
@@ -46,11 +41,50 @@ Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
 5. **API permissions**: the delegated Microsoft Graph permissions `openid`, `profile` and
    `email`. Tula asks for nothing else and calls no Microsoft API with the token.
 6. **Give Tula the credentials**, with the tenant that matches step 2:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/microsoft" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<application (client) id>", "clientSecret": "<secret value>", "tenant": "organizations" }'
-   ```
+
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/microsoft" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<application (client) id>", "clientSecret": "<secret value>", "tenant": "organizations" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#microsoft -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'microsoft' },
+  body: {
+    clientId: '<application (client) id>',
+    clientSecret: '<secret value>',
+    tenant: 'organizations',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#microsoft -->
+```python
+body = {
+    "clientId": "<application (client) id>",
+    "clientSecret": "<secret value>",
+    "tenant": "organizations",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/microsoft",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 ## The tenant

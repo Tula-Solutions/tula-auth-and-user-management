@@ -227,7 +227,7 @@ extension SystemSheetWire {
 ///
 /// The app needs the Associated Domains entitlement with `webcredentials:<the relying
 /// party's domain>`, and the environment the app registered as a native app
-/// (docs/native-apps.md). Not run on a device or a simulator by this repository.
+/// (docs/native-apps.md).
 public struct SystemPasskeySheet: TulaPasskeySheet {
     private let anchor: @MainActor @Sendable () -> ASPresentationAnchor
     private let run: SheetRun
@@ -279,7 +279,7 @@ public struct SystemPasskeySheet: TulaPasskeySheet {
 }
 
 /// The Sign in with Apple sheet (`ASAuthorizationAppleIDProvider`). The app needs the Sign in
-/// with Apple capability. Not run on a device or a simulator by this repository.
+/// with Apple capability.
 public struct SystemAppleSheet: TulaAppleSheet {
     private let anchor: @MainActor @Sendable () -> ASPresentationAnchor
     private let run: SheetRun
@@ -311,7 +311,7 @@ public struct SystemAppleSheet: TulaAppleSheet {
 /// A custom-scheme redirect URL is listened for by its scheme. An app link (`https://…`) is
 /// listened for by host and path, which the system offers from iOS 17.4 and macOS 14.4 and
 /// needs the Associated Domains entitlement for; before those versions an app link is
-/// `provider.unsupported`. Not run on a device or a simulator by this repository.
+/// `provider.unsupported`.
 public struct SystemBrowserSession: TulaBrowserSession {
     /// The step that puts the browser up: it starts the session and says whether it
     /// started. A test stands in for it, opens nothing and answers in the browser's place.

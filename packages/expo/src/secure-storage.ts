@@ -308,7 +308,7 @@ export function secureStoreKey(key: string): string {
  * - **A newer write.** Nothing is added. The adapter asked for the older value first and
  *   the newer one second; which of two writes in flight the native layer completes last is
  *   the native layer's, and an older token that lands last is what the store then holds
- *   until the client's next refresh writes its own. This was not observed on any phone.
+ *   until the client's next refresh writes its own.
  *
  * A waiting later try is called off by a newer write or a delete, and its timer never keeps
  * a process alive; an adapter that is dropped while one waits still makes at most those two

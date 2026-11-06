@@ -9,8 +9,7 @@ You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 > (`ghcr.io/tula-solutions/tula-api:<version>`): a project made that way names it and
 > `tula dev` pulls it, so step 1 is skipped as well and no checkout is needed. **The Expo SDK is not
 > released**: `--framework expo` is refused without `--tula-packages`, so for it steps 2 and 3
-> stay as written. The steps below, all from a checkout, are the ones that were run; the
-> path through npm has not been walked yet.
+> stay as written. The steps below start from a checkout.
 
 ## 1. Build the API image
 
@@ -151,10 +150,8 @@ button before you have any, add `OAUTH_MOCK_PROVIDER=true` to the project's `.en
 whatever address you type. It is for local development only, and `tula doctor` warns while it
 is on.
 
-This path was last run end to end on 2026-10-04 with the Next.js template, the mock provider
-and Chromium's virtual authenticator: sign up, add a passkey, sign out, sign in with the
-passkey, sign in with the Google button. Real Google and a physical authenticator were not
-exercised.
+**Before you go live:** sign in once with a real Google account and a real authenticator in a
+staging environment. This path uses the development mock provider and a virtual authenticator.
 
 ## The native path
 

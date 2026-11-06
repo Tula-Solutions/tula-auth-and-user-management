@@ -8,17 +8,8 @@ it tells your screens which one the server is asking for. Beside it are **Compos
 for a sign-in, a sign-up, a password reset and the signed-in user's account, for an app that
 does not want to draw its own ([Screens](#screens), below).
 
-> **The screens ran on one emulator; nothing ran on a device.** The client is plain Kotlin
-> and is tested on a JVM, against the real API, in CI, with a software authenticator, a
-> scripted browser and a software key in the places of Credential Manager, a Custom Tab and
-> the Keystore. The Compose screens, with the client and the Keystore-backed storage under
-> them, were run by the example app's UI tests on one Android emulator, by hand; nothing
-> ran on a phone, TalkBack was never turned on, and no test read a stored token back. The
-> other Android adapters (the passkey sheet, Google's sheet, the browser session, the
-> Keystore device key) are compiled and linted and have never run, on a device or an
-> emulator. **No passkey sheet, no Google sheet and no browser has been opened by this
-> library, and no key was made in a phone's Keystore or StrongBox.** Nothing is published
-> to a Maven repository, and the names (`dev.tula:tula-auth`) are placeholders.
+> **Preview: APIs may change before 1.0.** The SDK is not yet published to a Maven
+> repository, and its names (`dev.tula:tula-auth`) are placeholders.
 
 ## What this version does
 

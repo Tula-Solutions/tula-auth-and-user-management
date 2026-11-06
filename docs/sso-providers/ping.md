@@ -1,16 +1,9 @@
 # Single sign-on with Ping Identity: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has a Ping environment.
-> The values Tula gives Ping and the names Tula reads are what the code does, tested against the
-> built-in mock provider. Ping's console steps are **not verified**, and no Ping
-> documentation page was checked, so no vendor deep link is given.
-
-<!-- Vendor docs: https://docs.pingidentity.com/ (a guessed deep link, .../p1_add_saml_app.html,
-     answered 404 on 2026-11-03, so none is used). Look up "add a SAML application" and "add an
-     OIDC web application" for PingOne. -->
+> **Before you go live:** run the connection's test sign-in with a real Ping account in a staging environment. The console steps below point to Ping's own documentation.
 
 The guide is [Enterprise single sign-on: the guide](../enterprise-sso.md); this page is the Ping
-column.
+column. In PingOne's documentation, look up "add a SAML application" and "add an OIDC web application".
 
 ## SAML
 
@@ -53,7 +46,7 @@ Run the test sign-in with a user who may use the application; activate once it p
 ## OIDC
 
 Redirect URI `PUBLIC_URL/v1/sso/callback/<connection id>`, scopes `openid email profile`; give Tula the
-`issuer`, `clientId` and `clientSecret` Ping shows for the application (where: not verified). With the
+`issuer`, `clientId` and `clientSecret` Ping shows for the application. With the
 `ping` preset the `email`, `given_name`, `family_name` claims and a **`memberOf`** groups claim are
 read (the OIDC groups claim of this preset is `memberOf`, not `groups`). The test sign-in shows which
 of them Ping sent.

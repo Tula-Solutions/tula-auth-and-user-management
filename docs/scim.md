@@ -82,14 +82,14 @@ carries ids and flags only.
 ## Identity provider notes
 
 > [!NOTE]
-> The console wording is **not verified** against a live console; what follows is the values
-> Tula expects and what its code accepts.
+> What follows is the values Tula expects and what its code accepts; the vendor's console
+> wording changes, so its own documentation is the authority for the screens.
 
 ### Okta
 
 Base URL `https://<your api>/v1/scim/v2`; the SCIM token is sent as a bearer token; `userName` carries
 the email address. Push new users, profile updates and deactivation (`active: false`); where Okta
-asks for these: not verified.
+asks for these is in Okta's documentation.
 <!-- Vendor docs: https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_saml.htm covers the app wizard only; the SCIM provisioning page was not located. -->
 
 ### Microsoft Entra ID

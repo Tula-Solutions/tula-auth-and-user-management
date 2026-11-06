@@ -1,5 +1,11 @@
 # @tula-tech/config
 
+## 0.3.1
+
+### Patch Changes
+
+- @tula-tech/contract@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

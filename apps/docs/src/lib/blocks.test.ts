@@ -171,6 +171,21 @@ describe(':::steps', () => {
   })
 })
 
+describe('a tabs group is closed by its own marker', () => {
+  const code = '```sh\ncurl x\n```\n\n```ts\nx()\n```'
+  test('<!-- tabs --> closed by ::: is an error', () => {
+    expect(failure(`# T\n\n<!-- tabs -->\n${code}\n\n:::\n`).message).toContain('<!-- /tabs -->')
+  })
+  test(':::code-group closed by <!-- /tabs --> is an error', () => {
+    expect(failure(`# T\n\n:::code-group\n\n${code}\n<!-- /tabs -->\n`).message).toContain(':::')
+  })
+  test('html other than the snippet markers inside a tabs group is an error', () => {
+    expect(
+      failure(`# T\n\n<!-- tabs -->\n${code}\n\n<div>stray</div>\n\n<!-- /tabs -->\n`).message
+    ).toContain('fenced code blocks only')
+  })
+})
+
 describe(':::tabs and :::code-group', () => {
   test('tabs are panels labelled by their headings, which are not headings of the page', () => {
     const out = html('# T\n\n:::tabs{sync="fw"}\n\n#### Next.js\n\nA.\n\n#### Vite\n\nB.\n\n:::\n')
@@ -270,6 +285,49 @@ describe(':::params', () => {
     const bad = failure(table(['| `a` | `b` | maybe | | d |']))
     expect(bad.message).toContain('"maybe" in the Required column')
     expect(bad.line).toBe(7)
+  })
+})
+
+describe('<!-- tabs --> code tabs', () => {
+  const source =
+    '# T\n\n<!-- tabs -->\n\n```bash\ncurl x\n```\n\n```ts\nawait x()\n```\n\n```python\nx()\n```\n\n<!-- /tabs -->\n'
+
+  test('consecutive fences become one group, named by language and synced across pages', () => {
+    const out = html(source)
+    expect(out).toContain('data-docs-tabs')
+    expect(out).toContain('data-sync="language"')
+    expect(out).toContain('data-label="cURL"')
+    expect(out).toContain('data-label="TypeScript"')
+    expect(out).toContain('data-label="Python"')
+    expect(out).not.toContain('<!-- tabs -->')
+  })
+
+  test('only fenced code is allowed inside, and the group must be closed', () => {
+    expect(failure('# T\n\n<!-- tabs -->\n\ntext\n\n<!-- /tabs -->\n').message).toContain(
+      'fenced code blocks only'
+    )
+    expect(failure('# T\n\n<!-- tabs -->\n\n```bash\nx\n```\n').message).toContain('never closed')
+  })
+
+  test('the Markdown twin keeps every language under a bold label', () => {
+    const tree = parser.parse(source) as Root
+    let text = source
+    for (const one of twinEdits(source, tree).sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, one.start) + one.text + text.slice(one.end)
+    }
+    expect(text).not.toContain('<!-- tabs -->')
+    expect(text).not.toContain('<!-- /tabs -->')
+    expect(text).toContain('**cURL**\n\n```bash')
+    expect(text).toContain('**TypeScript**\n\n```ts')
+    expect(text).toContain('**Python**\n\n```python')
+  })
+
+  test('snippet markers between the fences do not break the group', () => {
+    const withMarkers =
+      '# T\n\n<!-- tabs -->\n\n<!-- snippet: a.sh#x -->\n\n```bash\nx\n```\n\n<!-- /snippet -->\n\n<!-- snippet: a.ts#x -->\n\n```ts\ny\n```\n\n<!-- /snippet -->\n\n<!-- /tabs -->\n'
+    const out = html(withMarkers)
+    expect(out).toContain('data-label="cURL"')
+    expect(out).toContain('data-label="TypeScript"')
   })
 })
 

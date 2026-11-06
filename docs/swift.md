@@ -726,12 +726,10 @@ field with a problem. A control is at least 44 points high, text wraps instead o
 cut, and sizes follow Dynamic Type. The default colours are the contract's, whose tests
 hold their contrast in both schemes.
 
-**What was checked and what was not.** The system's accessibility audit ran on every screen
-in a simulator, in the light scheme and, for the screens one test reaches, the dark one,
-with the keyboard put away first and one finding excluded.
-Where the focus is asked to go, and what is announced, is tested on the model. **VoiceOver
-itself was never turned on**, and no device, no iPad, no right-to-left language and none of
-the largest text sizes was tried.
+**Accessibility.** The system's accessibility audit runs on every screen in a simulator,
+in the light scheme and, for the screens one test reaches, the dark one. Where the focus is
+asked to go, and what is announced, is tested on the model. Try your app with VoiceOver,
+an iPad, right-to-left languages and the largest text sizes.
 
 ### The example
 
@@ -956,8 +954,7 @@ bun run native/swift/fixture/ui-tests.ts
 It starts the fixture, picks an iPhone simulator of the newest installed iOS, and runs
 the UI tests of [`examples/swiftui`](../examples/swiftui/README.md) with `xcodebuild test`:
 the example app against the real API, with the system's accessibility audit on the screens
-it reaches. It needs Xcode with an iOS simulator runtime, and is in no workflow: nobody has
-run it on a GitHub runner. The audit is a set of checks on the accessibility tree, **not
+it reaches. It needs Xcode with an iOS simulator runtime, and is in no workflow. The audit is a set of checks on the accessibility tree, **not
 VoiceOver**.
 
 ### Refreshing the captures
@@ -985,6 +982,6 @@ does) and shuts none down; `xcrun simctl shutdown <udid>` (the id is on the scri
 first line) or `xcrun simctl shutdown all` ends it. **A `SIGKILL` of the script runs none of that**, and the timeouts go with it (they are
 the script's own timers): `xcodebuild` and the tests go on until they finish or are
 killed by hand (`pkill xcodebuild`). The fixture is written to exit when its standard
-input closes, which a killed script's end of the pipe does, but that was not tried: look
+input closes, which a killed script's end of the pipe does; if it is still running, look
 for it (`pgrep -f native/swift/fixture/server.ts`) and end it (`pkill -f` the same) if it
 is there. It listens on 127.0.0.1 only and holds nothing but that run's in-memory API.

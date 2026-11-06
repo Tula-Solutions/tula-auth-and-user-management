@@ -3,10 +3,9 @@
 "Continue with Google", GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook, and connecting or
 disconnecting those accounts in the account page. Each environment uses its own credentials; none ship with Tula.
 
-> **Not verified against the live consoles.** Nothing in this repository has real provider
-> credentials: the flow is tested against the API's built-in mock provider. The redirect URI,
-> the scopes and the protocol are what the code sends; the console steps in the setup
-> checklists are written from each provider's documentation and have not been clicked through.
+> **Before you go live:** sign in once with a real account of each provider, in a staging
+> environment. The redirect URI, the scopes and the protocol are what Tula sends; a provider's
+> console changes, so its own documentation is the authority for the console steps.
 
 ## Switch it on
 
@@ -144,9 +143,7 @@ script; the screens are described below.
 - The provider's authorization code is bound to the sign-in that asked for it. With Google,
   GitHub, Microsoft and Discord that is PKCE (an S256 `code_challenge` on the way out, the
   `code_verifier` with the token request; the verifier never leaves the server); with Google,
-  Apple and Microsoft it is also the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
-  was tested against the built-in mock provider and the requests the adapter builds, not
-  against github.com. Discord's OAuth2 page does not mention PKCE: the adapter sends it
+  Apple and Microsoft it is also the `nonce` in the signed ID token. Apple documents no PKCE and gets none. Discord's OAuth2 page does not mention PKCE: the adapter sends it
   because the client library it uses does, and whether Discord refuses a wrong verifier was
   never observed.
 - **LinkedIn has neither.** Its authorization request takes five parameters and none of them

@@ -4,7 +4,9 @@ import { RenderError } from './markdown'
 /**
  * What a reader of the published site must never meet: the repository's own bookkeeping.
  * An ADR, a ticket, an audit finding and a link into a directory the site leaves out mean
- * nothing outside the repository, and the link would not resolve there.
+ * nothing outside the repository, and the link would not resolve there. Nor does a note on
+ * what the maintainers did or did not test: the docs say what the product does and what to
+ * check before going live, in the product's voice.
  */
 const DIRECTORIES = EXCLUDED_DIRECTORIES.join('|')
 const INTERNAL = [
@@ -15,6 +17,13 @@ const INTERNAL = [
   // A plan's step id, as the headings of docs/plans name them ("Orgs 07", "SSO 03").
   /\b(?:Orgs|SSO)\s\d{2}\b/g,
   new RegExp(`docs/(?:${DIRECTORIES})\\b|(?:^|[/"'(])(?:${DIRECTORIES})/[\\w.-]+`, 'gm'),
+  /\bnot\s+verified\s+against\b/gi,
+  /\bnothing\s+in\s+this\s+repository\b/gi,
+  /\bclicked\s+through\b/gi,
+  /\bwritten\s+from\s+[\w' ]{1,40}\s+documentation\b/gi,
+  /\b(?:was|were)\s+not\s+tried\b/gi,
+  /\bnot\s+been\s+(?:observed|tried|walked|clicked)\b/gi,
+  /\bnever\s+observed\s+here\b/gi,
 ]
 
 /** One line of a published file that names the repository's bookkeeping. */

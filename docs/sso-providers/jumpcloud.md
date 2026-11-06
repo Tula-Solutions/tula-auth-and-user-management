@@ -1,15 +1,9 @@
 # Single sign-on with JumpCloud: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has a JumpCloud
-> organization. The values Tula gives JumpCloud and the names Tula reads are what the code does,
-> tested against the built-in mock provider. JumpCloud's console steps are **not verified**, and no JumpCloud documentation page was checked, so no vendor link is given.
-
-<!-- Vendor docs: JumpCloud's support site, https://support.jumpcloud.com/, answered 503 on
-     2026-11-03 when a page was requested; look up "custom SAML application" and "custom OIDC
-     application" there. No deep link was verified. -->
+> **Before you go live:** run the connection's test sign-in with a real JumpCloud account in a staging environment. The console steps below point to JumpCloud's own documentation.
 
 The guide is [Enterprise single sign-on: the guide](../enterprise-sso.md); this page is the JumpCloud
-column.
+column. In JumpCloud's documentation, look up "custom SAML application" and "custom OIDC application".
 
 ## SAML
 
@@ -54,6 +48,5 @@ passes.
 
 Tula's side is the same for every provider: redirect URI `PUBLIC_URL/v1/sso/callback/<connection id>`,
 scopes `openid email profile`, and the `issuer`, `clientId` and `clientSecret` that JumpCloud shows
-for the application (where it shows them: not verified). With the `jumpcloud` preset the `email`,
-`given_name`, `family_name` and `groups` claims are read; whether JumpCloud includes `groups` in the
-ID token is not verified, and the test sign-in shows what arrived.
+for the application. With the `jumpcloud` preset the `email`,
+`given_name`, `family_name` and `groups` claims are read; the test sign-in shows whether JumpCloud included `groups` in the ID token.
