@@ -407,7 +407,7 @@ export function isPhoneNumberAllowed(
 /**
  * How many text messages an environment sends in one day (UTC) unless it says otherwise: the
  * default of `sms.dailyMessageLimit`. The limit is on by default, so that an attack on an
- * environment that has just switched SMS on has a fixed maximum cost (ADR 0037).
+ * environment that has just switched SMS on has a fixed maximum cost.
  */
 export const DEFAULT_SMS_DAILY_MESSAGE_LIMIT = 500
 
@@ -469,8 +469,8 @@ export interface SmsCostLimits {
 }
 
 /**
- * The limits that bound what an environment's text messages can cost, from its one setting
- * (ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+ * The limits that bound what an environment's text messages can cost, from its one setting.
+ * The server enforces exactly these, and the dashboard shows them from here: one
  * definition, so that what an operator reads is what is held.
  *
  * They count **messages**: not segments (a long message is billed as several) and not money.

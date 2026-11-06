@@ -92,7 +92,7 @@ export interface Environment {
   linkStorage: LinkStorageLike | undefined
   /**
    * Storage one tab keeps across a navigation and no other tab can read (`sessionStorage`).
-   * Holds the binding of an OAuth round trip while the tab is at the provider (ADR 0026): not a
+   * Holds the binding of an OAuth round trip while the tab is at the provider: not a
    * token, and not an attempt's secret.
    */
   tabStorage: LinkStorageLike | undefined
@@ -100,7 +100,7 @@ export interface Environment {
   page: PageLike | undefined
   /**
    * Where `navigator.credentials` and `PublicKeyCredential` are looked up when a passkey is
-   * asked for (ADR 0027). Read lazily: a runtime without WebAuthn simply has neither.
+   * asked for. Read lazily: a runtime without WebAuthn simply has neither.
    */
   passkeys: PasskeyGlobals | undefined
   /**
@@ -110,7 +110,7 @@ export interface Environment {
   passkeyProvider?: PasskeyProvider
   /**
    * Where the client's device key comes from, for a runtime that finds or makes it by a call
-   * that takes time (a key in a phone's secure hardware; ADR 0052). Asked before every
+   * that takes time (a key in a phone's secure hardware). Asked before every
    * request a key proves, unless the client was given a `deviceKey` of its own. Never for a
    * `web` client.
    */

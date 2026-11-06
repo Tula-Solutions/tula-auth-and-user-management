@@ -25,7 +25,7 @@ public struct TulaDevicePublicKey: Hashable, Sendable {
     }
 }
 
-/// A key a session can be bound to (ADR 0043): its public half, and a way to sign with the
+/// A key a session can be bound to: its public half, and a way to sign with the
 /// private half that never hands the private half out.
 public protocol TulaDeviceKey: Sendable {
     /// The public key, sent in every proof's header.
@@ -347,7 +347,7 @@ public struct KeychainDeviceKeyStore: TulaDeviceKeyStore {
 
 #endif
 
-/// The proofs of a client (RFC 9449, ADR 0043): which requests carry one, the key that signs
+/// The proofs of a client (RFC 9449): which requests carry one, the key that signs
 /// them and the server's newest nonce.
 ///
 /// The nonce is held here, in memory, and nowhere else. A proof is made for one request and

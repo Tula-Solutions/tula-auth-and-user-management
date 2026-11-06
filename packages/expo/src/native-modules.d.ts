@@ -1,7 +1,7 @@
 // The native modules this package imports, declared as far as it uses them.
 //
-// The repository does not install React Native or Expo (about 500 packages for two imports;
-// ADR 0046), so their own declarations are not there to check against. These are the
+// The repository does not install React Native or Expo (about 500 packages for two imports), so
+// their own declarations are not there to check against. These are the
 // members `native.ts` reads, copied from `expo-secure-store` 57.0.4
 // (`build/SecureStore.d.ts`) and `react-native` 0.86.3
 // (`Libraries/Utilities/Platform.d.ts`), the versions of Expo SDK 57; of
@@ -89,8 +89,8 @@ declare module 'react-native-passkey' {
   }
 }
 
-// The three modules below were added with the native sign-in sheets and the device key
-// (ADR 0052), under the same terms: members copied from `expo-apple-authentication` 57.0.2
+// The three modules below were added with the native sign-in sheets and the device key,
+// under the same terms: members copied from `expo-apple-authentication` 57.0.2
 // (`build/AppleAuthentication.d.ts`, `build/AppleAuthentication.types.d.ts`; the version
 // Expo SDK 57 pins), `react-native-nitro-google-signin` 2.3.0
 // (`lib/typescript/src/GoogleOneTapSignIn.d.ts`, `…/specs/nitro-google-signin.nitro.d.ts`)

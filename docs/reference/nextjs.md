@@ -415,7 +415,7 @@ export interface InitialAuthState {
   /** The user, from `currentUser()`, when the layout fetched it. */
   user?: User | null
   /**
-   * The active organization's id, from `auth().orgId` (ADR 0065), so that the first paint
+   * The active organization's id, from `auth().orgId`, so that the first paint
    * already knows it. Left out or `null` for none.
    */
   organizationId?: string | null
@@ -1070,7 +1070,8 @@ export interface TulaClient {
   readonly state: AuthState
   /**
    * What a server rendered for this client, when a framework integration knows it
-   * (`@tula-tech/nextjs` sets it from the request's session). `@tula-tech/react` uses it as the state
+   * (`@tula-tech/nextjs` sets it from the request's session). `@tula-tech/react` uses it as the
+   * state
    * during server rendering and hydration instead of `loading`. `createTulaClient` never sets
    * it.
    */
@@ -1251,7 +1252,8 @@ export interface TulaClient {
      */
     withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
     /**
-     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
+     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in
+     * that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -1335,7 +1337,7 @@ export interface TulaClient {
      * An access token to send to your own backend, refreshed first when it is missing or about
      * to expire. Any number of concurrent calls share one refresh.
      *
-     * **`null` while signed in on a `stateful` session profile** (ADR 0028). Such a session is
+     * **`null` while signed in on a `stateful` session profile**. Such a session is
      * an httpOnly cookie the browser holds and this client never sees: there is no token, so
      * there is nothing to return and nothing is asked of the API. Use `state.status` to know
      * whether the user is signed in; a backend on the API's own host receives the cookie and
@@ -1459,7 +1461,7 @@ export interface TulaClient {
     prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /**
-   * The signed-in user's organizations and the one the session acts in (ADR 0065). While the
+   * The signed-in user's organizations and the one the session acts in. While the
    * environment's `organizations.enabled` setting is off, each call answers
    * `organization.disabled`.
    */
@@ -1509,7 +1511,7 @@ export interface TulaClient {
     setActive(organizationId: string | null): Promise<ActiveOrganization>
     /**
      * The organizations the user may join because their **verified** email address is on a
-     * domain the organization verified (ADR 0065, "Verified domains"): its id, name and slug,
+     * domain the organization verified: its id, name and slug,
      * nothing of its members. Empty for a user with no verified address, for one already in
      * the organization and for a domain that is not exactly the address's.
      *
@@ -1646,7 +1648,7 @@ export interface TulaClient {
       remove(organizationId: string, userId: string): Promise<void>
     }
     /**
-     * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by
+     * An organization's domains: the organization claims one by
      * a code emailed to an address on it, and a verified one suggests or joins the people who
      * sign up with a verified address on it. Needs `org:sys:domains:manage`, which the API
      * reads from the user's membership on every call.
@@ -1731,7 +1733,7 @@ export interface TulaClient {
       remove(organizationId: string, domainId: string): Promise<void>
     }
     /**
-     * An organization's single sign-on (ADR 0067), for a member whose role holds
+     * An organization's single sign-on, for a member whose role holds
      * `org:sys:sso:manage`, which the API reads from the membership on every call. The client
      * secret is write-only: no answer returns it. Switching enforcement off, trusting the
      * identity provider for MFA and naming a break-glass role need a recent sign-in
@@ -1770,7 +1772,8 @@ export interface TulaClient {
        * @returns The connection.
        * @example
        * ```ts
-       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret })
+       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret
+       * })
        * ```
        */
       create(
@@ -1808,7 +1811,8 @@ export interface TulaClient {
        */
       refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
       /**
-       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep their accounts.
+       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep
+       * their accounts.
        *
        * @param organizationId - The organization.
        * @param id - The connection.
@@ -1839,7 +1843,8 @@ export interface TulaClient {
        * @returns The mapping as saved.
        * @example
        * ```ts
-       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role: 'admin' }] })
+       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role:
+       * 'admin' }] })
        * ```
        */
       setGroupRoles(
@@ -1859,7 +1864,8 @@ export interface TulaClient {
        * @throws TulaError `request.redirect_not_allowed`, and those of {@link get}.
        * @example
        * ```ts
-       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id, location.href)
+       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id,
+       * location.href)
        * ```
        */
       startTest(
@@ -1891,7 +1897,8 @@ export interface TulaClient {
        *
        * @param organizationId - The organization.
        * @returns The links.
-       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       * `sso.disabled`.
        * @example
        * ```ts
        * const { links } = await tula.organizations.sso.setupLinks(org.id)
@@ -1928,7 +1935,7 @@ export interface TulaClient {
       revokeSetupLink(organizationId: string, linkId: string): Promise<void>
     }
     /**
-     * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
+     * Invitations by email. The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
      * call. Answering needs the invited account: signed in, with the invited address, verified.
      */
@@ -2087,7 +2094,7 @@ export interface TulaClient {
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
     /**
-     * The signed-in user's passkeys (ADR 0027). Adding, renaming and removing one may answer
+     * The signed-in user's passkeys. Adding, renaming and removing one may answer
      * `auth.step_up_required`; see `session.stepUp`.
      */
     readonly passkeys: {
@@ -2408,7 +2415,8 @@ The one error every failed call throws.
 
 `code` is a contract code (`auth.invalid_credentials`, `password.too_short`, `rate_limited`,
 …) or one of the client's own (`network.failed`, `network.timeout`, `response.invalid`,
-`storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is ready to show, taken from the client's locale table. An error
+`storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is
+ready to show, taken from the client's locale table. An error
 never contains a token, an attempt's secret or a password.
 
 ```ts
@@ -2822,7 +2830,7 @@ export interface TulaLocalization {
     smsTurnedOn: string
     smsTurnedOff: string
   }
-  /** The profile's "Phone number" section (ADR 0037). */
+  /** The profile's "Phone number" section. */
   phone: {
     sectionTitle: string
     none: string
@@ -2845,7 +2853,7 @@ export interface TulaLocalization {
     added: string
     removed: string
   }
-  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  /** The profile's "Email address" section, for an account that has none. */
   emailAddress: {
     sectionTitle: string
     none: string
@@ -2863,7 +2871,7 @@ export interface TulaLocalization {
     added: string
   }
   /**
-   * The organization switcher and the organization profile (ADR 0065, ADR 0064): the words of
+   * The organization switcher and the organization profile: the words of
    * the Tula UI items `organization-switcher` and `organization-profile`. The prebuilt
    * components do not draw them; they are here so that a copy's words are the app's
    * translation and never a string in a copied file.
@@ -2919,7 +2927,7 @@ export interface TulaLocalization {
     permissionsEmpty: string
   }
   /**
-   * `<OrganizationSwitcher>` (ADR 0065, Orgs 07). It also uses the `organizations` group
+   * `<OrganizationSwitcher>`. It also uses the `organizations` group
    * above (`loading`, `loadFailed`, `retry`, `empty`, `personalAccount`, `switchedTo`, …).
    */
   organizationSwitcher: {
@@ -2958,7 +2966,7 @@ export interface TulaLocalization {
     manage: string
     close: string
   }
-  /** `<CreateOrganization>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  /** `<CreateOrganization>`. It also uses the `organizations` group. */
   createOrganization: {
     title: string
     subtitle: string
@@ -2970,7 +2978,7 @@ export interface TulaLocalization {
     /** `{name}`. Said when the new organization was not made the active one. */
     created: string
   }
-  /** `<OrganizationProfile>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  /** `<OrganizationProfile>`. It also uses the `organizations` group. */
   organizationProfile: {
     title: string
     tabsLabel: string
@@ -3206,7 +3214,7 @@ export interface TulaLocalization {
     sessionsLoading: string
     thisDevice: string
     /**
-     * Marks a session that is bound to a device key (ADR 0043): it can be refreshed only by
+     * Marks a session that is bound to a device key: it can be refreshed only by
      * the app installation that signed in. It says what the session needs, not what the
      * device is: binding proves possession of a key and nothing about the device.
      */
@@ -3951,7 +3959,7 @@ export interface UserButtonProps {
 _type_, defined in `packages/core/src/types.ts`
 
 An organization the signed-in user belongs to, with their role in it and its permission
-keys (ADR 0065).
+keys.
 
 ```ts
 export type UserOrganization = Schemas['UserOrganization']
@@ -4540,7 +4548,7 @@ export type Auth =
      */
     customClaims: CustomClaims
     /**
-     * The active organization's id (ADR 0065), or `null` while the session acts in none
+     * The active organization's id, or `null` while the session acts in none
      * (the personal account, or the environment has organizations off). Read from the
      * verified claims, for a token session and a `stateful` one alike; a token whose
      * organization claims are incomplete or malformed reads as no organization, never as
@@ -4693,7 +4701,7 @@ export interface SessionClaims {
    */
   ext?: CustomClaims
   /**
-   * The active organization's id (ADR 0065). Present only together with `org_role` and
+   * The active organization's id. Present only together with `org_role` and
    * `org_perms`, and only in the shape a Tula server issues; any other combination was left
    * out, all three. Read the three through `auth()`, which also answers `has()`.
    */
@@ -4751,7 +4759,7 @@ const auth: () => Promise<Auth>
 orgPermissions, has, getToken }`, or the signed-out shape with `null`s. `customClaims`
 holds what the JWT template of the session's profile defines (empty without one), for a
 token session and a `stateful` one alike. `orgId`, `orgRole` and `orgPermissions` are the
-active organization's (ADR 0065; `null`, `null` and empty with none), and
+active organization's (`null`, `null` and empty with none), and
 `has({ permission } | { role })` checks them offline: false with no active organization,
 exact for a permission.
 
@@ -4957,7 +4965,7 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
   /** The sign-up page, so that it is never protected. Defaults to `/sign-up`. */
   signUpUrl?: string
   /**
-   * Routes that need a permission or a role of the session's active organization (ADR 0065),
+   * Routes that need a permission or a role of the session's active organization,
    * checked on the verified claims with no call to the API. Without a session the visitor is
    * sent to sign in, as for any protected route. **With** a session that does not grant the
    * rule (no active organization, another role, a missing permission) the answer is a `403`:

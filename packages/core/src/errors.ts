@@ -26,7 +26,7 @@ const CLIENT_MESSAGES = {
   'passkey.cancelled': 'The passkey request was cancelled or timed out. Try again.',
   'passkey.already_on_device': 'This device already has a passkey for this account.',
   'passkey.failed': 'The passkey could not be used. Try again, or sign in another way.',
-  // The device key (ADR 0043) could not sign a request's proof. Nothing was sent.
+  // The device key could not sign a request's proof. Nothing was sent.
   'device.key_failed': 'This device could not sign the request with its key.',
 } as const
 
@@ -194,7 +194,8 @@ export interface TulaErrorInit {
  *
  * `code` is a contract code (`auth.invalid_credentials`, `password.too_short`, `rate_limited`,
  * …) or one of the client's own (`network.failed`, `network.timeout`, `response.invalid`,
- * `storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is ready to show, taken from the client's locale table. An error
+ * `storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is
+ * ready to show, taken from the client's locale table. An error
  * never contains a token, an attempt's secret or a password.
  *
  * @example

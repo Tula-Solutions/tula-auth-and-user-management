@@ -309,8 +309,8 @@ struct FlowContext: Sendable, TulaRedacted {
     }
 }
 
-/// The lowercase hexadecimal SHA-256 of a text: what Apple's sheet is given as the nonce
-/// (ADR 0047), so that the token's `nonce` is the one spelling the server accepts.
+/// The lowercase hexadecimal SHA-256 of a text: what Apple's sheet is given as the nonce,
+/// so that the token's `nonce` is the one spelling the server accepts.
 func sha256Hex(_ text: String) -> String {
     SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
 }

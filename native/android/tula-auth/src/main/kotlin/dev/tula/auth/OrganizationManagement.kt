@@ -11,12 +11,12 @@ import dev.tula.auth.generated.UpdateOrganizationDomainRequest
 import dev.tula.auth.generated.UpdateOrganizationMemberRequest
 import dev.tula.auth.generated.VerifyOrganizationDomainRequest
 
-// Managing an organization from the client (ADR 0065): its members and their roles, and the
+// Managing an organization from the client: its members and their roles, and the
 // domains it claims. What a member may do is decided by the server from the role they hold
 // now, on every call; these are the calls.
 
 /**
- * An organization's members (ADR 0065). Reading needs `org:sys:memberships:read` or
+ * An organization's members. Reading needs `org:sys:memberships:read` or
  * `:manage`; changing needs `org:sys:memberships:manage`, which the API reads from the
  * user's membership on every call.
  *
@@ -85,7 +85,7 @@ class TulaOrganizationMembers internal constructor(private val context: FlowCont
 }
 
 /**
- * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by a
+ * An organization's domains: the organization claims one by a
  * code emailed to an address on it, and a verified one suggests or joins the people who sign
  * up with a verified address on it. Needs `org:sys:domains:manage`, which the API reads from
  * the user's membership on every call.

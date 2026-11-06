@@ -4,7 +4,7 @@ import { hostOf, type IdTokenCredential, type IdTokenSheet } from './host'
 import type { Schedule } from './secure-storage'
 import { sha256Hex } from './sha256'
 
-// Signing in with Google's or Apple's own sheet (ADR 0045, ADR 0047, ADR 0052). The sign-in
+// Signing in with Google's or Apple's own sheet. The sign-in
 // is `@tula-tech/core`'s `signIn.withIdToken`: it asks the server for a nonce and exchanges the
 // token. This module shows the sheet between the two, and decides nothing about the account.
 
@@ -149,7 +149,7 @@ export async function signInWithIdToken(
     }
     const pending = await client.signIn.withIdToken({ provider })
     // Apple's token carries the hash of the nonce its request was given; the server
-    // compares it with the hash of its own (ADR 0047). The app's side of that is here.
+    // compares it with the hash of its own. The app's side of that is here.
     const nonce = provider === 'apple' ? sha256Hex(pending.nonce) : pending.nonce
     let credential: IdTokenCredential | null | 'no_account'
     try {

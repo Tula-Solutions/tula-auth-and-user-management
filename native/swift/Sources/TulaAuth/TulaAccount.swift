@@ -17,7 +17,7 @@ extension TulaError {
     }
 }
 
-/// Proving again that it is the user (ADR 0025): each call answers one of the methods an
+/// Proving again that it is the user: each call answers one of the methods an
 /// `auth.step_up_required` listed, and replaces the access token with one that carries the
 /// proof. A user with a second factor steps up with it, never with the password alone.
 public struct TulaStepUp: Sendable, TulaRedacted {
@@ -101,7 +101,7 @@ public struct TulaStepUp: Sendable, TulaRedacted {
     }
 }
 
-/// The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is
+/// The signed-in user's passkeys. Never key material: a name, whether it is
 /// synced, and when it was added and last used.
 public struct TulaPasskeys: Sendable, TulaRedacted {
     let context: FlowContext
@@ -161,7 +161,7 @@ public struct TulaPasskeys: Sendable, TulaRedacted {
     }
 }
 
-/// The signed-in user's second factor (ADR 0025): an authenticator app and its backup
+/// The signed-in user's second factor: an authenticator app and its backup
 /// codes, or, where the environment allows it and the user has nothing stronger, a texted
 /// code.
 ///
@@ -275,7 +275,7 @@ public struct TulaFactors: Sendable, TulaRedacted {
     }
 }
 
-/// The signed-in user's phone number (ADR 0037): one, optional, proven with a code sent by
+/// The signed-in user's phone number: one, optional, proven with a code sent by
 /// text message. Whether a number can be added at all is `phone.enabled` of the client
 /// configuration; the number itself is `phoneNumber` of the user.
 ///
@@ -338,7 +338,7 @@ public struct TulaPhone: Sendable, TulaRedacted {
     }
 }
 
-/// The provider accounts the signed-in user signs in with (ADR 0026).
+/// The provider accounts the signed-in user signs in with.
 public struct TulaIdentities: Sendable, TulaRedacted {
     let context: FlowContext
 
@@ -368,7 +368,7 @@ public struct TulaIdentities: Sendable, TulaRedacted {
     }
 }
 
-/// An email address for a signed-in user whose account has none (ADR 0059): one made by a
+/// An email address for a signed-in user whose account has none: one made by a
 /// first sign-in with a provider that gives no address (X, Facebook).
 ///
 /// Only for an account with **no** address: once it has one both calls answer

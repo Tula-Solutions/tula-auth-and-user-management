@@ -1,7 +1,7 @@
 import Foundation
 import TulaAuth
 
-// The words of the screens that came after the first ones (TULA-60): the other ways to sign
+// The words of the screens that came after the first ones: the other ways to sign
 // in, the second step, and the account screen. Each is a part of the one table
 // (`TulaStrings.ways`, `.secondStep`, `.account`), so an app still hands over one value and
 // every string a person reads is still a property of it.

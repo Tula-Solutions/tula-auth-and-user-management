@@ -3,20 +3,21 @@
 // without loading a schema library. The schema that uses it is `./email-template-schema`.
 
 /**
- * Every email whose wording an environment can change (ADR 0039): one kind per message the
+ * Every email whose wording an environment can change: one kind per message the
  * server sends, so that a template never has to say two different things.
  *
- * - `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+ * - `email_verification`, `password_reset`, `sign_in`, `step_up`,
+ *   `organization_domain_verification`:
  *   the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
- *   the code that shows an organization controls a domain (ADR 0065).
+ *   the code that shows an organization controls a domain.
  * - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
  *   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
- *   account (ADR 0059) answer alike for every address.
- * - `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+ *   account answer alike for every address.
+ * - `organization_domain_expiring`: the reminder, 30 and 7 days ahead, that a
  *   verified domain of an organization will stop matching unless it is verified again.
- * - `organization_invitation` (ADR 0065): an invitation to join an organization, with the
+ * - `organization_invitation`: an invitation to join an organization, with the
  *   server's link and no code.
- * - the rest: security notices (ADR 0023), one per thing that can have happened.
+ * - the rest: security notices, one per thing that can have happened.
  *
  * A closed list. Later servers may add kinds: additive.
  *
@@ -129,7 +130,7 @@ export interface EmailTemplateRules {
   /**
    * `code`: the message exists to carry a code. `notice`: it carries none, its template can
    * name no code and no link, and its subject does not lead with a digit. `invitation`: it
-   * carries the server's link and no code (an invitation to an organization, ADR 0065), and
+   * carries the server's link and no code (an invitation to an organization), and
    * its subject does not lead with a digit either, so that it is never taken for a code. No
    * kind of any category can hold something that reads as a link.
    */
@@ -168,7 +169,7 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   email_verification: CODE,
   password_reset: CODE,
   // The link is bound to the browser that asked and the code is the way in from any other
-  // device (ADR 0024): a sign-in template has to keep both.
+  // device: a sign-in template has to keep both.
   sign_in: { ...CODE, required: ['code', 'link'] },
   step_up: CODE,
   account_exists: DECOY,
@@ -196,7 +197,7 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   email_in_use: DECOY,
   email_added: NOTICE,
   organization_domain_verification: CODE,
-  // A reminder to the managers (ADR 0065, "Lapse"): no code and no link, so a notice. The
+  // A reminder to the managers: no code and no link, so a notice. The
   // domain and the organization's name are named by the server's own wording only.
   organization_domain_expiring: { ...NOTICE, optional: ['appName', 'expiresInDays'] },
   // The link is the whole point of an invitation: a template has to keep it. The organization's

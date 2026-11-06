@@ -360,7 +360,7 @@ export interface TulaLocalization {
     smsTurnedOn: string
     smsTurnedOff: string
   }
-  /** The profile's "Phone number" section (ADR 0037). */
+  /** The profile's "Phone number" section. */
   phone: {
     sectionTitle: string
     none: string
@@ -383,7 +383,7 @@ export interface TulaLocalization {
     added: string
     removed: string
   }
-  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  /** The profile's "Email address" section, for an account that has none. */
   emailAddress: {
     sectionTitle: string
     none: string
@@ -401,7 +401,7 @@ export interface TulaLocalization {
     added: string
   }
   /**
-   * The organization switcher and the organization profile (ADR 0065, ADR 0064): the words of
+   * The organization switcher and the organization profile: the words of
    * the Tula UI items `organization-switcher` and `organization-profile`. The prebuilt
    * components do not draw them; they are here so that a copy's words are the app's
    * translation and never a string in a copied file.
@@ -457,7 +457,7 @@ export interface TulaLocalization {
     permissionsEmpty: string
   }
   /**
-   * `<OrganizationSwitcher>` (ADR 0065, Orgs 07). It also uses the `organizations` group
+   * `<OrganizationSwitcher>`. It also uses the `organizations` group
    * above (`loading`, `loadFailed`, `retry`, `empty`, `personalAccount`, `switchedTo`, …).
    */
   organizationSwitcher: {
@@ -496,7 +496,7 @@ export interface TulaLocalization {
     manage: string
     close: string
   }
-  /** `<CreateOrganization>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  /** `<CreateOrganization>`. It also uses the `organizations` group. */
   createOrganization: {
     title: string
     subtitle: string
@@ -508,7 +508,7 @@ export interface TulaLocalization {
     /** `{name}`. Said when the new organization was not made the active one. */
     created: string
   }
-  /** `<OrganizationProfile>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  /** `<OrganizationProfile>`. It also uses the `organizations` group. */
   organizationProfile: {
     title: string
     tabsLabel: string
@@ -744,7 +744,7 @@ export interface TulaLocalization {
     sessionsLoading: string
     thisDevice: string
     /**
-     * Marks a session that is bound to a device key (ADR 0043): it can be refreshed only by
+     * Marks a session that is bound to a device key: it can be refreshed only by
      * the app installation that signed in. It says what the session needs, not what the
      * device is: binding proves possession of a key and nothing about the device.
      */

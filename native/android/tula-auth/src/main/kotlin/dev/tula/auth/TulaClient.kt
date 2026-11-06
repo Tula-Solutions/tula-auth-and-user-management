@@ -316,7 +316,7 @@ class TulaClient internal constructor(
     }
 
     /**
-     * Start a sign-in with a provider's ID token (ADR 0045), for an app that shows the
+     * Start a sign-in with a provider's ID token, for an app that shows the
      * provider's sheet itself. [signInWithGoogle] does both steps with the client's sheet.
      *
      * @param provider The provider. An Android client is taken for Google only: Apple on
@@ -424,7 +424,7 @@ class TulaClient internal constructor(
 
     /**
      * The signed-in user's organizations, the one the session acts in, invitations to them
-     * and the organizations a verified address is offered (ADR 0065).
+     * and the organizations a verified address is offered.
      */
     val organizations: TulaOrganizations get() = TulaOrganizations(flows)
 

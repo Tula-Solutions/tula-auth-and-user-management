@@ -6,8 +6,8 @@ import {
   ORGANIZATION_DOMAIN_STATUSES,
 } from './organization-domain-rules'
 
-// Verified domains of an organization and the suggestions built from them (ADR 0065,
-// "Verified domains"). The grammar, the public list and the modes are in
+// Verified domains of an organization and the suggestions built from them. The grammar, the public
+// list and the modes are in
 // `./organization-domain-rules` (no Zod); this module is the schemas built from them.
 
 /**
@@ -51,7 +51,7 @@ export const OrganizationDomainStatusSchema = z
  * code was emailed and not yet entered; it grants nothing. **Verified**: a user who signs up
  * with a verified address on it is suggested the organization or joined to it, by `mode`,
  * until `expiresAt`. **Needs re-verification**: `expiresAt` has passed; the domain matches
- * nobody until a manager claims it again and enters the new code (ADR 0065, "Lapse").
+ * nobody until a manager claims it again and enters the new code.
  */
 export const OrganizationDomainSchema = z
   .object({

@@ -1,4 +1,4 @@
-// Device binding (ADR 0043): a session bound at sign-in to a public key, refreshed only with a
+// Device binding: a session bound at sign-in to a public key, refreshed only with a
 // proof signed by that key. The proof is RFC 9449's DPoP proof JWT. This module imports
 // nothing (no Zod) and uses web platform APIs only, so the server that checks a proof, the
 // SDKs that make one and the conformance runner share one definition:

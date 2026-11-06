@@ -50,7 +50,7 @@ export type Auth =
        */
       customClaims: CustomClaims
       /**
-       * The active organization's id (ADR 0065), or `null` while the session acts in none
+       * The active organization's id, or `null` while the session acts in none
        * (the personal account, or the environment has organizations off). Read from the
        * verified claims, for a token session and a `stateful` one alike; a token whose
        * organization claims are incomplete or malformed reads as no organization, never as

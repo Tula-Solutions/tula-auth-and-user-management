@@ -108,7 +108,7 @@ export type ClientKind = Schemas['SessionClient']
  * - `signed-out`: nobody is signed in.
  * - `signed-in`: a session exists. `user` is `null` only until it has been fetched, or if
  *   fetching it failed; `user.get()` fetches it again. `organizationId` is the organization
- *   the session acts in (ADR 0065), `null` for the personal account. For a session with an
+ *   the session acts in, `null` for the personal account. For a session with an
  *   access token it is read from the token's `org_id` claim (unverified: for showing, never
  *   for authorizing) and so follows every refresh; a browser's `stateful` session has no
  *   token, so it is known after `organizations.list()` or `organizations.setActive()`.
@@ -299,7 +299,7 @@ export type StepUpMethod = StepUpProof['method']
 
 /**
  * An organization the signed-in user belongs to, with their role in it and its permission
- * keys (ADR 0065).
+ * keys.
  *
  * @example
  * ```ts

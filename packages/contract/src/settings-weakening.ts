@@ -44,7 +44,7 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
 
 /**
  * How much each device-binding option asks of a sign-in that is not a browser's. Moving a
- * profile to a lower one is a weakening (ADR 0043).
+ * profile to a lower one is a weakening.
  */
 const DEVICE_BINDING_STRENGTH: Record<DeviceBindingPolicy, number> = {
   none: 0,
@@ -156,7 +156,7 @@ function claimsLost(
  *   listed.
  *
  * - `sessions.profiles.<name>.deviceBinding`: a profile asks less of a sign-in's device key
- *   than before (`required` → `optional` → `none`; ADR 0043). A removed profile is compared
+ *   than before (`required` → `optional` → `none`). A removed profile is compared
  *   with the built-in `mobile`, which is what a client that is not a browser gets when it
  *   names a profile that is gone; a **new** profile clients may select is listed when
  *   `mobile` of the same document is `required` and it is not (naming it would be a way round
@@ -210,7 +210,7 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
 }
 
 /**
- * Where the `sms` section lets text messages cost more than before (ADR 0037):
+ * Where the `sms` section lets text messages cost more than before:
  * `sms.dailyMessageLimit` is raised. It is the most an attack on the environment can make it
  * send in a day, and no value removes it. Lowering it is not listed, and neither, here, is
  * the switch or the country list: the limit holds wherever messages go. (What they mean for
@@ -244,7 +244,7 @@ function smsSignsIn(settings: EnvironmentSettings): boolean {
 }
 
 /**
- * Where signing in with a texted code (ADR 0037) opens up:
+ * Where signing in with a texted code opens up:
  *
  * - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before.
  *   That is the method switched on, and equally text messages switched on, or a first
@@ -267,7 +267,7 @@ function smsSignInWeakenings(before: EnvironmentSettings, after: EnvironmentSett
 }
 
 /**
- * Where a texted code as the second step (ADR 0025) opens up. All of it is under one
+ * Where a texted code as the second step opens up. All of it is under one
  * condition, the one the switch has had since it existed: **after the change the switch is
  * on and the policy is `required`**, so that the policy can be met with a text message, the
  * second step that is easiest to take. Under `optional` and `off` nothing here is listed: a
@@ -308,7 +308,7 @@ function smsSecondStepWeakenings(
 }
 
 /**
- * Where the redirect allow-list opens up (ADR 0044): `urls.allowedRedirectUrls` when a
+ * Where the redirect allow-list opens up: `urls.allowedRedirectUrls` when a
  * **custom-scheme** URL is listed that was not. Any app on a device can claim a scheme, so a
  * provider sign-in may from then on be returned to an app that is not the operator's; what
  * is left between that app and a session is PKCE and the binding. An `https` URL added (a
@@ -326,12 +326,12 @@ function redirectWeakenings(
 }
 
 /**
- * Where the `organizations` section got weaker (ADR 0065):
+ * Where the `organizations` section got weaker:
  *
  * - `organizations.enabled`: switched **off** where it was on. The access tokens of the
  *   environment stop carrying `org_id`, `org_role` and `org_perms`, and an application that
  *   authorizes on them and reads a missing claim as permission would open up (the same
- *   argument as a lost custom claim, ADR 0036). Switching it on is not listed.
+ *   argument as a lost custom claim). Switching it on is not listed.
  * - `organizations.allowUserCreated`: switched on. Any signed-in user can then make an
  *   organization and be its administrator.
  * - `organizations.maxCreatedPerUser`: raised, or removed (`null`): one user can then make
@@ -374,7 +374,7 @@ function organizationWeakenings(
  * - `audit.retentionDays`: a period is set where there was none, or is made shorter. The
  *   server then deletes the audit entries older than it, for good: the record of what
  *   happened gets shorter. A longer period, or none where there was one, is not listed;
- * - `agents.proposalsInProduction`: switched on (ADR 0053). A production environment then
+ * - `agents.proposalsInProduction`: switched on. A production environment then
  *   accepts changes an AI agent asks for, each still waiting for a person's approval. It is
  *   listed whatever kind the environment is (this function sees the document alone), and
  *   switching it off never is;
@@ -386,18 +386,18 @@ function organizationWeakenings(
  *   on, text messages are switched on or a first country is allowed. A texted code is
  *   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
  *   second step where there was none, and is never used beside a stronger one), and
- *   switching it off never is (nobody's factor is dropped; ADR 0025);
+ *   switching it off never is (nobody's factor is dropped);
  * - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
  *   more freely (a raised or removed limit, a looser profile, one clients may now select);
  * - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
- *   one of their claims changes its source or its constant (ADR 0036). It is listed because
+ *   one of their claims changes its source or its constant. It is listed because
  *   an application decides on those claims: taking one away can lock users out, and opens up
  *   an application that reads a missing claim as permission;
  * - `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
- *   (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+ *   (`required` → `optional` → `none`): a sign-in that had to bind its session to a
  *   key no longer has to, or no longer can, so a copied refresh token of a new session works
  *   without the key;
- * - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
+ * - `sms.dailyMessageLimit`: more text messages can be sent in a day. It makes no
  *   account easier to take: it enlarges what someone abusing the environment's SMS can make
  *   its operator pay, which is why a change that does it is asked about like the others;
  * - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
@@ -406,10 +406,10 @@ function organizationWeakenings(
  * - `sms.allowedCountries`: a country is added while a texted code signs people in, or
  *   while one may be the second step a `required` policy asks for (listed once);
  * - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
- *   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
+ *   listed that was not. Any app on a device can claim a scheme. An `https` URL
  *   added is not listed;
  * - `agents.testSignIn`: `true` is written where it was not, or `false` is taken back to
- *   `null` (ADR 0058): an AI agent may then sign a throwaway user up and in, which asks the
+ *   `null`: an AI agent may then sign a throwaway user up and in, which asks the
  *   environment's hooks and delivers its events. `true` switches it on in a production
  *   environment, and `null` over `false` in a development one (where the default is yes).
  *   Each is listed in the other kind too, where it changes nothing: the documents do not
@@ -418,7 +418,7 @@ function organizationWeakenings(
  *
  * - `organizations.enabled`, `organizations.allowUserCreated`, `organizations.maxCreatedPerUser`:
  *   organizations are switched off, user-created organizations are switched on, or the cap
- *   on them is raised or removed (ADR 0065). Switching organizations on is not listed.
+ *   on them is raised or removed. Switching organizations on is not listed.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -426,8 +426,8 @@ function organizationWeakenings(
  * weakening, and neither is switching on any method but the SMS code. Switching SMS on or
  * off, or a wider or narrower country list, is not one **while no texted code signs anyone
  * in and none can meet a required second step**: a phone number is then contact data that
- * no account is signed in to or recovered with, or a second step added where there was none
- * (ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+ * no account is signed in to or recovered with, or a second step added where there was none,
+ * and the daily limit bounds what the messages can cost wherever they
  * go.
  *
  * @param before - The settings being replaced.
@@ -458,7 +458,7 @@ export function settingsWeakenings(
   if (MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]) {
     paths.push('mfa.policy')
   }
-  // A texted code as a way to meet a required second step (ADR 0025). Its country path is
+  // A texted code as a way to meet a required second step. Its country path is
   // held back, to be listed once with the sign-in's, in document order.
   const secondStep = smsSecondStepWeakenings(before, after)
   paths.push(...secondStep.filter((path) => path === 'mfa.smsCode'))

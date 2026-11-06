@@ -418,7 +418,7 @@ export function offersTextedCode(options: unknown): boolean {
 }
 
 /**
- * A texted code as the second step (ADR 0025): a button that asks for the message, then the
+ * A texted code as the second step: a button that asks for the message, then the
  * field for its code. Used by the sign-in and reset screens, the step-up dialog and the
  * profile's enrolment; it holds what was typed only while it is on screen.
  *

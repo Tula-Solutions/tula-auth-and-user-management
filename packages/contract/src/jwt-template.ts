@@ -12,7 +12,7 @@ import { SessionClientSchema } from './session'
 import type { SessionProfile, SessionSettings } from './session-profile'
 
 /**
- * What a template's claim can be read from, besides a constant (ADR 0036). A closed list:
+ * What a template's claim can be read from, besides a constant. A closed list:
  * things the server itself knows about the user and the session, never something a request
  * said.
  *
@@ -176,7 +176,7 @@ function smallEnough(template: { claims: Record<string, JwtTemplateClaim> }): bo
 
 /**
  * A JWT template: a named set of custom claims an environment adds to the sessions of the
- * profiles that use it (ADR 0036).
+ * profiles that use it.
  *
  * The claims are issued under the one namespace claim `ext`, in a `hybrid` session's access
  * token and in what the server answers for a `stateful` session. They are read again from the

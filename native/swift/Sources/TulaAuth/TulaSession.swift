@@ -19,7 +19,7 @@ public enum AuthState: Hashable, Sendable {
 
 /// The session of a client: the tokens, their refresh and the sign-out.
 ///
-/// It behaves as `@tula-tech/core`'s session manager does (ADR 0021, ADR 0051); the rules are the
+/// It behaves as `@tula-tech/core`'s session manager does; the rules are the
 /// same and are all held here:
 ///
 /// - The access token lives in memory only. The refresh token is in memory and in the
@@ -34,7 +34,7 @@ public enum AuthState: Hashable, Sendable {
 ///   the same single flight. It is the only request the client repeats by itself, and it is
 ///   safe because the server answers a token re-presented inside its grace window with the
 ///   same next token. An HTTP answer of any status is never repeated.
-/// - **A `device.*` answer never ends the session** (ADR 0043), with one exception: a
+/// - **A `device.*` answer never ends the session**, with one exception: a
 ///   refresh refused for its proof (`device.proof_invalid`) when the device key store says,
 ///   without failing, that there is no key. That session can never be refreshed again, so it
 ///   is ended here and the server is told. A store that failed, and a key that is there and
@@ -100,7 +100,7 @@ public actor TulaSession: TulaRedacted {
     private var orphan: String?
     /// The refresh tokens of sign-outs the server was never told of, oldest first, at most
     /// `maxUndelivered`. Memory only; nothing but `signOut()` reads them, no refresh presents
-    /// one, and a new session does not forget them (TULA-157, H-315).
+    /// one, and a new session does not forget them.
     private var undelivered: [String] = []
     private static let maxUndelivered = 8
     private var listeners: [Int: AsyncStream<AuthState>.Continuation] = [:]

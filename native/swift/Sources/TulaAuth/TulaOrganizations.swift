@@ -1,12 +1,12 @@
 import Foundation
 
-// The signed-in user's organizations (ADR 0065): which they belong to, which one the session
+// The signed-in user's organizations: which they belong to, which one the session
 // acts in, an invitation to one, and the organizations a verified address is offered. The
-// types and the operations are generated (ADR 0050); this file is the calls, and the one
+// types and the operations are generated; this file is the calls, and the one
 // reading of the claims an access token carries for the active organization.
 
 /// The active organization an access token says its session acts in: the `org_id`,
-/// `org_role` and `org_perms` claims (ADR 0065).
+/// `org_role` and `org_perms` claims.
 ///
 /// **Read for showing, never for deciding.** The claims are read from the token the client
 /// holds, without verifying its signature: this decides what an app draws, and the app's
@@ -226,7 +226,7 @@ public struct TulaInvitationLink: Sendable, TulaRedacted {
     }
 }
 
-/// The signed-in user's organizations (ADR 0065) and the one the session acts in. While the
+/// The signed-in user's organizations and the one the session acts in. While the
 /// environment's `organizations.enabled` setting is off, each call answers
 /// `organization.disabled`.
 ///
@@ -424,7 +424,7 @@ public struct TulaOrganizations: Sendable, TulaRedacted {
     }
 }
 
-/// Invitations to an organization (ADR 0065), by email.
+/// Invitations to an organization, by email.
 ///
 /// The token an invitation's link carries is a secret: it is sent in a request body and
 /// nowhere else, and it is in no error, no log line and no URL the client builds. Read it

@@ -116,7 +116,7 @@ type SessionTokens = Schemas['SessionTokens']
 interface Tokens {
   /**
    * The access token, or `null` for a session of a `stateful` profile: the browser then holds
-   * only an httpOnly cookie, and there is no token for JavaScript to keep (ADR 0028).
+   * only an httpOnly cookie, and there is no token for JavaScript to keep.
    */
   readonly accessToken: string | null
   readonly sessionId: string
@@ -184,7 +184,8 @@ export interface SessionManager {
   /**
    * Ends the session here, in other tabs and on the server. When the server could not be told
    * it throws, the client is signed out all the same, and calling it again tells the server.
-   * A non-browser client holds the undelivered tokens (up to eight) in memory only (persisting it would put a
+   * A non-browser client holds the undelivered tokens (up to eight) in memory only (persisting it
+   * would put a
    * token in storage after sign-out), so an app restart before the retry loses them and the
    * server's sessions live until it expires.
    */
@@ -360,7 +361,7 @@ export function isSessionTokens(value: unknown): value is SessionTokens {
 /**
  * Whether a value is the answer of a session of a `stateful` profile: a session id and **no
  * token of any kind**. The browser was given an httpOnly cookie instead, which this client
- * never sees (ADR 0028).
+ * never sees.
  *
  * Only a `web` client accepts such an answer: every other kind has no cookie jar, so for it a
  * token-less answer is not a session at all.
@@ -464,7 +465,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
    * `toJSON`, and nothing but `signOut()` reads it (no refresh presents it). Forgotten once
    * delivered and when the API answers that the session is over; a new session being adopted
    * does not forget it (H-315), so every token that never reached the server is sent by a later
-   * `signOut()`, up to `MAX_UNDELIVERED`. It has no timer: the token is exactly as live on the server whether this client
+   * `signOut()`, up to `MAX_UNDELIVERED`. It has no timer: the token is exactly as live on the
+   * server whether this client
    * remembers it or not, and forgetting it would only take away the one way to revoke it.
    */
   let undelivered: string[] = []

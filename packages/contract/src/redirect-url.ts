@@ -1,14 +1,14 @@
 import { hasHiddenCharacter, hasInvisibleCharacter } from './email-template'
 import type { OAUTH_PROVIDERS } from './oauth'
 
-// Where a flow may send the user back to (ADR 0044). Plain data and string work: no Zod, so
+// Where a flow may send the user back to. Plain data and string work: no Zod, so
 // the native SDKs and a settings screen can use the same rules the server does.
 //
 // A redirect URL is one of three kinds:
 //
 // - `https`: a web page, or an **app link** (a universal link on iOS, an App Link on
 //   Android): an https URL the platform hands to an app because the domain's association
-//   file says so (ADR 0040).
+//   file says so.
 // - `loopback`: `http` on this machine, for development.
 // - `custom_scheme`: `com.example.app:/oauth`. Any app on a device can claim a scheme, which
 //   is why this kind has rules of its own ({@link customSchemeRedirectRefusal}).
@@ -29,7 +29,7 @@ type ProviderName = (typeof OAUTH_PROVIDERS)[number]
  * {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
  * scheme an operating system handles that nobody put here passes. What bounds that is not
  * the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
- * and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+ * and a redirect carries only a ticket that is useless without the binding.
  *
  * @example
  * ```ts
@@ -289,7 +289,7 @@ export function isCustomSchemeRedirectUrl(value: string): boolean {
 }
 
 /**
- * The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+ * The providers whose authorization code Tula binds to the attempt with PKCE: the
  * code is redeemable only with the verifier the attempt holds.
  *
  * @example
@@ -308,7 +308,7 @@ export const OAUTH_PROVIDERS_WITH_PKCE = [
 /**
  * The providers that do **not** bind their code with PKCE, as a fact about the provider and
  * not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
- * is not used (ADR 0026).
+ * is not used.
  *
  * A provider sign-in with one of them is never returned to a custom scheme
  * ({@link customSchemeRedirectRefusal}). A new provider is added to this list or to

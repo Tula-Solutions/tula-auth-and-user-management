@@ -92,7 +92,7 @@ const val REFRESH_RETRY_WINDOW_MS: Long = 10_000
 /** The least time the repeat of a refresh is given, however long the first try took. */
 internal const val MIN_REFRESH_RETRY_TIMEOUT_MS: Long = 1_000
 
-/** How many tokens a failed sign-out remembers for the next one (TULA-157, H-315). */
+/** How many tokens a failed sign-out remembers for the next one. */
 private const val MAX_UNDELIVERED = 8
 
 /**
@@ -185,7 +185,7 @@ private fun tokenWasRefused(error: TulaError): Boolean =
 
 /**
  * Token state, refresh and sign-out: everything the client knows about the session. A port of
- * `@tula-tech/core`'s session manager for a client that is never a browser (ADR 0054).
+ * `@tula-tech/core`'s session manager for a client that is never a browser.
  *
  * The rules, all enforced here:
  * - The access token lives in memory only. The refresh token is held in memory and in
@@ -250,7 +250,7 @@ internal class SessionManager(
      * kept only so that the next sign-out can send it. Memory only: never storage, an error or
      * a log line, and nothing but [signOut] reads it (no refresh presents it). Forgotten once
      * delivered and when the API answers that the session is over, never by a new session being
-     * adopted (TULA-157, H-315): [signOut] presents every distinct token here, at most eight.
+     * adopted: [signOut] presents every distinct token here, at most eight.
      */
     private var undelivered: List<String> = emptyList()
 

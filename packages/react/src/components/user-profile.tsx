@@ -266,7 +266,7 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
  * provider's dialog appears when the server asks for one. The secret and the codes live in
  * this section's state only while their screen is shown.
  *
- * A code by text message (ADR 0025) is offered only where the server says this user could
+ * A code by text message is offered only where the server says this user could
  * enrol it (`factors.sms.available`: the app has it on, the account has a proven number and
  * nothing stronger), and the message is sent only when the user asks for it.
  */

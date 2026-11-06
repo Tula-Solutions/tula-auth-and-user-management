@@ -1,5 +1,5 @@
-// The grammar of a verified domain and the list of public mail domains (ADR 0065, "Verified
-// domains"), with no dependency: the entry point a form or a server loads at run time to say
+// The grammar of a verified domain and the list of public mail domains, with no dependency: the
+// entry point a form or a server loads at run time to say
 // whether a domain can be claimed, without pulling Zod into an application's bundle. The Zod
 // schemas of the requests are in `./organization-domain`, built from these.
 
@@ -19,7 +19,7 @@ export const MIN_DOMAIN_LENGTH = 4
 export const MAX_DOMAINS_PER_ORGANIZATION = 10
 
 /**
- * How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+ * How long a verification of a domain lasts, in days.
  * A domain can be lost and registered again by someone else, and nothing tells Tula, so a
  * claim is only believed for this long: past it the domain matches nobody (no auto-join, no
  * suggestion) until a manager proves it again with a new emailed code. Counted from the day
@@ -65,7 +65,8 @@ export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
  * `bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
  * the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
  * ({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
- * {@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+ * {@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap,
+ * so its work is bounded.
  *
  * @example
  * ```ts

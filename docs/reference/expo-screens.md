@@ -125,7 +125,8 @@ export function TulaAuthView(props: TulaAuthViewProps): ReactElement
 **Example**
 
 ```ts
-<TulaAuthView tula={tula} mode="sign-in" style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)} />
+<TulaAuthView tula={tula} mode="sign-in" style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)}
+/>
 ```
 
 ### `TulaAuthViewProps`
@@ -225,7 +226,7 @@ export interface TulaScreensOptions {
   /** The session profile to ask for; the environment must mark it `clientSelectable`. */
   sessionProfile?: string
   /**
-   * Bind sessions to a key the device keeps (ADR 0043): the Keychain's on iOS, the
+   * Bind sessions to a key the device keeps: the Keychain's on iOS, the
    * Keystore's on Android. Only where the session profile allows a key.
    */
   deviceBinding?: boolean
@@ -287,7 +288,7 @@ export function checkTheme(theme: ThemeOverrides | undefined): CheckedTheme
 _function_, defined in `packages/expo-screens/src/index.ts`
 
 Set up Tula's native screens for an Expo app: the SwiftUI screens on the Swift client on
-iOS, the Compose screens on the Kotlin client on Android (ADR 0063).
+iOS, the Compose screens on the Kotlin client on Android.
 
 The native client owns the session: the refresh token is in the Keychain (iOS) or
 sealed by a Keystore key (Android) and never crosses to JavaScript; what this returns
@@ -370,7 +371,7 @@ export interface ExpoConfigLike {
 
 _constant_, defined in `packages/expo-screens/src/plugin.ts`
 
-The lowest Android API level the native screens run on (`tula-auth-android`, ADR 0054).
+The lowest Android API level the native screens run on (`tula-auth-android`).
 
 ```ts
 const NATIVE_SCREENS_MIN_SDK: 28
@@ -419,7 +420,7 @@ as options is refused with a `TypeError` whose sentence is fixed and repeats not
 was given.
 
 Whether Expo's prebuild runs this mod as written here was not tried since the plugin
-became this package's own: `docs/plans/phase-2-unverified.md`, "Step 2.16".
+became this package's own.
 
 ```ts
 export function withTulaScreens<Config extends ExpoConfigLike>(
@@ -466,7 +467,7 @@ Kotlin SDK does not run below Android 9, and the package's Android module says 2
 own minimum), and the docs say so.
 
 Its order against another plugin that sets the same property (`expo-build-properties`)
-was not tried: `docs/plans/phase-2-unverified.md`, "Step 2.16".
+was not tried.
 
 ```ts
 export function withRaisedMinSdk(lines: unknown): unknown[]
@@ -512,7 +513,7 @@ as options is refused with a `TypeError` whose sentence is fixed and repeats not
 was given.
 
 Whether Expo's prebuild runs this mod as written here was not tried since the plugin
-became this package's own: `docs/plans/phase-2-unverified.md`, "Step 2.16".
+became this package's own.
 
 ```ts
 export function withTulaScreens<Config extends ExpoConfigLike>(

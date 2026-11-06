@@ -241,7 +241,7 @@ public var stepUpMethods: [String]
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-Proving again that it is the user (ADR 0025): each call answers one of the methods an
+Proving again that it is the user: each call answers one of the methods an
 `auth.step_up_required` listed, and replaces the access token with one that carries the
 proof. A user with a second factor steps up with it, never with the password alone.
 
@@ -356,7 +356,7 @@ public func withPasskey() async throws -> TulaCeremony<Bool>
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is
+The signed-in user's passkeys. Never key material: a name, whether it is
 synced, and when it was added and last used.
 
 ```swift
@@ -416,7 +416,7 @@ public func remove(_ id: String) async throws
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-The signed-in user's second factor (ADR 0025): an authenticator app and its backup
+The signed-in user's second factor: an authenticator app and its backup
 codes, or, where the environment allows it and the user has nothing stronger, a texted
 code.
 
@@ -546,7 +546,7 @@ public func disableSms() async throws
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-The signed-in user's phone number (ADR 0037): one, optional, proven with a code sent by
+The signed-in user's phone number: one, optional, proven with a code sent by
 text message. Whether a number can be added at all is `phone.enabled` of the client
 configuration; the number itself is `phoneNumber` of the user.
 
@@ -610,7 +610,7 @@ public func remove() async throws
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-The provider accounts the signed-in user signs in with (ADR 0026).
+The provider accounts the signed-in user signs in with.
 
 ```swift
 public struct TulaIdentities: Sendable, TulaRedacted
@@ -659,7 +659,7 @@ public func unlink(_ id: String) async throws
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaAccount.swift`
 
-An email address for a signed-in user whose account has none (ADR 0059): one made by a
+An email address for a signed-in user whose account has none: one made by a
 first sign-in with a provider that gives no address (X, Facebook).
 
 Only for an account with **no** address: once it has one both calls answer
@@ -1176,7 +1176,7 @@ public var identities: TulaIdentities
 
 _var_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
 
-An email address for a signed-in user whose account has none (ADR 0059).
+An email address for a signed-in user whose account has none.
 
 ```swift
 public var emailAddress: TulaEmailAddress
@@ -1187,7 +1187,7 @@ public var emailAddress: TulaEmailAddress
 _var_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
 
 The signed-in user's organizations, the one the session acts in, and invitations to
-join one (ADR 0065).
+join one.
 
 ```swift
 public var organizations: TulaOrganizations
@@ -1211,7 +1211,7 @@ _init_, defined in `native/swift/Sources/TulaAuth/TulaClient.swift`
   - clock: Where the time comes from. Only a test passes one.
   - deviceKeys: Where the client's device key is kept. With one, every session this
     client signs in to is bound to the key and every refresh carries a proof signed
-    by it (ADR 0043); an app passes `KeychainDeviceKeyStore()`. Without one (the
+    by it; an app passes `KeychainDeviceKeyStore()`. Without one (the
     default) the client sends no proof and its sessions are not bound.
   - passkeys: The system's passkey sheet; an app passes `SystemPasskeySheet()`.
     Without one every passkey call throws `passkey.unsupported`.
@@ -1486,7 +1486,7 @@ public init?(rawRepresentation: Data)
 
 _protocol_, defined in `native/swift/Sources/TulaAuth/TulaDeviceKey.swift`
 
-A key a session can be bound to (ADR 0043): its public half, and a way to sign with the
+A key a session can be bound to: its public half, and a way to sign with the
 private half that never hands the private half out.
 
 ```swift
@@ -2043,7 +2043,7 @@ A value that holds a secret, or leads to one, and therefore prints as its type's
 `print`, string interpolation, `String(reflecting:)` and `dump` all show the name and
 nothing the value holds: an app logs what it has at hand, and a token, a code, an
 attempt's secret or a key must not be in that line. The generated types are the
-exception (ADR 0050): a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
+exception: a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
 never to be logged.
 
 ```swift
@@ -2833,7 +2833,7 @@ public func now() -> Date
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaOrganizationManagement.swift`
 
-An organization's members (ADR 0065). Reading needs `org:sys:memberships:read` or
+An organization's members. Reading needs `org:sys:memberships:read` or
 `:manage`; changing needs `org:sys:memberships:manage`, which the API reads from the
 user's membership on every call.
 
@@ -2903,7 +2903,7 @@ public func remove(organizationId: String, userId: String) async throws
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaOrganizationManagement.swift`
 
-An organization's domains (ADR 0065, "Verified domains"): the organization claims one by a
+An organization's domains: the organization claims one by a
 code emailed to an address on it, and a verified one suggests or joins the people who sign
 up with a verified address on it. Needs `org:sys:domains:manage`, which the API reads from
 the user's membership on every call.
@@ -3015,7 +3015,7 @@ public func remove(organizationId: String, domainId: String) async throws
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaOrganizations.swift`
 
 The active organization an access token says its session acts in: the `org_id`,
-`org_role` and `org_perms` claims (ADR 0065).
+`org_role` and `org_perms` claims.
 
 **Read for showing, never for deciding.** The claims are read from the token the client
 holds, without verifying its signature: this decides what an app draws, and the app's
@@ -3250,7 +3250,7 @@ public static func read(_ url: URL) -> TulaInvitationLink?
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaOrganizations.swift`
 
-The signed-in user's organizations (ADR 0065) and the one the session acts in. While the
+The signed-in user's organizations and the one the session acts in. While the
 environment's `organizations.enabled` setting is off, each call answers
 `organization.disabled`.
 
@@ -3509,7 +3509,7 @@ public var domains: TulaOrganizationDomains
 
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaOrganizations.swift`
 
-Invitations to an organization (ADR 0065), by email.
+Invitations to an organization, by email.
 
 The token an invitation's link carries is a secret: it is sent in a request body and
 nowhere else, and it is in no error, no log line and no URL the client builds. Read it
@@ -3892,7 +3892,7 @@ _actor_, defined in `native/swift/Sources/TulaAuth/TulaSession.swift`
 
 The session of a client: the tokens, their refresh and the sign-out.
 
-It behaves as `@tula-tech/core`'s session manager does (ADR 0021, ADR 0051); the rules are the
+It behaves as `@tula-tech/core`'s session manager does; the rules are the
 same and are all held here:
 
 - The access token lives in memory only. The refresh token is in memory and in the
@@ -3907,7 +3907,7 @@ same and are all held here:
   the same single flight. It is the only request the client repeats by itself, and it is
   safe because the server answers a token re-presented inside its grace window with the
   same next token. An HTTP answer of any status is never repeated.
-- **A `device.*` answer never ends the session** (ADR 0043), with one exception: a
+- **A `device.*` answer never ends the session**, with one exception: a
   refresh refused for its proof (`device.proof_invalid`) when the device key store says,
   without failing, that there is no key. That session can never be refreshed again, so it
   is ended here and the server is told. A store that failed, and a key that is there and

@@ -9,8 +9,8 @@ export * from './password-rules'
  * The most passwords `history` may tell a server to remember for a user.
  *
  * A new password is compared with every one of them, and each comparison is a full argon2id
- * verification: about a second and a half of one core for all 24 (ADR 0038 has the
- * measurement and the limits that bound how often a caller can cause it). 24 is what the
+ * verification: about a second and a half of one core for all 24 (the number of passwords kept is
+ * bounded so that a caller cannot make the server do this often). 24 is what the
  * strictest common baselines ask for.
  *
  * @example
@@ -48,7 +48,7 @@ export const PasswordPolicySchema = z
      * How many of a user's last passwords, the current one included, cannot be set again;
      * 0 remembers none. With 1 only the current password is refused. A server keeps the
      * previous `history - 1` hashes and no more: lowering the number deletes the surplus, and
-     * raising it cannot bring back what was not kept (ADR 0038).
+     * raising it cannot bring back what was not kept.
      */
     history: z.number().int().min(0).max(MAX_PASSWORD_HISTORY),
     /**
@@ -56,8 +56,7 @@ export const PasswordPolicySchema = z
      * owner is taken through setting a new one at their next password sign-in. `null` = never
      * (NIST discourages forced rotation; it is offered for compliance). A password's age is
      * counted from when it was last set, and only a sign-in **with the password** looks at
-     * it: an emailed code, a provider or a passkey signs in whatever the password's age
-     * (ADR 0041).
+     * it: an emailed code, a provider or a passkey signs in whatever the password's age.
      */
     expiryDays: z.number().int().min(1).nullable(),
   })

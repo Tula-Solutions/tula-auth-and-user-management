@@ -14,7 +14,7 @@ import {
   useRef,
 } from 'react'
 
-// Tula's native screens in an Expo app (ADR 0063), as far as it can be written without the
+// Tula's native screens in an Expo app, as far as it can be written without the
 // native module: what JavaScript hands the module, what it takes back, and the two
 // components. `index.ts` is the entry point that loads the module and the views
 // and hands them to `createScreens`; tests hand it fakes.
@@ -62,7 +62,7 @@ export interface TulaScreensOptions {
   /** The session profile to ask for; the environment must mark it `clientSelectable`. */
   sessionProfile?: string
   /**
-   * Bind sessions to a key the device keeps (ADR 0043): the Keychain's on iOS, the
+   * Bind sessions to a key the device keeps: the Keychain's on iOS, the
    * Keystore's on Android. Only where the session profile allows a key.
    */
   deviceBinding?: boolean
@@ -525,7 +525,8 @@ function useCheckedTheme(
  * @returns The native view.
  * @throws TypeError when `tula` is not what `createTulaScreens()` returned.
  * @example
- * <TulaAuthView tula={tula} mode="sign-in" style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)} />
+ * <TulaAuthView tula={tula} mode="sign-in" style={{ flex: 1 }} onSignedIn={() => setSignedIn(true)}
+ * />
  */
 export function TulaAuthView(props: TulaAuthViewProps): ReactElement {
   const { authView } = internalsOf(props.tula, 'TulaAuthView')

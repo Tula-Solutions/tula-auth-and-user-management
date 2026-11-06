@@ -9,7 +9,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 // What the account screen offers, as data. A composable iterates it and calls the model's
-// `perform`; it decides nothing, and so everything here is tested on the JVM (ADR 0062).
+// `perform`; it decides nothing, and so everything here is tested on the JVM.
 
 /** A button or a link of the account screen. */
 data class TulaAccountOffer(
@@ -533,7 +533,7 @@ class TulaAccountContent internal constructor(
             if (all.isEmpty()) {
                 lines.add(a.passkeysEmpty)
             } else {
-                // The client has no call that renames a passkey (TULA-76): said, not faked.
+                // The client has no call that renames a passkey: said, not faked.
                 lines.add(a.renameUnavailable)
             }
             // With passkeys off the list is still shown, to be removed from, without "Add".

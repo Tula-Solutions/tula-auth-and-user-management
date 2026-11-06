@@ -27,7 +27,7 @@ export const SignInTestStepResultSchema = z
   .meta({ ref: 'SignInTestStepResult' })
 
 /**
- * The report of a sign-in test (ADR 0058): what `POST /v1/agent/sign-in-tests` answers.
+ * The report of a sign-in test: what `POST /v1/agent/sign-in-tests` answers.
  *
  * A throwaway user was signed up and in through the environment's real flow, by the server
  * itself, and deleted. The report holds **nothing the flow handled**: no address, code,

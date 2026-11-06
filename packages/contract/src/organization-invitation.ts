@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { OrganizationPageQuerySchema, RoleKeySchema, UserOrganizationSchema } from './organization'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PaginationMetaSchema } from './user'
 
-// Invitations to an organization (ADR 0065, Orgs 04): an administrator, or a member whose role
+// Invitations to an organization: an administrator, or a member whose role
 // holds `org:sys:invitations:manage`, invites an email address with a role; the address is
 // sent a link, and the signed-in user whose verified email is that address accepts or declines.
 // The token in the link is the invitation's only secret: it is never in an API answer, an
@@ -121,7 +121,8 @@ export const InvitationPreviewSchema = z
 export const AcceptedInvitationSchema = UserOrganizationSchema.meta({ ref: 'AcceptedInvitation' })
 
 /**
- * A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+ * A pending invitation addressed to the signed-in user, as `GET
+ * /v1/client/me/organization-invitations`
  * lists it: enough to show and answer it, and nothing else. No token, no invited address, no
  * inviter and no other user's data. It is answered by its `id`
  * (`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session

@@ -25,7 +25,7 @@ export const SessionSchema = z
     expiresAt: z.iso.datetime(),
     current: z.boolean(),
     /**
-     * Whether the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * Whether the session is bound to a device key: its refreshes need a proof
      * signed by the key its sign-in presented. A boolean and nothing of the key. It says the
      * session cannot be refreshed without that key, not what the device is.
      */
