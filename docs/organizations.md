@@ -44,7 +44,7 @@ Write them in `tula.config.ts` and apply with `tula apply` ([Settings as code](c
 
 <!-- snippet: examples/tula-config/tula.config.ts#organizations -->
 ```ts
-// Organizations (ADR 0065) are off until an environment switches them on; the roles
+// Organizations are off until an environment switches them on; the roles
 // below only exist while they are on. The other fields are shown at their defaults,
 // except `allowUserCreated`: here a signed-in user may create up to five.
 organizations: {

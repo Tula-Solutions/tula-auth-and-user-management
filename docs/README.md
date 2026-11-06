@@ -2,7 +2,7 @@
 
 Tula Auth is a self-hosted authentication and user-management server with SDKs for the web.
 The web SDKs and the tooling are released to npm as early `0.x` versions, and the server's image to
-GitHub's container registry with them ([releasing](internal/releasing.md)), so a web project is made
+GitHub's container registry with them, so a web project is made
 with `bunx create-tula@latest` and needs no checkout. The Expo and native SDKs are not
 published: those are still used from a checkout of the repository
 ([quickstart](quickstart.md)).
@@ -14,7 +14,6 @@ published: those are still used from a checkout of the repository
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
-| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 
 ## Sign-in methods
 
@@ -132,11 +131,5 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 
 | | |
 | --- | --- |
-| [Codebase map](codebase-map/README.md) | An interactive graph of the files, functions and classes and how they relate, in 20 layers with a guided tour: where it is, how to open it, and what it leaves out. A generated snapshot, not kept up to date. |
-| [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
-| [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
-| [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
-| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
+| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop`; `bun run docs-site:dev` builds it and serves it on this machine. |
 | [Writing docs](writing-docs.md) | Every component the documentation site adds to Markdown (callouts, steps, tabs and code groups, code blocks, file trees, parameter tables), with its source and its result, and what the build refuses. |
-| [Releasing](internal/releasing.md) | How the packages are built, packed and checked. |
-| [Business plan](internal/business-plan.md) | Product context. |

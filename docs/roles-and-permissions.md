@@ -89,7 +89,7 @@ rules for managed and unmanaged roles and for `--prune`).
 
 <!-- snippet: examples/tula-config/tula.config.ts#organization-roles -->
 ```ts
-// The custom roles of the environment's organizations (ADR 0065), beside the built-in
+// The custom roles of the environment's organizations, beside the built-in
 // `admin` and `member`. A role is its key; the permissions are a set. Giving a role a
 // permission it did not have widens what its members may do, so `tula apply --yes`
 // asks for `--allow-weaker`. `dev` has no `organizationRoles` key: its roles are not

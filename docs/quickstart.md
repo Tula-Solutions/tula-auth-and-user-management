@@ -3,8 +3,7 @@
 You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
 > [!NOTE]
-> **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
-> ([releasing.md](internal/releasing.md)), so for a web app steps 2 and 3
+> **What is on npm, and what is not.** The web packages and `create-tula` are released to npm, so for a web app steps 2 and 3
 > can be `bunx create-tula@latest my-app --framework react-vite`. **The Tula API image is
 > published too**, from `0.1.1` on
 > (`ghcr.io/tula-solutions/tula-api:<version>`): a project made that way names it and
@@ -155,7 +154,7 @@ is on.
 This path was last run end to end on 2026-10-04 with the Next.js template, the mock provider
 and Chromium's virtual authenticator: sign up, add a passkey, sign out, sign in with the
 passkey, sign in with the Google button. Real Google and a physical authenticator were not
-exercised ([what was not verified](plans/phase-1-unverified.md)).
+exercised.
 
 ## The native path
 
@@ -168,8 +167,7 @@ stack, run the app in a simulator or an emulator, open the tunnel, then run it o
 > and Compose ones compiled, on the machine that wrote them. **Nobody has run a scaffolded
 > native project in a simulator, on an emulator or on a phone, and nobody has run
 > `tula dev --tunnel` against a phone.** The steps from "Run it in a simulator" on are what
-> the pieces are built to do, written for you to take; [what was not
-> verified](plans/phase-2-unverified.md) lists each one. What needs an Apple or a Google
+> the pieces are built to do, written for you to take, and none of it has been run on a phone. What needs an Apple or a Google
 > account of your own is one table:
 > [native-apps.md](native-apps.md#what-needs-your-own-accounts).
 
