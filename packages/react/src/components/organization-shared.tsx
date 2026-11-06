@@ -439,8 +439,7 @@ export function Confirmation(props: {
     }
   }
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a labelled question with its two answers, not a
-    // form's fieldset
+    // biome-ignore lint/a11y/useSemanticElements: a labelled question with its two answers, not a form's fieldset
     <div {...el('confirmation')} ref={group} role='group' aria-labelledby={questionId}>
       <p className='tula-text' id={questionId}>
         {props.question}
