@@ -198,6 +198,48 @@ yarn add zod
 A code group holds fenced code blocks and nothing else. In the Markdown twin each block gets its
 tab's name above it, in bold.
 
+## Language tabs
+
+A call that is shown in more than one language goes between `<!-- tabs -->` and
+`<!-- /tabs -->`, one fenced block per language. The block's language names its tab (`sh` is
+cURL, `ts` TypeScript, `python` Python), and every group on a page, and every page, shows the
+language the reader chose last. On GitHub the comments are invisible and the blocks follow one
+another. The TypeScript and Python samples are snippet blocks from `examples/docs-snippets`, and
+all three samples of a group call the same method and path.
+
+````markdown
+<!-- tabs -->
+```sh
+curl -sN -X POST "$TULA_API_URL/v1/admin/audit-logs/export" …
+```
+
+<!-- snippet: examples/docs-snippets/audit-export.ts#audit-export-since -->
+```ts
+const response = await admin.stream('exportAuditLogs', {
+  body: { format: 'csv', from: '2026-01-01T00:00:00Z' },
+})
+const csv = await response.text()
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/audit_export.py#audit-export-since -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/audit-logs/export",
+    data=json.dumps({"format": "csv", "from": "2026-01-01T00:00:00Z"}).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    csv = response.read().decode()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+````
+
 ## Code blocks
 
 Every code block has a copy button and scrolls sideways when a line is long: nothing wraps, so
@@ -386,6 +428,7 @@ component it cannot draw. It is part of `bun run verify`.
 | `:::banner` | an unknown block, and lists the ones there are |
 | `:::steps` with no closing `:::` | the block is never closed |
 | A `:::` line with text on the next line | it must stand alone, with a blank line either side |
+| `<!-- tabs -->` with no `<!-- /tabs -->` | the tabs are never closed |
 | `:::tabs{sync=framework}` | the attributes must be `key="value"` pairs |
 | A step or tab heading of another depth | a heading of a different depth inside the block |
 | Two tabs with one label | two tabs with the same label |
