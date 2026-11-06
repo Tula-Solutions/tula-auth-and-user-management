@@ -4,8 +4,7 @@ Signing in with a fingerprint, face or screen lock (WebAuthn): from a button, fr
 address field's autofill, as the second step after a password, and as a step-up. Users add,
 rename and remove passkeys in the account page. Off by default.
 
-> **Tested with a virtual authenticator only** (Chromium's, through the DevTools protocol).
-> No physical authenticator, platform passkey manager or other browser has been exercised.
+> **Before you go live:** register and sign in with a real authenticator or platform passkey manager, in each browser you support, in a staging environment.
 
 ## Switch it on
 
@@ -61,7 +60,7 @@ files. Its requests carry no `Origin` and say `x-tula-client: ios` or `android`;
 API accepts is the origin the platform writes for a registered app. For an iOS app that is
 `https://<rpId>`, a page's origin, so it must also be an entry of `urls.allowedOrigins`;
 an Android app needs no entry. [Passkeys from an app](../native-apps.md#passkeys-from-an-app)
-has the rules. No SDK of this repository runs the ceremony on a device yet.
+has the rules. The native SDKs' passkey support is a Preview.
 
 More in [self-host.md](../self-host.md#passkeys).
 

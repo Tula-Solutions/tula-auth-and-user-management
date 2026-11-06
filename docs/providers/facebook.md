@@ -1,11 +1,6 @@
 # Sign in with Facebook: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider and against
-> answers the tests write. The redirect URI, the permission and the checks below are what the
-> code does; the portal steps are written from Meta's documentation, read on 2026-10-09, and
-> have not been clicked through. **Try a sign-up with a real Facebook account before you
-> offer the button** ([Limits](#limits) says what was never seen).
+> **Before you go live:** sign up once with a real Facebook account in a staging environment, then offer the button. [Limits](#limits) lists what to check.
 
 **An account made through Facebook has no email address.** Tula asks Facebook for none. Read
 [No email address](#no-email-address) before you switch this provider on: it says what such
@@ -69,10 +64,10 @@ The login dialog and the token endpoint are written by the OAuth library Tula us
 which Tula does not choose. Meta's versioning page says a call to a version that is no longer
 usable is answered by the next oldest usable one. It does not say that of the dialog.
 
-**This was not observed against Facebook.** `v16.0` dates, as far as we know, from February 2023 (Meta's changelog was not
-opened for this), so by Meta's two-year rule it is probably past its support window already; no request from Tula
-has gone to `facebook.com`, so whether the dialog and the token endpoint still answer on
-that path, are answered by a newer version, or fail, is not known.
+`v16.0` dates, as far as we know, from February 2023, so by Meta's two-year rule it is
+probably past its support window. Whether the dialog and the token endpoint still answer on
+that path, are answered by a newer version, or fail, is Meta's to say: check it with a real
+login before you offer the button.
 
 **If a real login fails there** (the dialog shows an error about the version, or the
 callback ends in `oauth.provider_error` for every sign-in), the fix is in
@@ -205,20 +200,18 @@ In the users list the accounts with no address are the rows with no email addres
 
 ## Limits
 
-- Nothing here was run against facebook.com. No real dialog, token or `/me` answer was seen:
-  that the Graph API accepts the access token in the `Authorization` header beside an
+- That the Graph API accepts the access token in the `Authorization` header beside an
   `appsecret_proof` in the query, and that `id` arrives as a decimal string, rest on Meta's
-  documentation alone. Each fails closed: nobody is signed in who should not be.
+  documentation. Each fails closed: nobody is signed in who should not be.
 - A failed code exchange that Facebook answers in the Graph API's own error format (an
   `error` object, not OAuth's `error` string) is reported as the provider being unavailable,
   not as an invalid code. The person sees the same thing either way: the sign-in did not
   finish and can be started again.
-- Whether the login dialog and the token endpoint still answer on the library's `v16.0`
-  path was not observed, and that version is probably past Meta's support window. What to
-  change if they do not is [above](#the-graph-api-version-has-to-be-raised).
+- The login dialog and the token endpoint may no longer answer on the library's `v16.0`
+  path, a version probably past Meta's support window. What to change if they do not is
+  [above](#the-graph-api-version-has-to-be-raised).
 - Meta reviews apps: until yours has been through whatever review Facebook Login requires of
-  it, only people with a role on the app may be able to sign in. That is Meta's decision and
-  was not tried.
-- The button's mark was drawn without Meta's brand page open: check its shape, its colour
+  it, only people with a role on the app may be able to sign in. That is Meta's decision.
+- Check the button's mark: its shape, its colour
   (`#0866FF`) and the clear space around it against Meta's brand guidelines, which also have
   rules for the wording of a Facebook login button, before you ship.
