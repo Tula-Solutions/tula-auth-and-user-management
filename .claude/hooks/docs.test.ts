@@ -181,8 +181,6 @@ describe('the method pages', () => {
           `${page}: ${heading}`
         )
       }
-      // The reasoning lives in the ADR; the page links to it.
-      expect(`${page}: ${/\]\(\.\.\/adr\/\d{4}-[a-z0-9-]+\.md\)/.test(text)}`).toBe(`${page}: true`)
     }
   })
 

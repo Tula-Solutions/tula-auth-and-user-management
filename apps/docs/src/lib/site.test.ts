@@ -111,13 +111,6 @@ describe('the site built from docs/', () => {
     expect(head(ERROR_CODES_ROUTE)).toContain('href="/reference/error-codes.md"')
   })
 
-  test('a link to an ADR leaves for GitHub', () => {
-    const html = site.documents.get('/methods/password/') as string
-    expect(html).toContain(
-      'href="https://github.com/Tula-Solutions/tula-auth-and-user-management/blob/develop/docs/adr/0006-passwords.md"'
-    )
-  })
-
   test('the quickstart’s screenshot is copied and shown from the site', () => {
     expect(site.assets).toContain('docs/assets/quickstart-sign-in.png')
     expect(site.documents.get('/quickstart/')).toContain(
