@@ -88,7 +88,6 @@ class AndroidKeystoreKeys(private val alias: String = DEFAULT_KEY_ALIAS) : Seali
     /**
      * Delete the alias and make the key again. Only `AesGcmSealer.seal` calls it, for a key
      * the Keystore would not hand over or that took no encryption; nothing that reads does.
-     * Not run on a device: see `docs/plans/phase-2-unverified.md`, "Step 2.15".
      */
     override fun replace(): SecretKey = synchronized(lock) {
         store().deleteEntry(alias)

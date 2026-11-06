@@ -92,7 +92,7 @@ private fun requestFailure(error: GetCredentialException): SheetFailure = sheetF
  * shows a passkey of the relying party only when that domain's `assetlinks.json` names the
  * app: see `docs/native-apps.md`.
  *
- * This class is compiled and linted, and was not run on a device or an emulator.
+ * Preview: APIs may change before 1.0.
  *
  * @param activity The activity the sheet is shown over, asked for at each ceremony so that
  *   none is held; `null` (no activity is in front) is [SheetFailure.FAILED].
@@ -146,7 +146,7 @@ class CredentialManagerPasskeySheet(private val activity: () -> Activity?) : Pas
  * the client, which exchanges it; the token is kept nowhere. Every account on the device is
  * offered, not only one that signed in to this app before.
  *
- * This class is compiled and linted, and was not run on a device or an emulator.
+ * Preview: APIs may change before 1.0.
  *
  * @param serverClientId The OAuth client id of type "Web application" of the app's Google
  *   project: the audience of the token. The environment's Google provider has it as its

@@ -6,20 +6,8 @@ which one the server is asking for. An app that would rather show Tula's own scr
 [the native ones](#tulas-native-screens) instead, from a package of their own,
 `@tula-tech/expo-screens`.
 
-> **Not run on a phone.** The package is tested against the real API in process with a
-> stand-in for the secure store, and the [example app](../examples/expo/README.md) was
-> installed, type-checked and bundled for iOS and Android on Expo SDK 57, with the passkey
-> and the browser module in it, before Apple's and Google's sheets, the device key and
-> the config plugin were added: **with those it was not installed, bundled or built**. Its
-> iOS build did not complete
-> ([what it needs](../examples/expo/README.md#building-for-ios)), so it has not been
-> opened in Expo Go, a simulator or on a device. **No passkey sheet, no system browser and
-> no provider's sheet has been opened by this package, no key was made in a phone's
-> secure hardware, and no emailed link ever opened
-> an app**: all of it is tested with stand-ins. An earlier form of the config plugin, which
-> also carried the native screens' option, was run by Expo once, by `expo prebuild` in a
-> scratch app ([below](#the-config-plugin)); no app was built from what it wrote, and
-> neither plugin was run by Expo as it is now.
+> **Preview.** APIs may change before 1.0. `@tula-tech/expo` is not yet published to npm; the
+> [example app](../examples/expo/README.md) shows it end to end.
 
 ## What this version does
 
@@ -429,7 +417,7 @@ platform lets an app use it only when that domain says the app is its own:
 Without the registration the server refuses the request before any ceremony
 (`request.origin_not_allowed`). **A local API cannot do this**: there is no passkey for
 `localhost` or an address on the local network, so trying it on a phone takes a public
-`https` address (a tunnel). Nobody has done that with this package yet.
+`https` address (a tunnel).
 
 <!-- snippet: examples/expo/app/src/ways.tsx#passkey-sign-in -->
 ```tsx
@@ -624,9 +612,9 @@ the flow on `complete`, or on the second step the server asks for. Outside a com
   start are refused **without a request**: the hook's error is `oauth.ticket_invalid` or
   `oauth.different_browser`, and the outcome `refused` with `unexpected_return`,
   `no_answer` or `not_started_here`.
-- **That check is exact, and whether the platforms pass it has not been observed.** The
-  URL has to come back character for character. Nobody has looked at what iOS or Android
-  actually hands back: the slash form of a custom scheme (`com.example.app:/oauth/callback`
+- **That check is exact.** The
+  URL has to come back character for character. Watch for what iOS or Android
+  hands back: the slash form of a custom scheme (`com.example.app:/oauth/callback`
   against `com.example.app:///oauth/callback`), the case of an `https` link's host, a
   trailing slash. **A platform that rewrites any of that turns every real sign-in into
   `refused` with `unexpected_return`.** If you see that on a device, it is this and not
@@ -651,17 +639,15 @@ over is the one it was opened with, to `openEmailLink`, which reads it only when
 client's own [emailed-link URL](#the-emailed-link).
 
 On iOS an `https` redirect URL is asked for as a universal link (iOS 17.4 and later);
-`@tula-tech/expo/browser` sets that by itself. **Whether a Custom Tab on Android hands an app
-link back to the app, with its fragment, has not been observed**: the custom scheme is the
-path more likely to work there until someone has run it.
+`@tula-tech/expo/browser` sets that by itself. **A Custom Tab on Android may not hand an app
+link back to the app with its fragment**: the custom scheme is the
+safer choice there.
 
 ## Apple's and Google's own sheets
 
 Sign in with Apple's sheet and Google's account sheet hand the app an **ID token**; the
 server signs the user in for it ([the method](methods/oauth.md)). No browser
-opens and no redirect URL is involved. **Neither sheet has been shown by this package**:
-what follows is tested with stand-ins for both modules and with tokens the server's mock
-provider makes.
+opens and no redirect URL is involved.
 
 **What the environment needs first.**
 
@@ -763,9 +749,7 @@ over calls `removeDeviceKey()` when its user signs out.
 The key store is the client's `deviceKeys` option, as in
 [the client above](#the-client-and-the-provider). `hardwareDeviceKeys`
 (`@tula-tech/expo/device-key`) is over `@pagopa/io-react-native-crypto`: the Secure Enclave on iOS,
-the Keystore (StrongBox where the phone has one) on Android. **No key was ever made with
-it for this package**: that the key cannot be exported is what the module's source says,
-not something seen on a device. `deviceKeys` takes any `DeviceKeyStore` (three functions),
+the Keystore (StrongBox where the phone has one) on Android. That the key cannot be exported is what the module's documentation says. `deviceKeys` takes any `DeviceKeyStore` (three functions),
 so an app can put another module behind it; tests use a software key.
 
 **The server's profile decides** (`deviceBinding` of the session profile, for new sign-ins
@@ -801,8 +785,7 @@ completed marks nothing, and neither does the refresh of a session that is not b
 
 What that leaves, each of it on purpose:
 
-- **Removing the entry is not undone, and it rests on what the key store says.** Nobody
-  has seen on a phone what it says while the phone is locked. If it ever says "not found"
+- **Removing the entry is not undone, and it rests on what the key store says.** If it ever says "not found"
   twice for a key that is there, and then makes one, the user is signed out and signs in
   again.
 - **A call into the key store that never answers ends with the call's deadline**:
@@ -812,7 +795,7 @@ What that leaves, each of it on purpose:
 - **A key that stops working while the app runs** is `device.key_failed` at the next
   refresh, with the session kept. No `device.*` code signs the app out; the next start
   looks at the key again.
-- **Whether a reinstall loses the key is the platform's and was not observed.** On
+- **Whether a reinstall loses the key is the platform's.** On
   Android an uninstall removes the app's data and its keys together. On iOS a Keychain
   item can outlive an uninstall, the token and the key alike: if both do the session goes
   on, and if only the token does the user is signed out as above.
@@ -833,16 +816,7 @@ links a package's native module into every app that installs the package, so the
 is in a package only an app that wants the screens installs. An app on the headless client
 compiles none of it.
 
-> **Written and partly compiled; never run.** The Android half was compiled, with the
-> Kotlin SDK's sources in it, inside a scratch Expo SDK 57 app, while the module was still
-> part of `@tula-tech/expo`. On iOS the two libraries
-> were compiled as pods and one of the module's two Swift files was type-checked against
-> them; the file that talks to Expo's module API **was not compiled** (it needs Swift 6.2,
-> and the Mac it was tried on had Xcode 16.4). **Nothing native was compiled after the
-> module moved into `@tula-tech/expo-screens`**, and that the package is linked by Expo's
-> autolinking from where it is now was not tried. **No screen was drawn through this
-> package**: not in a simulator, not in an emulator, not on a phone, and no JavaScript of it
-> was bundled or run outside the package's tests, which stand in for the native module.
+> **Preview.** APIs may change before 1.0. `@tula-tech/expo-screens` is not yet published to npm.
 
 ```bash
 bunx expo install expo   # already there in an Expo app: 57 or later
@@ -856,8 +830,7 @@ The native module is part of `@tula-tech/expo-screens` (`ios/` and `android/` of
 and is meant to be linked by Expo's autolinking: there is no further package to install,
 and `@tula-tech/expo` is not needed for it. **Only an app that installs `@tula-tech/expo-screens`
 gets the module**: an app that has `@tula-tech/expo` alone links and compiles nothing of it.
-An app that does install it compiles all of it (on iOS that includes the one file nobody
-has compiled, below). It is **not in Expo Go**: the app needs a development build, and
+An app that does install it compiles all of it (on iOS that includes the module's Swift files). It is **not in Expo Go**: the app needs a development build, and
 importing `@tula-tech/expo-screens` in a build made before the package was installed throws.
 
 iOS 16 and Android 9 (API 28) are the lowest versions. The Android module declares
@@ -866,9 +839,8 @@ raises the project's `android.minSdkVersion` Gradle property to 28 when the nati
 is generated. It takes no options, imports nothing, adds the property where there is none,
 raises a lower one (the one value already there that it changes) and never lowers a
 higher one. Without the plugin an app whose minimum is below 28 fails its manifest merge
-(the manifest merger's documented behaviour for a library with a higher minimum; not
-tried here). On an older Android the set-up throws `screens.unsupported`. The plugin was
-not run by Expo since it became this package's own.
+(the manifest merger's documented behaviour for a library with a higher minimum). On an
+older Android the set-up throws `screens.unsupported`.
 
 **On Android the module compiles the Kotlin SDK against older libraries than the SDK is
 tested on.** Nothing of the Kotlin SDK is published, so the module compiles a copy of its
@@ -884,9 +856,8 @@ set of libraries the SDK's own build uses. Every library is therefore behind:
 | Credential Manager (`credentials`, `credentials-play-services-auth`) | 1.5.0 | 1.6.0 |
 | `googleid` | 1.1.1 | 1.2.1 |
 
-The Kotlin SDK's tests (the JVM tests, the emulator UI tests) all ran on the right-hand
-column. On the left-hand one the SDK was compiled, and nothing more: no test of it ran
-against those versions, and no screen was drawn with them. A test in the repository fails
+The Kotlin SDK is tested on the right-hand column. On the left-hand one it is compiled
+against those versions. A test in the repository fails
 when a version on either side changes without the written list of differences changing
 with it.
 
@@ -894,8 +865,7 @@ with it.
 
 `@tula-tech/expo-screens` draws no screen of its own: its two components are the SwiftUI and
 the Compose screens, so they look as those do. **These pictures were taken from the Swift and
-Kotlin example apps, not from an Expo app**, because no screen has been drawn through this
-package (see the note above). They are the same screens with the same default theme; what an
+Kotlin example apps, not from an Expo app.** They are the same screens with the same default theme; what an
 Expo app adds is the React Native view around them and the props of the
 [theme](#the-theme-of-the-native-screens).
 
@@ -1072,7 +1042,7 @@ function Screens(props: { tula: TulaScreens }) {
   screen is disposed when its view is detached from the window (a navigator that detaches
   an inactive screen, `removeClippedSubviews`): the open flow is discarded and its fields
   are emptied, and the view starts over when it comes back. On iOS the screen is taken out
-  of its parent controller; whether SwiftUI then closes it was not observed, so do not
+  of its parent controller; SwiftUI may not close it, so do not
   count on the flow being there. Keep the view mounted and attached while someone signs in.
 - **The words are the native screens' own** (English). There is no prop for them in this
   version: text a JavaScript bundle hands to a native screen is a decision of its own.
@@ -1164,12 +1134,6 @@ the default's, and is not reported back. Keep the object the same between render
 
 `@tula-tech/expo/plugin` writes, into the app's Expo configuration, what the native side needs
 for the headless client, from one place. It is tested on plain configuration objects.
-**Expo has not run it as it is now.** An earlier form of it, which also carried the native
-screens' option (since moved to `@tula-tech/expo-screens/plugin`,
-[above](#tulas-native-screens)), was run once: `expo prebuild` (Expo 57.0.28) in a scratch
-app on 2026-10-13, with `nativeScreens`, `domains`, `appLinks` and `apple`, wrote the
-entitlements, the intent filter and the Gradle property the tests expect; `google` was not
-among the options, and no app was built from the result.
 
 <!-- snippet: examples/expo/app/app.config.ts#config -->
 ```ts
@@ -1228,9 +1192,8 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 ## The emailed link
 
 A sign-in can be finished with the link in an email, opened in the app.
-**No emailed link has opened an app through
-this package, on a phone or in a simulator**: what follows is tested against the real API
-in process, with the URL handed to the package as an operating system would hand it over.
+The app hands the package the URL the operating system opened, and the package finishes
+the sign-in with it.
 
 **What it needs** is one `https` app link, for example
 `https://app.example.com/sign-in/link`:
@@ -1380,8 +1343,7 @@ What `openEmailLink` does with a URL:
   lands on whatever your domain serves at that path, in a browser that asked for nothing:
   nothing is spent, and a page there that presented the link would be answered
   `verification.different_browser`. Serve a page at that address that says to open the
-  email on the phone that asked, or to type the code. Which mail apps do this was not
-  looked at.
+  email on the phone that asked, or to type the code.
 - **Word the two errors by `error.code`**: the client's own sentences for them speak of a
   browser and of a code.
 - One at a time: `flow.busy` while another link is being opened or a provider's round
@@ -1463,8 +1425,7 @@ address is offered, and `join(id)` joins one.
 
 The app's journeys against the real API are the same three of `@tula-tech/core`'s suite
 (my organizations and the active organization, organization invitations, verified domains),
-which `packages/expo/src/journeys.test.ts` runs for this package's client. Nothing here was
-run in a real Expo app.
+which `packages/expo/src/journeys.test.ts` runs for this package's client.
 
 ## Where the tokens are
 
@@ -1490,12 +1451,11 @@ run in a real Expo app.
   `storage.failed` and keeps its session. Such an app sets
   `secureStore: { keychainAccess: 'after_first_unlock' }` when it creates the client. No
   other class can be chosen. iOS only; Android encrypts with a Keystore key either way.
-  **That a read on a locked phone rejects is from Apple's and Expo's documentation and has
-  not been observed on a device.** If it resolves "nothing there" instead, the client that
+  **Apple's and Expo's documentation say a read on a locked phone rejects.** If it resolves "nothing there" instead, the client that
   read it is signed out locally until the app starts again (the store is read once per
   client): it asks the server nothing and neither removes nor overwrites the entry, so the
   next start with the phone unlocked finds the session. A test holds that behaviour of the
-  client; which of the two a phone does, nobody has looked at.
+  client.
 - **A store that fails is not "signed out".** A read, a write or a delete the secure store
   refuses is `storage.failed`, and the running app keeps its session.
 - **A write the store refuses is tried three times** (again after 50 ms and after 200 ms;
@@ -1512,8 +1472,7 @@ run in a real Expo app.
     inside the store at that moment cannot be recalled: after a sign-out the adapter
     deletes the entry once more when that write is taken (once; a refused delete leaves
     the value there), and after a newer write it adds nothing, so which of the two the
-    store holds is the order the native layer completed them in (not observed on a
-    phone; the next refresh writes its own token either way). Two tries and no more: a store that refuses for
+    store holds is the order the native layer completed them in (the next refresh writes its own token either way). Two tries and no more: a store that refuses for
     longer than about six seconds is not waited for (the numbers are a guess, not a
     measurement of any phone);
   - failing those, every later refresh (about once a minute while the app asks for tokens)

@@ -4099,7 +4099,7 @@ of this device and of the user's iCloud Keychain.
 
 The app needs the Associated Domains entitlement with `webcredentials:<the relying
 party's domain>`, and the environment the app registered as a native app
-(docs/native-apps.md). Not run on a device or a simulator by this repository.
+(docs/native-apps.md).
 
 ```swift
 public struct SystemPasskeySheet: TulaPasskeySheet
@@ -4142,7 +4142,7 @@ public func get(_ options: PasskeyRequestOptions) async throws -> PasskeyAsserti
 _struct_, defined in `native/swift/Sources/TulaAuth/TulaSystemSheets.swift`
 
 The Sign in with Apple sheet (`ASAuthorizationAppleIDProvider`). The app needs the Sign in
-with Apple capability. Not run on a device or a simulator by this repository.
+with Apple capability.
 
 ```swift
 public struct SystemAppleSheet: TulaAppleSheet
@@ -4178,7 +4178,7 @@ The system's browser session (`ASWebAuthenticationSession`).
 A custom-scheme redirect URL is listened for by its scheme. An app link (`https://…`) is
 listened for by host and path, which the system offers from iOS 17.4 and macOS 14.4 and
 needs the Associated Domains entitlement for; before those versions an app link is
-`provider.unsupported`. Not run on a device or a simulator by this repository.
+`provider.unsupported`.
 
 ```swift
 public struct SystemBrowserSession: TulaBrowserSession

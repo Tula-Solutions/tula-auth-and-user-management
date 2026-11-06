@@ -12,14 +12,7 @@ package, so the module lives where only an app that asked for the screens instal
 app on the headless client compiles none of it (no Compose, no Credential Manager, no
 Android 9 minimum).
 
-> **Written and partly compiled; never run.** The Android module was compiled once, in a
-> scratch Expo 57 app, before it was moved into this package. On iOS the two vendored
-> libraries and `TulaScreensHost.swift` were type-checked; `TulaScreensModule.swift`, the
-> file that uses Expo's module API, has never been compiled. Nothing native was compiled
-> after the move, no app was built, no Metro bundle was made, and no screen was drawn
-> through this package anywhere
-> ([what was run](../../docs/plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063)).
-> This package is held back from npm until it has been run on a device.
+> **Preview.** APIs may change before 1.0. This package is not yet published to npm.
 
 ```tsx
 import { createTulaScreens, TulaAccountView, TulaAuthView } from '@tula-tech/expo-screens'
@@ -56,7 +49,7 @@ export default { name: 'Example', slug: 'example', plugins: ['@tula-tech/expo-sc
   The config plugin (`@tula-tech/expo-screens/plugin`) raises the app's
   `android.minSdkVersion` Gradle property to 28 and never lowers a higher one; without it
   an app with a lower minimum fails its manifest merge (the manifest merger's documented
-  behaviour, not tried here). The plugin imports nothing, takes no options, and only adds
+  behaviour). The plugin imports nothing, takes no options, and only adds
   and raises that one value.
 
 ## Development

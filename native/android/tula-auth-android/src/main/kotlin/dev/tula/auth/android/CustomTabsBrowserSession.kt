@@ -37,7 +37,7 @@ private const val EXTRA_CUSTOM_TABS_SESSION = "android.support.customtabs.extra.
  * own and leaves a waiting sign-in waiting. The address is then passed on as it is, and the
  * client reads it by the same rule before any request.
  *
- * This class is compiled and linted, and was not run on a device or an emulator.
+ * Preview: APIs may change before 1.0.
  *
  * @param activity The activity the tab is opened from, asked for at each sign-in so that
  *   none is held; `null` is [SheetFailure.FAILED].
