@@ -44,6 +44,7 @@ const admin = createAdminClient({
 })
 
 const { data: users } = await admin.call('listUsers', { query: { size: 10 } })
+
 ```
 <!-- /snippet -->
 

@@ -19,6 +19,8 @@ With a secret key, on the admin API (everything on this page can also be done
 [in the dashboard](#in-the-dashboard), and endpoints can be declared
 [in `tula.config.ts`](#endpoints-in-tulaconfigts)):
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/webhook-endpoints" \

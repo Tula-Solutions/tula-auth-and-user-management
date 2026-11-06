@@ -180,6 +180,8 @@ API key belongs to) has a settings document, read and replaced with its secret k
 
 Read the document; the `ETag` is its revision:
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -si "$TULA_API_URL/v1/admin/settings" -H "Authorization: Bearer $TULA_SECRET_KEY"

@@ -13,6 +13,8 @@ page with the values to paste, from [Okta](../sso-providers/okta.md) to [Ping](.
    must be on too.
 2. Verify the organization's domain, then create a connection with the admin API (a secret key):
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/sso-connections" \

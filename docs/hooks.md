@@ -21,6 +21,8 @@ answer inside a deadline.
 With a secret key. An environment has **one hook per point**; the server makes the signing
 secret and returns it **once**:
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/hooks" \

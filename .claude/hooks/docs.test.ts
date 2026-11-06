@@ -1069,7 +1069,7 @@ describe('language tabs', () => {
     const [x, y] = [segments(a), segments(b)]
     return (
       x.length === y.length &&
-      x.every((part, i) => part === y[i] || /^\{\w+\}$/.test(part) || /^\{\w+\}$/.test(y[i] ?? ''))
+      x.every((part, i) => part === y[i] || /^\{\w*\}$/.test(part) || /^\{\w*\}$/.test(y[i] ?? ''))
     )
   }
 

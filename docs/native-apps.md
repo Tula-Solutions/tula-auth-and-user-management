@@ -39,6 +39,8 @@ shows under "App signing key certificate".
 
 With a secret key:
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -X POST "$TULA_API_URL/v1/admin/native-apps" \
