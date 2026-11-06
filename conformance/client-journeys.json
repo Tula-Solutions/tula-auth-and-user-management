@@ -2486,6 +2486,24 @@
         "decision": "not_applicable",
         "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never."
       }
+    },
+    "a person rejects an agent's proposal, once, and an approved one cannot be rejected": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and rejected with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. Rejecting one changes nothing a client can observe."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and rejected with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. Rejecting one changes nothing a client can observe."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and rejected with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Rejecting one changes nothing a client can observe."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and rejected with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Rejecting one changes nothing a client can observe."
+      }
     }
   }
 }
