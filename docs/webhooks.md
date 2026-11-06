@@ -19,6 +19,13 @@ With a secret key, on the admin API (everything on this page can also be done
 [in the dashboard](#in-the-dashboard), and endpoints can be declared
 [in `tula.config.ts`](#endpoints-in-tulaconfigts)):
 
+<!-- tabs -->
+```sh
+curl -X POST "$TULA_API_URL/v1/admin/webhook-endpoints" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "url": "https://api.example.com/webhooks/tula", "eventTypes": ["user.created"] }'
+```
+
 <!-- snippet: examples/docs-snippets/admin.ts#webhook-register -->
 ```ts
 const { data: endpoint } = await admin.call('createWebhookEndpoint', {
@@ -32,13 +39,28 @@ await storeSecret(endpoint.secret)
 ```
 <!-- /snippet -->
 
-or without the SDK:
-
-```bash
-curl -X POST https://auth.example.com/v1/admin/webhook-endpoints \
-  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-  -d '{ "url": "https://api.example.com/webhooks/tula", "eventTypes": ["user.created"] }'
+<!-- snippet: examples/docs-snippets/python/webhooks.py#webhook-register -->
+```python
+body = {
+    "url": "https://api.example.com/webhooks/tula",
+    "eventTypes": ["user.created", "user.deleted", "session.reuse_detected"],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/webhook-endpoints",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    endpoint = json.load(response)
+# The only time the secret is returned: put it in your secret manager now.
+secret = endpoint["secret"]
 ```
+<!-- /snippet -->
+<!-- /tabs -->
 
 - **`url`** must be one the server may call: `https`, no user name or password in it, and a
   host that resolves to public addresses only. Anything else is refused with
