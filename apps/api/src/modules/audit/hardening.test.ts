@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import { createInstanceTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -161,12 +162,24 @@ describe('concurrent exports (H-168)', () => {
     await seed()
     const renew = spyOn(deps.exportLeases, 'renew')
     const res = await start()
-    const clockSpy = spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60_000)
-    try {
-      await res.text()
-    } finally {
-      clockSpy.mockRestore()
-    }
+    deps.clock.advance(11 * 60_000)
+    await res.text()
     expect(renew).toHaveBeenCalled()
+  })
+
+  test('a renewal the store refuses is logged with ids only', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'renew').mockResolvedValue(false)
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const res = await start()
+      deps.clock.advance(11 * 60_000)
+      await res.text()
+      expect(warn).toHaveBeenCalledWith('audit export lease lost', {
+        environmentId: TEST_TENANT.environmentId,
+      })
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

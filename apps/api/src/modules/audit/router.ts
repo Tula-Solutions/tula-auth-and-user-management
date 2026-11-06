@@ -4,6 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { RateLimitError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { adminActor } from '~/lib/actor'
+import * as logger from '~/lib/logger'
 import { adminRateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as Audit from '~/modules/audit/service'
@@ -115,14 +116,22 @@ router.post(
       // A failed release must not mask what ended the stream: the lease expires on its own.
       await deps.exportLeases.release(environmentId, leaseId).catch(() => undefined)
     }
-    let renewedAt = Date.now()
+    let renewedAt = deps.clock.now().getTime()
     const renew = async () => {
-      if (Date.now() - renewedAt < EXPORT_RENEW_MS) {
+      const now = deps.clock.now().getTime()
+      if (now - renewedAt < EXPORT_RENEW_MS) {
         return
       }
-      renewedAt = Date.now()
+      renewedAt = now
       // A renewal that fails is retried at the next chunk; the lease's term covers the gap.
-      await deps.exportLeases.renew(environmentId, leaseId, EXPORT_LEASE_MS).catch(() => false)
+      const kept = await deps.exportLeases
+        .renew(environmentId, leaseId, EXPORT_LEASE_MS)
+        .catch(() => true)
+      if (!kept) {
+        // The lease ran out (a client that stalled past its term): this export no longer
+        // counts toward the cap. It is let finish rather than cut off mid-file.
+        logger.warn('audit export lease lost', { environmentId })
+      }
     }
     let chunks: ReturnType<typeof Audit.exportEntries>
     try {
