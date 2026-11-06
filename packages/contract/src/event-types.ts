@@ -148,6 +148,7 @@ export const ACTIVITY_TYPES = [
   'organization_invitation.revoked',
   'proposal.created',
   'proposal.approved',
+  'proposal.rejected',
   'proposal.executed',
   'proposal.failed',
   // An export of the audit log (TULA-137): who read the trail, with which filters, how many entries.
@@ -268,6 +269,7 @@ export const EVENT_TARGET_TYPES = {
   'organization_invitation.revoked': 'organization_invitation',
   'proposal.created': 'proposal',
   'proposal.approved': 'proposal',
+  'proposal.rejected': 'proposal',
   'proposal.executed': 'proposal',
   'proposal.failed': 'proposal',
   'audit.exported': 'environment',

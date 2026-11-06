@@ -2,7 +2,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { messageFor, toApiError } from '~/api/errors'
-import { type Proposal, useApproveProposal, useListProposals } from '~/api/generated/api.gen'
+import {
+  type Proposal,
+  useApproveProposal,
+  useListProposals,
+  useRejectProposal,
+} from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { ConfirmDialog } from '~/components/confirm-dialog'
 import { PageHeader } from '~/components/page'
@@ -18,6 +23,7 @@ import {
   consequenceOf,
   MAY_HAVE_BEEN_TAKEN,
   naming,
+  REJECTED_OUTCOME,
   refusalText,
 } from './words'
 
@@ -62,7 +68,10 @@ export function approvalErrorText(error: unknown): string {
   return unknown ? `${messageFor(error)} ${MAY_HAVE_BEEN_TAKEN}` : messageFor(error)
 }
 
-/** What became of the last approval made on this screen. */
+/** What a person asks of a waiting proposal. */
+type Mode = 'approve' | 'reject'
+
+/** What became of the last answer made on this screen. */
 interface Result {
   /** The proposal as it was shown when it was approved. */
   shown: Proposal
@@ -70,6 +79,8 @@ interface Result {
   outcome: ApprovalOutcome | null
   /** The server refused the approval: why, in fixed words. */
   refusal: string | null
+  /** Which answer this was about; a refusal reads "Not approved" or "Not rejected". */
+  mode: Mode
   /** For a ban whose sessions were not ended: the user whose page ends them. */
   userId: string | null
 }
@@ -103,7 +114,9 @@ function ResultPanel({
       )}
     >
       {/* The outcome leads as words: never the border's colour alone. */}
-      <p className='font-semibold'>{result.outcome?.title ?? 'Not approved'}</p>
+      <p className='font-semibold'>
+        {result.outcome?.title ?? (result.mode === 'reject' ? 'Not rejected' : 'Not approved')}
+      </p>
       <p>
         <code className='font-mono'>{named.operation}</code> for {named.what}{' '}
         <bdi dir='ltr' className='font-mono break-all'>
@@ -152,14 +165,21 @@ export function ProposalsScreen() {
     query: { refetchInterval: PROPOSALS_REFRESH_MS },
   })
   const approve = useApproveProposal({ request })
+  const reject = useRejectProposal({ request })
   // The proposal the question is about, and what its card said it was about, as they were
   // shown when the question was opened: what is asked and sent is this, never something
   // read again behind the dialog.
-  const [asking, setAsking] = useState<{ proposal: Proposal; about: TargetSnapshot } | null>(null)
+  const [asking, setAsking] = useState<{
+    proposal: Proposal
+    about: TargetSnapshot
+    mode: Mode
+  } | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   // The proposal whose approval is on its way, from the click until its answer: no other is
   // asked about or sent meanwhile, also after the question was closed.
   const [running, setRunning] = useState<string | null>(null)
+  const [runningMode, setRunningMode] = useState<Mode>('approve')
+  const active = (asking?.mode ?? runningMode) === 'reject' ? reject : approve
   // Proposals this screen got an answer about. The list is read again without the answer
   // waiting for it, so a card can still read `pending` for a moment: it is not asked about
   // again on that.
@@ -201,8 +221,36 @@ export function ProposalsScreen() {
     setRunning(null)
     setAnswered((before) => new Set(before).add(next.shown.id))
     approve.reset()
+    reject.reset()
     setAsking(null)
     setResult(next)
+  }
+
+  function sendRejection(shown: Proposal) {
+    if (running !== null) {
+      return
+    }
+    setRunning(shown.id)
+    setRunningMode('reject')
+    reject.mutate(
+      { id: shown.id, data: {} },
+      {
+        onSuccess: () => {
+          // Started, not awaited: the answer is shown at once.
+          void refreshProposals(queryClient)
+          finish({ shown, outcome: REJECTED_OUTCOME, refusal: null, mode: 'reject', userId: null })
+        },
+        onError: (error) => {
+          void refreshProposals(queryClient)
+          const refusal = refusalText(error)
+          if (refusal !== null) {
+            finish({ shown, outcome: null, refusal, mode: 'reject', userId: null })
+            return
+          }
+          setRunning(null)
+        },
+      }
+    )
   }
 
   function send(shown: Proposal) {
@@ -210,6 +258,7 @@ export function ProposalsScreen() {
       return
     }
     setRunning(shown.id)
+    setRunningMode('approve')
     approve.mutate(
       // The approval names what was shown: the server refuses it (`mismatch`) for a
       // proposal that is anything else.
@@ -234,6 +283,7 @@ export function ProposalsScreen() {
             shown,
             outcome: approvalOutcome(decided),
             refusal: null,
+            mode: 'approve',
             userId: incompleteBan ? decided.target.id : null,
           })
         },
@@ -243,7 +293,7 @@ export function ProposalsScreen() {
           void refreshProposals(queryClient)
           const refusal = refusalText(error)
           if (refusal !== null) {
-            finish({ shown, outcome: null, refusal, userId: null })
+            finish({ shown, outcome: null, refusal, mode: 'approve', userId: null })
             return
           }
           // Not a refusal of the proposal: the question stays and can be tried again.
@@ -253,13 +303,16 @@ export function ProposalsScreen() {
     )
   }
 
-  function ask(proposal: Proposal, about: TargetSnapshot) {
-    if (running !== null) {
-      return
+  function ask(mode: Mode) {
+    return (proposal: Proposal, about: TargetSnapshot) => {
+      if (running !== null) {
+        return
+      }
+      // A failure of an earlier question is not this one's.
+      approve.reset()
+      reject.reset()
+      setAsking({ proposal, about, mode })
     }
-    // A failure of an earlier question is not this one's.
-    approve.reset()
-    setAsking({ proposal, about })
   }
 
   function cancel() {
@@ -267,13 +320,14 @@ export function ProposalsScreen() {
     // still shown, and no other is started meanwhile (`running` stays).
     if (running === null) {
       approve.reset()
+      reject.reset()
     }
     setAsking(null)
   }
 
   function unavailable(proposal: Proposal): string | null {
     if (running !== null && running !== proposal.id) {
-      return 'Another approval is on its way: this one can be asked about once it is answered.'
+      return 'Another answer is on its way: this one can be asked about once it is answered.'
     }
     if (answered.has(proposal.id)) {
       return 'This screen has an answer about this proposal (above). The list is being read again.'
@@ -320,9 +374,11 @@ export function ProposalsScreen() {
                       <ProposalCard
                         proposal={proposal}
                         now={now}
-                        approving={running === proposal.id}
+                        approving={running === proposal.id && runningMode === 'approve'}
+                        rejecting={running === proposal.id && runningMode === 'reject'}
                         unavailable={unavailable(proposal)}
-                        onApprove={ask}
+                        onApprove={ask('approve')}
+                        onReject={ask('reject')}
                       />
                     </li>
                   ))}
@@ -362,9 +418,11 @@ export function ProposalsScreen() {
                       <ProposalCard
                         proposal={proposal}
                         now={now}
-                        approving={running === proposal.id}
+                        approving={running === proposal.id && runningMode === 'approve'}
+                        rejecting={running === proposal.id && runningMode === 'reject'}
                         unavailable={unavailable(proposal)}
-                        onApprove={ask}
+                        onApprove={ask('approve')}
+                        onReject={ask('reject')}
                       />
                     </li>
                   ))}
@@ -379,7 +437,8 @@ export function ProposalsScreen() {
         title={
           named ? (
             <>
-              Approve <code className='font-mono'>{named.operation}</code> for {named.what}{' '}
+              {asking?.mode === 'reject' ? 'Reject' : 'Approve'}{' '}
+              <code className='font-mono'>{named.operation}</code> for {named.what}{' '}
               <bdi dir='ltr' className='font-mono break-all'>
                 {named.id}
               </bdi>
@@ -389,20 +448,38 @@ export function ProposalsScreen() {
             ''
           )
         }
-        confirmLabel='Approve'
+        confirmLabel={asking?.mode === 'reject' ? 'Reject' : 'Approve'}
+        destructive={asking?.mode === 'reject'}
         // In production what is acted on is typed: the target's id, as it is shown.
         requireText={environment.kind === 'production' ? named?.id : undefined}
         pending={running !== null}
-        error={approve.error}
+        error={active.error}
         errorText={approvalErrorText}
         onConfirm={() => {
-          if (asking) {
+          if (asking?.mode === 'reject') {
+            sendRejection(asking.proposal)
+          } else if (asking) {
             send(asking.proposal)
           }
         }}
         onCancel={cancel}
       >
-        {asking ? (
+        {asking?.mode === 'reject' ? (
+          <span className='flex flex-col gap-2'>
+            <span data-testid='reject-consequence'>
+              Nothing is carried out. The proposal is closed as rejected and cannot be approved
+              afterwards; the agent can ask again. It is recorded with this dashboard session as the
+              one that rejected it.
+            </span>
+            <span>
+              About{' '}
+              <bdi data-testid='proposal-target' data-read={asking.about.read}>
+                {asking.about.text}
+              </bdi>
+              , as its card said when this question was opened.
+            </span>
+          </span>
+        ) : asking ? (
           <span className='flex flex-col gap-2'>
             <span data-testid='approve-consequence'>
               {consequenceOf(asking.proposal.operation)}

@@ -5,6 +5,7 @@ export {
   CreateProposalRequestSchema,
   ProposalListSchema,
   ProposalSchema,
+  RejectProposalRequestSchema,
 } from '@tula-tech/contract'
 
 /** Path parameter of the routes that name one proposal. */

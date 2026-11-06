@@ -807,3 +807,83 @@ describe('reading', () => {
     }
   })
 })
+
+function reject(proposal: Pick<Proposal, 'id'>, key: string = SK, body: unknown = {}) {
+  return call('POST', `/v1/admin/proposals/${proposal.id}/reject`, key, body)
+}
+
+describe('rejecting', () => {
+  test('a rejected proposal changes nothing, is rejected for good and is recorded with its reason', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    const before = types()
+    const res = await reject(proposal, SK, { reason: 'not needed' })
+    expect(res.status).toBe(200)
+    expect(await json<Proposal>(res)).toMatchObject({
+      id: proposal.id,
+      status: 'rejected',
+      approvedBy: null,
+      approvedAt: null,
+    })
+    expect((await user(maya.id)).bannedAt).toBeNull()
+    expect(recorded().slice(before.length)).toEqual([
+      {
+        type: 'proposal.rejected',
+        actor: { type: 'admin', id: secretKeyId },
+        target: { type: 'proposal', id: proposal.id },
+        data: {
+          operation: 'ban_user',
+          targetType: 'user',
+          targetId: maya.id,
+          proposedBy: agentKeyId,
+          reason: 'not needed',
+        },
+      },
+    ])
+    // The agent reads the same status through its own route.
+    const seen = await call('GET', `/v1/admin/proposals/${proposal.id}`, AK)
+    expect((await json<Proposal>(seen)).status).toBe('rejected')
+  })
+
+  test('an agent key cannot reject', async () => {
+    const proposal = await propose((await createUser()).id)
+    expect((await reject(proposal, AK)).status).toBe(401)
+    expect((await call('GET', `/v1/admin/proposals/${proposal.id}`, AK)).status).toBe(200)
+  })
+
+  test('a rejected proposal cannot be approved or rejected again', async () => {
+    const proposal = await propose((await createUser()).id)
+    expect((await reject(proposal)).status).toBe(200)
+    expect((await refusal(await approve(proposal))).params?.reason).toBe('already_decided')
+    const again = await reject(proposal)
+    expect(again.status).toBe(409)
+    expect((await refusal(again)).params?.reason).toBe('already_decided')
+  })
+
+  test('an approved proposal cannot be rejected', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    expect((await approve(proposal)).status).toBe(200)
+    const before = types()
+    const res = await reject(proposal)
+    expect(res.status).toBe(409)
+    expect((await refusal(res)).params?.reason).toBe('already_decided')
+    expect(types()).toEqual(before)
+  })
+
+  test('an expired proposal and an unknown one are refused as an approval is', async () => {
+    const proposal = await propose((await createUser()).id)
+    deps.clock.advance('11m')
+    const expired = await reject(proposal)
+    expect(expired.status).toBe(409)
+    expect((await refusal(expired)).params?.reason).toBe('expired')
+    expect((await reject({ id: UNKNOWN })).status).toBe(404)
+  })
+
+  test('a reason that is empty or long is refused', async () => {
+    const proposal = await propose((await createUser()).id)
+    expect((await reject(proposal, SK, { reason: '' })).status).toBe(422)
+    expect((await reject(proposal, SK, { reason: 'x'.repeat(201) })).status).toBe(422)
+    expect((await reject(proposal)).status).toBe(200)
+  })
+})

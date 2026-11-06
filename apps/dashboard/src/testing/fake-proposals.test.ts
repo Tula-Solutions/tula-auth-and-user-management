@@ -106,6 +106,22 @@ describe('what the API refuses, the fake refuses the same way', () => {
     expect(waiting.status).toBe('pending')
   })
 
+  test('a rejection is once: it spends the proposal, and a second answer is refused', async () => {
+    const fake = signedIn()
+    const waiting = fakeProposal()
+    fake.state.proposals.push(waiting)
+    expect((await call('POST', `${ROOT}/not-an-id/reject`, {})).status).toBe(422)
+    expect((await call('POST', `${ROOT}/${waiting.id}/reject`, { extra: 1 })).status).toBe(422)
+    expect(
+      (await call('POST', `${ROOT}/${waiting.id}/reject`, { reason: 'no' }, IDS.production)).status
+    ).toBe(404)
+    const first = await call('POST', `${ROOT}/${waiting.id}/reject`, { reason: 'no' })
+    expect(ProposalSchema.parse(first.body).status).toBe('rejected')
+    const second = await call('POST', `${ROOT}/${waiting.id}/approve`, BAN)
+    expect([second.status, reason(second)]).toEqual([409, 'already_decided'])
+    expect(reason(await call('POST', `${ROOT}/${waiting.id}/reject`, {}))).toBe('already_decided')
+  })
+
   test('a proposal of another environment is not found, to read or to approve', async () => {
     const fake = signedIn()
     const waiting = fakeProposal()

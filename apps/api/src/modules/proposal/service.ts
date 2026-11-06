@@ -14,6 +14,7 @@ import {
   type ProposalFailureReason,
   type ProposalTargetType,
   proposalSummary,
+  type RejectProposalRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import {
@@ -522,6 +523,62 @@ async function changeIsThere(
     })
     return null
   }
+}
+
+/**
+ * Reject a pending proposal: it is decided for good and nothing is carried out.
+ *
+ * The store's compare-and-set takes it out of `pending` once, so a rejection and an
+ * approval racing cannot both succeed. The refusals are the approval's.
+ *
+ * @param deps - Proposal store, environments, settings and clock.
+ * @param tenant - The environment the administrator acts in.
+ * @param id - The proposal.
+ * @param body - The optional short reason, kept in the audit entry.
+ * @param actor - The administrator, as their router built it.
+ * @returns The proposal, `rejected`.
+ * @throws NotFoundError when the proposal is not of this environment.
+ * @throws ConflictError `resource.conflict` with `already_decided`, `agent_key_revoked`
+ *   or `expired`.
+ */
+export async function reject(
+  deps: Pick<Deps, 'proposals' | 'clock' | 'ids'>,
+  tenant: Scope,
+  id: string,
+  body: RejectProposalRequest,
+  actor: Actor
+): Promise<Proposal> {
+  const found = await deps.proposals.find(tenant.environmentId, id)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const rejected = await deps.proposals.reject(
+    tenant.environmentId,
+    id,
+    deps.clock.now(),
+    Audit.entry(deps, tenant, {
+      type: 'proposal.rejected',
+      actor,
+      target: { type: 'proposal', id },
+      data: {
+        ...proposed(found),
+        proposedBy: found.proposedBy,
+        ...(body.reason !== undefined && { reason: body.reason }),
+      },
+    })
+  )
+  if (!rejected) {
+    // Nothing was written. Which of the two it was is read again, for the answer only.
+    const current = await deps.proposals.find(tenant.environmentId, id)
+    if (!current) {
+      throw new NotFoundError()
+    }
+    if (current.status !== 'pending') {
+      refuseApproval('already_decided', 'This proposal was decided before.')
+    }
+    refuseApproval('expired', 'This proposal has expired. Nothing was changed.')
+  }
+  return toProposal(rejected, deps.clock.now())
 }
 
 /**

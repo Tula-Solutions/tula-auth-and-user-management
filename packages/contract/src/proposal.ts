@@ -79,7 +79,14 @@ export const PROPOSAL_OPERATION_TARGETS = {
  * }
  * ```
  */
-export const PROPOSAL_STATUSES = ['pending', 'expired', 'approved', 'executed', 'failed'] as const
+export const PROPOSAL_STATUSES = [
+  'pending',
+  'expired',
+  'approved',
+  'executed',
+  'failed',
+  'rejected',
+] as const
 
 /**
  * Why an approved proposal's operation did not end as carried out, in one of the server's
@@ -277,6 +284,14 @@ export const ApproveProposalRequestSchema = z
   .meta({ ref: 'ApproveProposalRequest' })
 
 /**
+ * Body of `POST /v1/admin/proposals/{id}/reject`: an optional short reason, which only the
+ * audit entry keeps. Never put a secret in it: the proposal itself still holds no text.
+ */
+export const RejectProposalRequestSchema = z
+  .strictObject({ reason: z.string().trim().min(1).max(200).optional() })
+  .meta({ ref: 'RejectProposalRequest' })
+
+/**
  * A proposal, as the admin API answers it.
  *
  * `summary` is the server's own sentence for the operation with the target's id in it
@@ -324,6 +339,8 @@ export const ProposalListSchema = z
 export type ProposalOperation = (typeof PROPOSAL_OPERATIONS)[number]
 /** What a proposal can be about. */
 export type ProposalTargetType = (typeof PROPOSAL_TARGET_TYPES)[number]
+/** Body of a rejection. */
+export type RejectProposalRequest = z.infer<typeof RejectProposalRequestSchema>
 /** Where a proposal stands. */
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 /** Why an approved proposal's operation was not carried out. */

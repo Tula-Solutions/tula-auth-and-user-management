@@ -43,6 +43,7 @@ afterEach(() => {
 
 const ENVIRONMENT = 'x-tula-environment'
 const APPROVE = /^\/v1\/admin\/proposals\/[^/]+\/approve$/
+const REJECT = /^\/v1\/admin\/proposals\/[^/]+\/reject$/
 const SPENT = 'The proposal is spent: it cannot be approved again.'
 const MAYBE =
   'If the request reached the server the proposal may have been approved all the same: the list is being read again, check how it stands before trying once more.'
@@ -467,7 +468,7 @@ describe('approving', () => {
     expect(other.getAttribute('aria-busy')).toBeNull()
     expect(
       document.getElementById(other.getAttribute('aria-describedby') ?? 'none')?.textContent
-    ).toBe('Another approval is on its way: this one can be asked about once it is answered.')
+    ).toBe('Another answer is on its way: this one can be asked about once it is answered.')
     await current.user.click(other)
     expect(openDialogs()).toBe(0)
     await act(() => approval.release())
@@ -477,11 +478,53 @@ describe('approving', () => {
   })
 })
 
+describe('rejecting a proposal', () => {
+  test('a rejection is typed in production, sent once, and the proposal is no longer waiting', async () => {
+    const current = withProposals([{}], PROD_PATH)
+    const card = await onlyCard()
+    await current.user.click(within(card).getByRole('button', { name: /^Reject / }))
+    const field = within(dialog()).getByLabelText(`Type ${IDS.user} to confirm`)
+    const confirm = within(dialog()).getByRole('button', { name: 'Reject' })
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    await current.user.type(field, IDS.user)
+
+    const rejection = holdAnswers(
+      (path, _headers, method) => method === 'POST' && REJECT.test(path)
+    )
+    await current.user.click(confirm)
+    await waitFor(() => expect(rejection.held()).toBe(1))
+    await current.user.click(confirm)
+    await current.user.type(field, '{Enter}')
+    await act(() => rejection.release())
+    await result()
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    const sent = current.api.calls.filter((c) => c.method === 'POST' && REJECT.test(c.path))
+    expect(sent).toHaveLength(1)
+    expect(approvals(current.api)).toHaveLength(0)
+    expect(current.api.state.proposals[0]?.status).toBe('rejected')
+  })
+
+  test('a proposal decided elsewhere is refused in fixed words', async () => {
+    const current = withProposals([{}])
+    current.api.override('POST', REJECT, () =>
+      failure(409, 'resource.conflict', 'CANARY-server-detail', undefined, {
+        reason: 'already_decided',
+      })
+    )
+    const card = await onlyCard()
+    await current.user.click(within(card).getByRole('button', { name: /^Reject / }))
+    await current.user.click(within(dialog()).getByRole('button', { name: 'Reject' }))
+    const panel = await result()
+    expect(panel.textContent).not.toContain('CANARY')
+    expect(panel.textContent).toContain('approved or rejected once')
+  })
+})
+
 describe('what the server refuses', () => {
   const WORDS: Record<(typeof PROPOSAL_APPROVAL_REFUSALS)[number], string> = {
     expired: 'The proposal has expired. Nothing was changed. The agent can ask again.',
     already_decided:
-      'The proposal was already approved, here or somewhere else: a proposal is approved once. This click changed nothing. How it ended is in the list.',
+      'The proposal was already decided, here or somewhere else: a proposal is approved or rejected once. This click changed nothing. How it ended is in the list.',
     mismatch:
       'The proposal is not the one that was shown: its operation or its target differs. Nothing was changed.',
     agent_key_revoked:

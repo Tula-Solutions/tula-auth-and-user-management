@@ -142,6 +142,25 @@ export class MemoryProposalStore implements ProposalStore {
   }
 
   /** @inheritdoc */
+  async reject(
+    environmentId: string,
+    id: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<ProposalRecord | null> {
+    const activity = activityOf(recorded)
+    const agents = await this.#agents(environmentId)
+    const record = this.#own(environmentId, id)
+    if (record?.status !== 'pending' || record.expiresAt.getTime() <= at.getTime()) {
+      return null
+    }
+    const next: NewProposalRecord = { ...record, status: 'rejected', updatedAt: new Date(at) }
+    this.#records.set(id, next)
+    this.#activityLog.record(activity ? [activity] : [])
+    return this.#seen(next, agents)
+  }
+
+  /** @inheritdoc */
   async finish(
     environmentId: string,
     id: string,

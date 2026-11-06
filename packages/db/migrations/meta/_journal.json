@@ -400,6 +400,13 @@
       "when": 1793908102424,
       "tag": "0060_proposals_pending_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793980763577,
+      "tag": "0061_proposals_rejected",
+      "breakpoints": true
     }
   ]
 }
