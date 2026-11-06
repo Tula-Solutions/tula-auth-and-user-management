@@ -525,6 +525,58 @@ async function changeIsThere(
 }
 
 /**
+ * Reject a pending proposal: it is decided for good and nothing is carried out.
+ *
+ * The store's compare-and-set takes it out of `pending` once, so a rejection and an
+ * approval racing cannot both succeed. The refusals are the approval's.
+ *
+ * @param deps - Proposal store, environments, settings and clock.
+ * @param tenant - The environment the administrator acts in.
+ * @param id - The proposal.
+ * @param actor - The administrator, as their router built it.
+ * @returns The proposal, `rejected`.
+ * @throws NotFoundError when the proposal is not of this environment.
+ * @throws ConflictError `resource.conflict` with `already_decided` or `expired`.
+ */
+export async function reject(
+  deps: Pick<Deps, 'proposals' | 'clock' | 'ids'>,
+  tenant: Scope,
+  id: string,
+  actor: Actor
+): Promise<Proposal> {
+  const found = await deps.proposals.find(tenant.environmentId, id)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const rejected = await deps.proposals.reject(
+    tenant.environmentId,
+    id,
+    deps.clock.now(),
+    Audit.entry(deps, tenant, {
+      type: 'proposal.rejected',
+      actor,
+      target: { type: 'proposal', id },
+      data: {
+        ...proposed(found),
+        proposedBy: found.proposedBy,
+      },
+    })
+  )
+  if (!rejected) {
+    // Nothing was written. Which of the two it was is read again, for the answer only.
+    const current = await deps.proposals.find(tenant.environmentId, id)
+    if (!current) {
+      throw new NotFoundError()
+    }
+    if (current.status !== 'pending') {
+      refuseApproval('already_decided', 'This proposal was decided before.')
+    }
+    refuseApproval('expired', 'This proposal has expired. Nothing was changed.')
+  }
+  return toProposal(rejected, deps.clock.now())
+}
+
+/**
  * Approve a proposal and carry out its operation.
  *
  * The order is what makes a proposal single use: the approval is written first, by a

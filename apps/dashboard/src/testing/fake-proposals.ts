@@ -34,7 +34,7 @@ export interface FakeProposal {
   operation: string
   target: { type: string; id: string }
   /** What is stored: `expired` is derived when it is read. */
-  status: 'pending' | 'approved' | 'executed' | 'failed'
+  status: 'pending' | 'rejected' | 'approved' | 'executed' | 'failed'
   proposedBy: { type: 'agent'; id: string }
   createdAt: string
   expiresAt: string
@@ -213,7 +213,7 @@ export function proposalRoutes(state: FakeProposalState): [string, RegExp, FakeH
           return conflict('mismatch', 'That is not what this proposal would do.')
         }
         if (proposal.status !== 'pending') {
-          return conflict('already_decided', 'This proposal was approved before.')
+          return conflict('already_decided', 'This proposal was decided before.')
         }
         const expiry = ended(proposal, state.proposalNow)
         if (expiry === 'agent_key_revoked') {
@@ -233,6 +233,29 @@ export function proposalRoutes(state: FakeProposalState): [string, RegExp, FakeH
         proposal.status = 'executed'
         // Only this answer says whether anything changed: it is not stored with the row.
         return { ...view(proposal, state.proposalNow), changed }
+      },
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/proposals\/([^/]+)\/reject$/,
+      (call, match) => {
+        const params = ProposalParams.safeParse({ id: match[1] })
+        if (!params.success) {
+          return invalid(params.error)
+        }
+        const proposal = find(call, params.data.id)
+        if (!proposal) {
+          return notFound()
+        }
+        if (proposal.status !== 'pending') {
+          return conflict('already_decided', 'This proposal was decided before.')
+        }
+        // A revoked key does not stop a rejection: it only ends what is asked for.
+        if (ended(proposal, state.proposalNow) === 'time') {
+          return conflict('expired', 'This proposal has expired. Nothing was changed.')
+        }
+        proposal.status = 'rejected'
+        return view(proposal, state.proposalNow)
       },
     ],
     [

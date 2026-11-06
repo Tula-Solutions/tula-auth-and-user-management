@@ -72,7 +72,12 @@ export function describeProposalStore(
 
   function activity(
     tenant: ProposalSuiteTenant,
-    type: 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed',
+    type:
+      | 'proposal.created'
+      | 'proposal.approved'
+      | 'proposal.rejected'
+      | 'proposal.executed'
+      | 'proposal.failed',
     id: string
   ): Activity {
     const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
@@ -85,6 +90,14 @@ export function describeProposalStore(
       return Audit.entry(deps, scope, { type, actor: agent, target, data: proposed })
     }
     if (type === 'proposal.approved') {
+      return Audit.entry(deps, scope, {
+        type,
+        actor: admin,
+        target,
+        data: { ...proposed, proposedBy: AGENT },
+      })
+    }
+    if (type === 'proposal.rejected') {
       return Audit.entry(deps, scope, {
         type,
         actor: admin,
@@ -121,6 +134,10 @@ export function describeProposalStore(
       at,
       activity(tenant, 'proposal.approved', id)
     )
+  }
+
+  function reject(tenant: ProposalSuiteTenant, id: string, at: Date = beforeExpiry) {
+    return ctx.store.reject(tenant.environmentId, id, at, activity(tenant, 'proposal.rejected', id))
   }
 
   describe(`${name} ProposalStore`, () => {
@@ -268,6 +285,47 @@ export function describeProposalStore(
       const results = await Promise.all([approve(ctx.a, row.id), approve(ctx.a, row.id)])
       expect(results.filter((result) => result !== null)).toHaveLength(1)
       expect(await ctx.recorded()).toEqual(['proposal.created', 'proposal.approved'])
+    })
+
+    test('a pending proposal is rejected once, and the entry is written with it', async () => {
+      const row = await stored(ctx.a)
+      const rejected = await reject(ctx.a, row.id)
+      expect(rejected).toMatchObject({ id: row.id, status: 'rejected', approvedById: null })
+      expect(await reject(ctx.a, row.id)).toBeNull()
+      expect(await ctx.recorded()).toEqual(['proposal.created', 'proposal.rejected'])
+    })
+
+    test('a rejected proposal is not approved, and an approved one is not rejected', async () => {
+      const row = await stored(ctx.a)
+      expect(await reject(ctx.a, row.id)).not.toBeNull()
+      expect(await approve(ctx.a, row.id)).toBeNull()
+      const other = await stored(ctx.a, { targetId: Bun.randomUUIDv7() })
+      expect(await approve(ctx.a, other.id)).not.toBeNull()
+      expect(await reject(ctx.a, other.id)).toBeNull()
+      expect(await ctx.recorded()).toEqual([
+        'proposal.created',
+        'proposal.rejected',
+        'proposal.created',
+        'proposal.approved',
+      ])
+    })
+
+    test('of a rejection and an approval at once exactly one is written', async () => {
+      const row = await stored(ctx.a)
+      const results = await Promise.all([approve(ctx.a, row.id), reject(ctx.a, row.id)])
+      expect(results.filter((result) => result !== null)).toHaveLength(1)
+      expect(await ctx.recorded()).toHaveLength(2)
+    })
+
+    test('an expired proposal is not rejected', async () => {
+      const row = await stored(ctx.a)
+      expect(await reject(ctx.a, row.id, expiry)).toBeNull()
+      expect(await ctx.recorded()).toEqual(['proposal.created'])
+    })
+
+    test('another environment cannot reject a proposal', async () => {
+      const row = await stored(ctx.a)
+      expect(await reject(ctx.b, row.id)).toBeNull()
     })
 
     test('an expired proposal is not approved: at its expiry and after it', async () => {

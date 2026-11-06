@@ -2931,7 +2931,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 82
+            "maximum": 83
           },
           "enabled": {
             "type": "boolean"
@@ -6548,6 +6548,113 @@
         ],
         "description": "A human approved an agent’s proposal. The actor is the human; the operation follows."
       },
+      "ProposalRejectedEventData": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "ban_user",
+              "unban_user",
+              "end_session",
+              "disable_oauth_provider"
+            ]
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "user",
+              "session",
+              "oauth_provider"
+            ]
+          },
+          "targetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "$ref": "#/components/schemas/OAuthProvider"
+              }
+            ]
+          },
+          "proposedBy": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "operation",
+          "targetType",
+          "targetId",
+          "proposedBy"
+        ],
+        "description": "A human rejected an agent’s proposal. The actor is the human; nothing was carried out."
+      },
+      "ProposalRejectedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "proposal.rejected"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "proposal"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProposalRejectedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A human rejected an agent’s proposal. The actor is the human; nothing was carried out."
+      },
       "ProposalExecutedEventData": {
         "type": "object",
         "properties": {
@@ -6876,6 +6983,7 @@
               "organization_invitation.revoked",
               "proposal.created",
               "proposal.approved",
+              "proposal.rejected",
               "proposal.executed",
               "proposal.failed",
               "audit.exported",
@@ -7379,6 +7487,9 @@
           },
           {
             "$ref": "#/components/schemas/ProposalApprovedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalRejectedEvent"
           },
           {
             "$ref": "#/components/schemas/ProposalExecutedEvent"
@@ -10732,6 +10843,7 @@
           "organization_invitation.revoked",
           "proposal.created",
           "proposal.approved",
+          "proposal.rejected",
           "proposal.executed",
           "proposal.failed",
           "audit.exported",
@@ -12860,7 +12972,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 82,
+            "maxItems": 83,
             "type": "array",
             "items": {
               "type": "string",
@@ -12942,6 +13054,7 @@
                 "organization_invitation.revoked",
                 "proposal.created",
                 "proposal.approved",
+                "proposal.rejected",
                 "proposal.executed",
                 "proposal.failed",
                 "audit.exported",
@@ -12972,7 +13085,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 82,
+            "maxItems": 83,
             "type": "array",
             "items": {
               "type": "string",
@@ -13054,6 +13167,7 @@
                 "organization_invitation.revoked",
                 "proposal.created",
                 "proposal.approved",
+                "proposal.rejected",
                 "proposal.executed",
                 "proposal.failed",
                 "audit.exported",
@@ -13526,6 +13640,7 @@
               "organization_invitation.revoked",
               "proposal.created",
               "proposal.approved",
+              "proposal.rejected",
               "proposal.executed",
               "proposal.failed",
               "audit.exported",
@@ -16763,7 +16878,8 @@
           "expired",
           "approved",
           "executed",
-          "failed"
+          "failed",
+          "rejected"
         ]
       },
       "Proposal": {
@@ -47078,6 +47194,128 @@
             }
           }
         }
+      }
+    },
+    "/v1/admin/proposals/{id}/reject": {
+      "post": {
+        "operationId": "rejectProposal",
+        "tags": [
+          "Proposals"
+        ],
+        "summary": "Reject a proposal",
+        "description": "Reject a pending proposal: nothing is carried out and the proposal is decided for good (`rejected`). It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`). It takes no body. Refused with `resource.conflict` and a fixed `params.reason`: `already_decided` (approved or rejected before) or `expired`. Nothing is changed by a refused rejection. A rejection and an approval at the same moment: one succeeds.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposal, rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
       }
     },
     "/v1/agent/sign-in-tests": {

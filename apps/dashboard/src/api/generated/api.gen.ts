@@ -1300,7 +1300,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 82
+     * @maximum 83
      */
   eventTypes: number;
   enabled: boolean;
@@ -2975,6 +2975,58 @@ export interface ProposalApprovedEvent {
   test?: true;
 }
 
+export type ProposalRejectedEventDataOperation = typeof ProposalRejectedEventDataOperation[keyof typeof ProposalRejectedEventDataOperation];
+
+
+export const ProposalRejectedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalRejectedEventDataTargetType = typeof ProposalRejectedEventDataTargetType[keyof typeof ProposalRejectedEventDataTargetType];
+
+
+export const ProposalRejectedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+/**
+ * A human rejected an agent’s proposal. The actor is the human; nothing was carried out.
+ */
+export interface ProposalRejectedEventData {
+  operation: ProposalRejectedEventDataOperation;
+  targetType: ProposalRejectedEventDataTargetType;
+  targetId: string | OAuthProvider;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposedBy: string;
+}
+
+export type ProposalRejectedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A human rejected an agent’s proposal. The actor is the human; nothing was carried out.
+ */
+export interface ProposalRejectedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.rejected';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalRejectedEventTarget;
+  data: ProposalRejectedEventData;
+  test?: true;
+}
+
 export type ProposalExecutedEventDataOperation = typeof ProposalExecutedEventDataOperation[keyof typeof ProposalExecutedEventDataOperation];
 
 
@@ -3186,6 +3238,7 @@ export const AuditExportedEventDataAction = {
   organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
   auditexported: 'audit.exported',
@@ -3331,7 +3384,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | UserScimUpdatedEvent | ScimGroupCreatedEvent | ScimGroupUpdatedEvent | ScimGroupDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | UserScimUpdatedEvent | ScimGroupCreatedEvent | ScimGroupUpdatedEvent | ScimGroupDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalRejectedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4755,6 +4808,7 @@ export const ActivityType = {
   organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
   auditexported: 'audit.exported',
@@ -5684,6 +5738,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
   auditexported: 'audit.exported',
@@ -5700,7 +5755,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 82
+     * @maxItems 83
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5787,6 +5842,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
   auditexported: 'audit.exported',
@@ -5803,7 +5859,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 82
+     * @maxItems 83
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -6008,6 +6064,7 @@ export const SendTestWebhookRequestEventType = {
   organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
   auditexported: 'audit.exported',
@@ -7388,6 +7445,7 @@ export const ProposalStatus = {
   approved: 'approved',
   executed: 'executed',
   failed: 'failed',
+  rejected: 'rejected',
 } as const;
 
 export type ProposalProposedBy = {
@@ -16806,6 +16864,81 @@ export const useApproveProposal = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getApproveProposalMutationOptions(options), queryClient);
+    }
+
+export const getRejectProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}/reject`
+}
+
+/**
+ * Reject a pending proposal: nothing is carried out and the proposal is decided for good (`rejected`). It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`). It takes no body. Refused with `resource.conflict` and a fixed `params.reason`: `already_decided` (approved or rejected before) or `expired`. Nothing is changed by a refused rejection. A rejection and an approval at the same moment: one succeeds.
+ * @summary Reject a proposal
+ */
+export const rejectProposal = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+  return dashboardFetch<Proposal>(getRejectProposalUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRejectProposalMutationKey = () => ['rejectProposal'] as const;
+
+export const getRejectProposalMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext> => {
+
+const mutationKey = getRejectProposalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectProposal>>, RejectProposalMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  rejectProposal(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectProposal>>>
+
+    export type RejectProposalMutationError = ErrorEnvelope
+    export type RejectProposalMutationVariables = {id: string}
+
+    /**
+ * @summary Reject a proposal
+ */
+export const useRejectProposal = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof rejectProposal>>,
+        TError,
+        RejectProposalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRejectProposalMutationOptions(options), queryClient);
     }
 
 export const getRunSignInTestAsAdminUrl = () => {

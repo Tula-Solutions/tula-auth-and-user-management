@@ -349,7 +349,7 @@ rendered), or what your webhook receiver did with the events.
 - A tool answers `response.invalid` when the server's answer is not the proposal it asked
   for (another operation or another target): nothing of such an answer is returned.
 - `list_audit_entries` shows what became of a proposal: `action` `proposal.created`,
-  `proposal.approved`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
+  `proposal.approved`, `proposal.rejected`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
 
 ### Scaffold tools (need nothing)
 

@@ -209,9 +209,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   and never "nothing was changed", and a failure that is no refusal of the proposal says
   the approval may have been taken. **Never "human verified", "reviewed" or any word that
   says a person looked** (a test scans the sources), and nothing an agent wrote is shown:
-  a proposal holds none. **There is no dismissal**, on the screen or in the API (ADR 0053,
-  "Dismissing a proposal: not built"); the screen says a proposal expires by itself and
-  that revoking the key ends its proposals. The fake's routes
+  a proposal holds none. **Reject** is a button with a confirmation (the id typed in
+  production, as for Approve) and sends once; a refresh after it is started, not awaited
+  (ADR 0053, "Rejecting a proposal"). There is no agent-side withdrawal; the screen says
+  that revoking the key ends all its proposals. The fake's routes
   (`src/testing/fake-proposals.ts`) are held to the contract and to the service's order of
   refusals by `fake-proposals.test.ts`: a change to `Proposals.approve`'s refusals or to
   `NOTHING_WHEN_ALREADY_SO` changes the fake.

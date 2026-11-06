@@ -6773,6 +6773,8 @@ Where a proposal stands:
 - `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
 - `expired`: it can no longer be approved, and nothing happened: nobody approved it in
   time, or the agent key that asked was revoked (`expiryReason` says which);
+- `rejected`: a human turned it down: nothing was carried out, and the decision is final;
+  it can no longer be approved;
 - `approved`: a human approved it and the operation was started. A proposal stays here
   only when the server could not record how the operation ended; it is never run again;
 - `executed`: approved, and the operation was carried out;
@@ -6781,7 +6783,7 @@ Where a proposal stands:
 A proposal is approved at most once: every status but `pending` is final for an approval.
 
 ```ts
-const PROPOSAL_STATUSES: readonly ["pending", "expired", "approved", "executed", "failed"]
+const PROPOSAL_STATUSES: readonly ["pending", "expired", "approved", "executed", "failed", "rejected"]
 ```
 
 **Example**

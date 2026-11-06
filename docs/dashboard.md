@@ -236,9 +236,10 @@ A proposal is a change an agent asked for; nothing happens until it is approved
 - **The time left is counted by your browser's clock**, as a guide. Whether a proposal has
   expired is the server's decision: the list is read again every ten seconds and when a
   time runs out.
-- **A proposal cannot be dismissed.** It expires by itself ten minutes after it was made.
-  To end everything an agent has waiting at once, revoke its key on the **API keys**
-  screen.
+- **A waiting proposal can be rejected.** Nothing is carried out and the decision is final;
+  a rejection takes no reason. A proposal nobody decides expires by itself ten minutes after
+  it was made. To end everything an agent has waiting at once, revoke its key on the
+  **API keys** screen.
 - **An operation this version of the dashboard does not know is shown and cannot be
   approved here.**
 - **The agent's words are never shown**: a proposal holds none. The description is the

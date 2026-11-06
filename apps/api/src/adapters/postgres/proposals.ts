@@ -237,6 +237,33 @@ export class PostgresProposalStore implements ProposalStore {
   }
 
   /** @inheritdoc */
+  async reject(
+    environmentId: string,
+    id: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<ProposalRecord | null> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .update(proposals)
+        .set({ status: 'rejected', updatedAt: at })
+        .where(
+          and(
+            eq(proposals.environmentId, environmentId),
+            eq(proposals.id, id),
+            // The same compare as the approval's, so the row leaves `pending` once.
+            eq(proposals.status, 'pending'),
+            gt(proposals.expiresAt, at)
+          )
+        )
+        .returning(columns)
+      await recordActivity(tx, row && activity ? [activity] : [])
+      return row ? toRecord(row) : null
+    })
+  }
+
+  /** @inheritdoc */
   async finish(
     environmentId: string,
     id: string,
