@@ -12,6 +12,7 @@ import type { Diagnostics } from '~/ports/diagnostics'
 import type { EnvironmentLock } from '~/ports/environment-lock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
+import type { ExportLeases } from '~/ports/export-leases'
 import type { FactorStore } from '~/ports/factor-store'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
@@ -128,6 +129,8 @@ export interface Deps {
   revokedSessions: RevokedSessions
   /** The ids of accepted device-binding proofs: a proof is accepted once (ADR 0043). */
   proofReplay: ProofReplayGuard
+  /** Slots of the audit export's per-environment limit, shared by every instance. */
+  exportLeases: ExportLeases
   mailer: Mailer
   /**
    * Sends text messages. Send through `~/modules/sms/service`, after `Settings.requireSms`.

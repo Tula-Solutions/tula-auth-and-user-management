@@ -8,6 +8,7 @@ import { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
+import { MemoryExportLeases } from '~/adapters/memory/export-leases'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { MemoryHookStore } from '~/adapters/memory/hooks'
@@ -64,6 +65,7 @@ export interface TestDeps extends Deps {
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   proofReplay: MemoryProofReplayGuard
+  exportLeases: MemoryExportLeases
   mailer: MemoryMailer
   sms: MemorySmsSender
   smsUsage: MemorySmsUsageStore
@@ -170,6 +172,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
     proofReplay: new MemoryProofReplayGuard(clock),
+    exportLeases: new MemoryExportLeases(clock),
     mailer: new MemoryMailer(),
     sms: new MemorySmsSender(clock),
     // No inbox route unless a test asks for one (`smsInbox: deps.sms`).
