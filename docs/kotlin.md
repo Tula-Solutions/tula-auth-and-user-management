@@ -6,9 +6,7 @@ provider's page in the browser), asks for the second step, resets a password, an
 refreshes the session, bound to a key the device keeps where the app passes a key store, and
 it tells your screens which one the server is asking for. Beside it are **Compose screens**
 for a sign-in, a sign-up, a password reset and the signed-in user's account, for an app that
-does not want to draw its own ([Screens](#screens), below). The reasoning is in
-[ADR 0054](adr/0054-kotlin-client.md), [ADR 0061](adr/0061-compose-screens.md) and
-[ADR 0062](adr/0062-compose-second-step-and-account.md).
+does not want to draw its own ([Screens](#screens), below).
 
 > **The screens ran on one emulator; nothing ran on a device.** The client is plain Kotlin
 > and is tested on a JVM, against the real API, in CI, with a software authenticator, a
@@ -21,11 +19,6 @@ does not want to draw its own ([Screens](#screens), below). The reasoning is in
 > emulator. **No passkey sheet, no Google sheet and no browser has been opened by this
 > library, and no key was made in a phone's Keystore or StrongBox.** Nothing is published
 > to a Maven repository, and the names (`dev.tula:tula-auth`) are placeholders.
-> What was not verified:
-> [the client](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
-> [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
-> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061),
-> [the second step, the other ways and the account](plans/phase-2-unverified.md#step-215-the-compose-screens-the-second-step-the-other-ways-and-the-account-tula-61-adr-0062).
 
 ## What this version does
 
@@ -40,8 +33,8 @@ does not want to draw its own ([Screens](#screens), below). The reasoning is in
 | The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), a phone number (add, prove, remove), connected provider accounts, a password change, the session list, ending one session or all the others. |
 | Organizations | The user's organizations, creating, renaming, leaving or deleting one, the active organization and its claims, its members and roles, its domains, an invitation (preview, accept, decline), the organizations a verified address is offered. |
 
-Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
-(both TULA-76: the rename call is not written yet). A step
+Not available: an emailed link (the code in the same email is the way) and renaming a
+passkey. A step
 that offers only a way this version cannot do is reported as "not supported" (below), never
 as an error.
 
@@ -351,7 +344,7 @@ at `resumed()`. The client still judges the whole address it is handed.
 
 ## A session bound to a device key
 
-**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+**The key identifies the device, not the person.** Signing out does not
 delete it, on purpose: on a shared device the users who sign in one after another are bound
 to the same key. An app that must not carry a key over removes it when its user signs out.
 
@@ -450,14 +443,12 @@ And on the `<application>` element of the manifest:
 
 **After a restore or a transfer the user is signed out, by design**: with the rules the
 file is not copied, and without them the copy has no key on the new device and is read as
-no token. Neither was tried on a device
-([what was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054)).
+no token. Neither was tried on a device.
 
 ## Organizations
 
 An environment with organizations switched on lets a user belong to several, and a session
-works in one of them at a time: the **active organization**
-([ADR 0065](adr/0065-organizations.md)). `tula.organizations` lists the user's
+works in one of them at a time: the **active organization**. `tula.organizations` lists the user's
 organizations, creates one where the environment lets users, and sets or clears the active
 one. Setting it asks the server for a new access token that carries the organization's
 claims (`org_id`, `org_role`, `org_perms`); the refresh token does not change.
@@ -718,7 +709,7 @@ while the others stand.
   the screen says so. Without a passkey sheet nothing is added, and that is said too.
 - **Phone number.** Added with a texted code, and removed.
 
-**Not on the account screen** (TULA-78): connected provider accounts, giving an address to
+**Not on the account screen:** connected provider accounts, giving an address to
 an account that has none, and deleting the account. The client has calls for the first two
 (`tula.identities`); the screen draws none of the three.
 
@@ -887,9 +878,7 @@ with the device, the Android API level, the commit and the date. The captures an
 are committed; no workflow takes them, because none runs an emulator. Without the flag the
 capture tests skip themselves, so an ordinary run is unchanged.
 
-What the UI tests cover of these screens, and what they do not (no passkey sheet, Google
-chooser or browser was opened; no text message was received; TalkBack was never on), is in
-[what was not verified](plans/phase-2-unverified.md#step-215-the-compose-screens-the-second-step-the-other-ways-and-the-account-tula-61-adr-0062).
+The UI tests did not open a passkey sheet, Google chooser or browser, receive a text message or turn TalkBack on.
 
 ## Running its tests
 
