@@ -756,6 +756,30 @@ describe('a second factor comes before the new password', () => {
   })
 })
 
+describe('a user an identity provider manages (decision 11)', () => {
+  test.each([
+    ['connection', { managedByConnectionId: 'c1' }],
+    ['directory', { managedByDirectoryId: 'o1' }],
+  ] as const)(
+    'managed by a %s: the new password is refused and nothing is stored',
+    async (_k, marks) => {
+      await seedAged(90)
+      const { attempt } = await signIn()
+      const before = await storedHash()
+      const found = await deps.users.findByEmailWithPassword(tenant.environmentId, EMAIL)
+      spies.push(
+        spyOn(deps.users, 'findByEmailWithPassword').mockResolvedValue(
+          found && { ...found, user: { ...found.user, ...marks } }
+        ),
+        spyOn(deps.ssoConnections, 'find').mockResolvedValue({} as never),
+        spyOn(deps.scim, 'listTokens').mockResolvedValue([{ revokedAt: null }] as never)
+      )
+      expect((await rejection(renew(attempt))).code).toBe('user.managed')
+      expect(await storedHash()).toBe(before)
+    }
+  )
+})
+
 describe('the password must still be the one the attempt proved', () => {
   test('replaced by an administrator meanwhile: the attempt has proven nothing', async () => {
     const userId = await seedAged(90)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AUDIT_ACTOR_TYPES, type AuditActorType } from './audit'
+import { AUDIT_ACTOR_TYPES, AUDIT_EXPORT_FORMATS, type AuditActorType } from './audit'
 import { CONFIG_TOOL_PATTERN } from './environment-settings'
 import {
   ACTIVITY_TYPES,
@@ -20,6 +20,13 @@ import {
   MAX_ADDITIONAL_CLIENT_IDS,
   OAuthProviderSchema,
 } from './oauth'
+import { ORGANIZATION_FIELDS, ORGANIZATION_ROLE_FIELDS, RoleKeySchema } from './organization'
+import {
+  DOMAIN_PATTERN,
+  MAX_DOMAIN_LENGTH,
+  ORGANIZATION_DOMAIN_MODES,
+} from './organization-domain-rules'
+import { MAX_PERMISSIONS_PER_ROLE } from './organization-permissions'
 import {
   PROPOSAL_FAILURE_REASONS,
   PROPOSAL_OPERATIONS,
@@ -27,6 +34,12 @@ import {
   ProposalApproverSchema,
 } from './proposal'
 import { SessionClientSchema } from './session'
+import {
+  MAX_SSO_CONNECTION_DOMAINS,
+  SSO_CONNECTION_FIELDS,
+  SSO_CONNECTION_STATUSES,
+  SSO_PROTOCOLS,
+} from './sso'
 import { SIGN_IN_TEST_CLEANUPS, SIGN_IN_TEST_OUTCOMES } from './test-address'
 import { AUTHENTICATION_METHODS } from './tokens'
 
@@ -55,6 +68,13 @@ import { AUTHENTICATION_METHODS } from './tokens'
 const id = () => z.uuid()
 
 /**
+ * A domain an organization claimed: the operator's own identifier of the domain
+ * grammar (`acme.com`), bounded by pattern and length. It holds no address, and is the one
+ * client-supplied string of the domain events (the event canary lists the field).
+ */
+const DomainName = z.string().max(MAX_DOMAIN_LENGTH).regex(DOMAIN_PATTERN)
+
+/**
  * A `data` schema and the description its event is published with.
  *
  * @param name - The event's name in the OpenAPI document, e.g. `UserCreated`.
@@ -77,7 +97,7 @@ const PROPOSAL_IS_WHOLE = { message: '`proposalId` and `approvedBy` go together'
 
 /**
  * What the entry of a change says when the change carried out an agent's proposal a human
- * approved (ADR 0053): both fields, or neither for a change an administrator or a user made.
+ * approved: both fields, or neither for a change an administrator or a user made.
  */
 const carriedOut = () => ({
   /**
@@ -102,7 +122,7 @@ function passkeyRemovalIsWhole(removal: {
 
 const provider = OAuthProviderSchema
 
-/** How many accounts depended on a provider when it went (ADR 0059). A count and nothing else. */
+/** How many accounts depended on a provider when it went. A count and nothing else. */
 const dependentAccounts = z.number().int().min(0).max(DEPENDENT_ACCOUNTS_SCAN_LIMIT)
 
 /**
@@ -185,6 +205,8 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_linkedin',
       'oauth_x',
       'oauth_facebook',
+      'sso',
+      'scim',
     ]),
     /**
      * Whether the account's email address was proven when it was created. `false` also for
@@ -202,11 +224,24 @@ export const EVENT_DATA_SCHEMAS = {
      */
     hookBypassed: z.boolean().optional(),
     /**
-     * `true` when the account is the throwaway user of a sign-in test (ADR 0058): its
+     * `true` when the account is the throwaway user of a sign-in test: its
      * address is in the reserved test domain, nobody holds it, and the server deletes it
      * within seconds. Absent otherwise. Every later event of that test names this user's id.
      */
     test: z.boolean().optional(),
+  }),
+  'user.imported': data('UserImported', 'A user account was created by an import.', {
+    /** Whether the account's email address was marked verified by the import. */
+    emailVerified: z.boolean(),
+    /** `true` when the account was imported with no password; absent otherwise. */
+    passwordless: z.boolean().optional(),
+    /**
+     * The algorithm of the password hash the account arrived with, which its first sign-in
+     * replaces with argon2id; absent for an account imported with no password.
+     */
+    passwordAlgorithm: z
+      .enum(['bcrypt', 'argon2id', 'argon2i', 'pbkdf2_sha256', 'firebase_scrypt'])
+      .optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
@@ -216,7 +251,7 @@ export const EVENT_DATA_SCHEMAS = {
   'user.banned': z
     .object({
       /**
-       * The proposal this ban carried out (ADR 0053): present exactly when the actor is an
+       * The proposal this ban carried out: present exactly when the actor is an
        * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
        */
       proposalId: id().optional(),
@@ -279,6 +314,18 @@ export const EVENT_DATA_SCHEMAS = {
       provider,
       /** `auto`: at a sign-in, by a verified address; `profile`: by the signed-in user. */
       method: z.enum(['auto', 'profile']),
+    }
+  ),
+  'user.sso_linked': data(
+    'UserSsoLinked',
+    'An account was given its identity at a single sign-on connection (ADR 0067).',
+    {
+      connectionId: id(),
+      /**
+       * `email`: an existing account matched by its address on one of the connection's
+       * domains. `provisioned`: an account created just in time by this sign-in.
+       */
+      method: z.enum(['email', 'provisioned']),
     }
   ),
   'user.identity_unlinked': data(
@@ -386,7 +433,7 @@ export const EVENT_DATA_SCHEMAS = {
      */
     claimsHookBypassed: z.boolean().optional(),
     /**
-     * `true` when the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * `true` when the session is bound to a device key: its refreshes need a proof
      * signed by the key the client presented when the sign-in started. Absent otherwise.
      * Nothing of the key is in an event.
      */
@@ -537,7 +584,7 @@ export const EVENT_DATA_SCHEMAS = {
       weakened: z.boolean().optional(),
       /**
        * When the provider was switched off: how many accounts were found whose only way to
-       * sign in it was (ADR 0059). A count, never an id; absent when it was not switched off.
+       * sign in it was. A count, never an id; absent when it was not switched off.
        */
       dependentAccounts: dependentAccounts.optional(),
       /** `true` when not every account of the provider was looked at: the count is a floor. */
@@ -644,7 +691,7 @@ export const EVENT_DATA_SCHEMAS = {
       platform: z.enum(NATIVE_APP_PLATFORMS),
       /** How many signing-certificate fingerprints it was registered with; 0 for an iOS app. */
       fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
-      /** How many app-link paths it was registered with (ADR 0044). A count, never a path. */
+      /** How many app-link paths it was registered with. A count, never a path. */
       appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
       /** Always `true`: registering an app widens which apps the served files name. */
       weakened: z.boolean().optional(),
@@ -656,7 +703,7 @@ export const EVENT_DATA_SCHEMAS = {
     changed: z.array(z.enum(NATIVE_APP_FIELDS)).min(1).max(NATIVE_APP_FIELDS.length),
     /** How many fingerprints the app has after the change; 0 for an iOS app. */
     fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
-    /** How many app-link paths the app has after the change (ADR 0044). A count. */
+    /** How many app-link paths the app has after the change. A count. */
     appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
     /**
      * `true` when the change widened what the files say: an iOS app moved to another team,
@@ -670,7 +717,214 @@ export const EVENT_DATA_SCHEMAS = {
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
   ),
-  // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
+  // Enterprise single sign-on: protocol, status, counts and field names.
+  'sso_connection.created': data(
+    'SsoConnectionCreated',
+    'A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** How many domains it was bound to. A count, never a domain. */
+      domains: z.number().int().min(0).max(MAX_SSO_CONNECTION_DOMAINS),
+    }
+  ),
+  'sso_connection.updated': data(
+    'SsoConnectionUpdated',
+    'A single sign-on connection was changed.',
+    {
+      protocol: z.enum(SSO_PROTOCOLS),
+      /** Which fields changed. Names only, never a value. */
+      changed: z.array(z.enum(SSO_CONNECTION_FIELDS)).min(1).max(SSO_CONNECTION_FIELDS.length),
+      /** The connection's status after the change. */
+      status: z.enum(SSO_CONNECTION_STATUSES),
+      /** `true` when the change stopped the connection signing users in: it was disabled. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'sso_connection.deleted': data(
+    'SsoConnectionDeleted',
+    'A single sign-on connection was removed.',
+    { protocol: z.enum(SSO_PROTOCOLS) }
+  ),
+  // SCIM: ids and enums only.
+  'scim_token.created': data(
+    'ScimTokenCreated',
+    "A SCIM token was created for an organization's directory. The token is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_token.revoked': data(
+    'ScimTokenRevoked',
+    'A SCIM token was revoked: the directory it belonged to can no longer provision with it.',
+    { organizationId: id() }
+  ),
+  'setup_link.created': data(
+    'SetupLinkCreated',
+    'A setup link was created for an organization (ADR 0067). The token is not in the event.',
+    { organizationId: id() }
+  ),
+  'setup_link.revoked': data(
+    'SetupLinkRevoked',
+    'A setup link was revoked: the portal it opened refuses it from the next request.',
+    { organizationId: id() }
+  ),
+  'user.scim_provisioned': data(
+    'UserScimProvisioned',
+    "An organization's directory created an account or took over an existing one (ADR 0067).",
+    {
+      organizationId: id(),
+      /** `created`: a new account managed by the directory. `linked`: an account that existed, matched on a verified domain. */
+      method: z.enum(['created', 'linked']),
+    }
+  ),
+  'user.scim_updated': data(
+    'UserScimUpdated',
+    "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.",
+    { organizationId: id(), changed: z.array(z.enum(['name', 'email'])) }
+  ),
+  'scim_group.created': data(
+    'ScimGroupCreated',
+    "An organization's directory pushed a new group. The group's name is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_group.updated': data(
+    'ScimGroupUpdated',
+    "A group of an organization's directory changed. Which fields, never their values.",
+    {
+      organizationId: id(),
+      changed: z.array(z.enum(['displayName', 'externalId', 'members'])),
+    }
+  ),
+  'scim_group.deleted': data(
+    'ScimGroupDeleted',
+    "A group of an organization's directory was removed.",
+    { organizationId: id() }
+  ),
+  // Organizations. Ids and role keys only: the organization's name and slug and a
+  // member's address and name are operator or user text, and never in an event.
+  'organization.created': data(
+    'OrganizationCreated',
+    'An organization was created. Its name and slug are not in the event: read the organization by its id.',
+    {}
+  ),
+  'organization.updated': data(
+    'OrganizationUpdated',
+    'An organization was renamed or its slug changed.',
+    {
+      /** Which fields changed. Names only, never a value. */
+      changed: z.array(z.enum(ORGANIZATION_FIELDS)).min(1).max(ORGANIZATION_FIELDS.length),
+    }
+  ),
+  'organization.deleted': data(
+    'OrganizationDeleted',
+    'An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.',
+    {
+      /** How many memberships went with it. */
+      memberships: z.number().int().min(0),
+    }
+  ),
+  'organization_membership.added': data(
+    'OrganizationMembershipAdded',
+    'A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).',
+    {
+      organizationId: id(),
+      userId: id(),
+      role: RoleKeySchema,
+      via: z.enum(['domain_auto_join', 'domain_suggestion']).optional(),
+    }
+  ),
+  'organization_membership.role_changed': data(
+    'OrganizationMembershipRoleChanged',
+    'A member was given another role. The session of that member carries the new role from its next refresh.',
+    { organizationId: id(), userId: id(), role: RoleKeySchema, previousRole: RoleKeySchema }
+  ),
+  'organization_membership.removed': data(
+    'OrganizationMembershipRemoved',
+    'A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.',
+    { organizationId: id(), userId: id(), role: RoleKeySchema }
+  ),
+  // Custom roles. The role's key, a count and field names: never its name or a
+  // permission key, which are the operator's own text.
+  'organization_role.created': data(
+    'OrganizationRoleCreated',
+    'A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.',
+    { role: RoleKeySchema, permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE) }
+  ),
+  'organization_role.updated': data(
+    'OrganizationRoleUpdated',
+    'A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.',
+    {
+      role: RoleKeySchema,
+      /** Which fields changed. Names only, never a value. */
+      changed: z
+        .array(z.enum(ORGANIZATION_ROLE_FIELDS))
+        .min(1)
+        .max(ORGANIZATION_ROLE_FIELDS.length),
+      permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_role.deleted': data(
+    'OrganizationRoleDeleted',
+    'A custom role was deleted. No member held it.',
+    { role: RoleKeySchema }
+  ),
+  // Verified domains. The organization's id, the domain (a name of the domain
+  // grammar, which the operator chose and which has no address in it) and the mode.
+  'organization_domain.claimed': data(
+    'OrganizationDomainClaimed',
+    'A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.',
+    { organizationId: id(), domain: DomainName, mode: z.enum(ORGANIZATION_DOMAIN_MODES) }
+  ),
+  'organization_domain.verified': data(
+    'OrganizationDomainVerified',
+    'An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.',
+    {
+      organizationId: id(),
+      domain: DomainName,
+      mode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      reverified: z.literal(true).optional(),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_domain.updated': data(
+    'OrganizationDomainUpdated',
+    'What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.',
+    {
+      organizationId: id(),
+      domain: DomainName,
+      mode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      previousMode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_domain.removed': data(
+    'OrganizationDomainRemoved',
+    'A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.',
+    { organizationId: id(), domain: DomainName }
+  ),
+  // Invitations to an organization. Ids and the role's key only: the invited
+  // address is the inviter's text, and never in an event.
+  'organization_invitation.created': data(
+    'OrganizationInvitationCreated',
+    'Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.',
+    { organizationId: id(), role: RoleKeySchema }
+  ),
+  'organization_invitation.accepted': data(
+    'OrganizationInvitationAccepted',
+    'An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.',
+    { organizationId: id(), role: RoleKeySchema, userId: id() }
+  ),
+  'organization_invitation.declined': data(
+    'OrganizationInvitationDeclined',
+    'An invitation was declined by the user it was for. The actor is that user.',
+    { organizationId: id(), role: RoleKeySchema, userId: id() }
+  ),
+  'organization_invitation.revoked': data(
+    'OrganizationInvitationRevoked',
+    'A pending invitation was withdrawn: its link no longer works.',
+    { organizationId: id(), role: RoleKeySchema }
+  ),
+  // Proposals. The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.
   'proposal.created': data(
     'ProposalCreated',
@@ -680,6 +934,15 @@ export const EVENT_DATA_SCHEMAS = {
   'proposal.approved': data(
     'ProposalApproved',
     'A human approved an agent’s proposal. The actor is the human; the operation follows.',
+    {
+      ...proposed,
+      /** The agent that asked: the id of the credential it holds. */
+      proposedBy: id(),
+    }
+  ),
+  'proposal.rejected': data(
+    'ProposalRejected',
+    'A human rejected an agent’s proposal. The actor is the human; nothing was carried out.',
     {
       ...proposed,
       /** The agent that asked: the id of the credential it holds. */
@@ -710,7 +973,27 @@ export const EVENT_DATA_SCHEMAS = {
       reason: z.enum(PROPOSAL_FAILURE_REASONS),
     }
   ),
-  // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator
+  // An export of the audit log (TULA-137). Ids, enums, instants and a count: the filters the
+  // export was asked with, never a value of the entries it holds.
+  'audit.exported': data(
+    'AuditExported',
+    'An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.',
+    {
+      /** `started` is written before the stream (no rows yet); `finished` when it ends. */
+      phase: z.enum(['started', 'finished']).optional(),
+      format: z.enum(AUDIT_EXPORT_FORMATS),
+      rowCount: z.number().int().min(0),
+      resumed: z.boolean(),
+      action: z.enum(ACTIVITY_TYPES).optional(),
+      actorId: id().optional(),
+      actorType: z.enum(AUDIT_ACTOR_TYPES).optional(),
+      targetId: id().optional(),
+      organizationId: id().optional(),
+      from: z.iso.datetime({ offset: true }).optional(),
+      to: z.iso.datetime({ offset: true }).optional(),
+    }
+  ),
+  // A sign-in test. The actor is who asked for it: an agent, or an administrator
   // (a secret key). The account's own events are the flow's, with their own actors.
   'sign_in_test.started': data(
     'SignInTestStarted',

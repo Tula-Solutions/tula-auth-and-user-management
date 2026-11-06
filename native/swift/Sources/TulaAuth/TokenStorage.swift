@@ -169,9 +169,15 @@ public struct KeychainTokenStorage: TulaTokenStorage {
         }
     }
 
-    /// Remove what is under `key`; nothing there is not an error. Throws `KeychainError` when the Keychain refuses.
+    /// Remove what is under `key`; nothing there is not an error. A refusal is asked again twice,
+    /// shortly after (a token left on the device after a sign-out is the harm). Throws
+    /// `KeychainError` with the last refusal.
     public func remove(_ key: String) async throws {
-        let status = items.delete(query(key))
+        var status = items.delete(query(key))
+        for delay in [UInt64(50), 150] where status != errSecSuccess && status != errSecItemNotFound {
+            try? await Task.sleep(nanoseconds: delay * 1_000_000)
+            status = items.delete(query(key))
+        }
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }

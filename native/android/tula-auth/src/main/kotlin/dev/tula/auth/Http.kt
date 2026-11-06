@@ -2,6 +2,7 @@ package dev.tula.auth
 
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
@@ -77,7 +78,9 @@ fun interface HttpEngine {
  * closed) when the calling coroutine is cancelled, which is how the client's timeout ends it.
  * Redirects are not followed, nothing is cached and no cookie is kept.
  *
- * `HttpURLConnection` has no `PATCH`; the client's calls do not need one today.
+ * A desktop JVM's `HttpURLConnection` has no `PATCH`, so a `PATCH` request (renaming an
+ * organization, giving a member another role, changing a domain's mode) goes through the JDK's
+ * `java.net.http` client there; on Android it goes through `HttpURLConnection`, which accepts it.
  *
  * **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
  * implementation, and the API refuses a sign-in and ends a session with a `401` that has no
@@ -85,12 +88,40 @@ fun interface HttpEngine {
  * not tried on a device. An app that does not want to rest on it passes an [HttpEngine] of
  * its own (over OkHttp, for one).
  */
-class UrlConnectionEngine : HttpEngine {
+class UrlConnectionEngine internal constructor(private val patchingClass: String) : HttpEngine {
+    /** The default engine. */
+    constructor() : this(JDK_ENGINE)
+
     private val threads: ExecutorService = Executors.newCachedThreadPool { task ->
         Thread(task, "tula-http-${NUMBER.incrementAndGet()}").apply { isDaemon = true }
     }
 
+    /**
+     * The engine that sends `PATCH`, found by name: [JdkHttpEngine] where `java.net.http`
+     * exists (a JVM), `null` where it does not (Android), which sends it through
+     * `HttpURLConnection`. Android's `HttpURLConnection` is OkHttp's, and its method list holds
+     * `PATCH`: `HttpURLConnectionImpl.METHODS` in AOSP's `external/okhttp`
+     * (`okhttp-urlconnection/src/main/java/com/squareup/okhttp/internal/huc/HttpURLConnectionImpl.java`,
+     * branch `android14-release`: `Arrays.asList("OPTIONS", "GET", "HEAD", "POST", "PUT",
+     * "DELETE", "TRACE", "PATCH")`). Nobody ran it on a device.
+     */
+    private val patching: HttpEngine? by lazy {
+        try {
+            Class.forName(patchingClass).getDeclaredConstructor().newInstance() as? HttpEngine
+        } catch (_: ReflectiveOperationException) {
+            // Not there (Android), or its constructor failed (`InvocationTargetException`
+            // around a `NoClassDefFoundError` for `java.net.http`): the connection below is the way.
+            null
+        } catch (_: LinkageError) {
+            // There, but its `java.net.http` classes are not: the same.
+            null
+        }
+    }
+
     override suspend fun send(request: HttpRequest): HttpResponse {
+        if (request.method == "PATCH") {
+            patching?.let { return it.send(request) }
+        }
         val connection = try {
             URI(request.url).toURL().openConnection() as? HttpURLConnection
         } catch (_: IllegalArgumentException) {
@@ -145,30 +176,35 @@ class UrlConnectionEngine : HttpEngine {
             }
         }
         val stream = if (status >= 400) connection.errorStream else connection.inputStream
-        val text = stream?.use { input ->
-            // No answer of the client API is near this size: more is not this API's.
-            // A loop of its own: `readNBytes(int)` is not on Android before API 33.
-            val bytes = ByteArrayOutputStream()
-            val chunk = ByteArray(8 * 1024)
-            while (true) {
-                val read = input.read(chunk)
-                if (read < 0) {
-                    break
-                }
-                bytes.write(chunk, 0, read)
-                if (bytes.size() > MAX_RESPONSE_BYTES) {
-                    throw IOException("the answer is too large")
-                }
-            }
-            bytes.toString("UTF-8")
-        } ?: ""
+        val text = stream?.use(::readCapped) ?: ""
         return HttpResponse(status, headers, text)
     }
 
-    private companion object {
-        val NUMBER = AtomicInteger()
+    internal companion object {
+        /** The JDK-client engine's name, looked up at run time. */
+        const val JDK_ENGINE = "dev.tula.auth.JdkHttpEngine"
 
-        /** The most of an answer that is read: 1 MiB. */
-        const val MAX_RESPONSE_BYTES = 1024 * 1024
+        val NUMBER = AtomicInteger()
     }
 }
+
+/** The text of an answer's body, refused beyond [MAX_RESPONSE_BYTES]. */
+internal fun readCapped(input: InputStream): String {
+    // A loop of its own: `readNBytes(int)` is not on Android before API 33.
+    val bytes = ByteArrayOutputStream()
+    val chunk = ByteArray(8 * 1024)
+    while (true) {
+        val read = input.read(chunk)
+        if (read < 0) {
+            break
+        }
+        bytes.write(chunk, 0, read)
+        if (bytes.size() > MAX_RESPONSE_BYTES) {
+            throw IOException("the answer is too large")
+        }
+    }
+    return bytes.toString("UTF-8")
+}
+
+/** The most of an answer that is read: 1 MiB. No answer of the client API is near this size. */
+internal const val MAX_RESPONSE_BYTES = 1024 * 1024

@@ -392,6 +392,35 @@ describe('the concurrent-session rule: end_oldest', () => {
     expect((await stored(kept.sessionId))?.revokedAt).toBeNull()
   })
 
+  test('a store failure ends the sessions this sign-in denylisted (H-104)', async () => {
+    const oldest = await create()
+    deps.clock.advance('1m')
+    await create()
+    const failing = spyOn(deps.sessions, 'create').mockRejectedValue(new Error('connection lost'))
+    try {
+      await expect(create()).rejects.toThrow('connection lost')
+    } finally {
+      failing.mockRestore()
+    }
+    expect(await deps.revokedSessions.has(oldest.sessionId, deps.clock.now())).toBe(true)
+    expect(await stored(oldest.sessionId)).toMatchObject({ revokeReason: 'session_limit' })
+  })
+
+  test('a retry that ends a different set ends the leftovers of the earlier pass (H-107)', async () => {
+    const oldest = await create()
+    deps.clock.advance('1m')
+    await create()
+    const retry = spyOn(deps.sessions, 'create')
+      .mockResolvedValueOnce({ created: false })
+      .mockResolvedValueOnce({ created: true, ended: [] })
+    try {
+      await create()
+    } finally {
+      retry.mockRestore()
+    }
+    expect(await stored(oldest.sessionId)).toMatchObject({ revokeReason: 'session_limit' })
+  })
+
   test('a sign-in refused at the limit denylists and ends nothing', async () => {
     configure({ maxPerUser: 2, onLimit: 'refuse_newest' })
     const first = await create()

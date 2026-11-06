@@ -38,7 +38,13 @@ export type CallInput<Id extends OperationId> = (Operations[Id]['params'] extend
   : { params: Operations[Id]['params'] }) &
   (Operations[Id]['body'] extends undefined
     ? { body?: undefined }
-    : { body: Operations[Id]['body'] }) & {
+    : { body: Operations[Id]['body'] }) &
+  (Operations[Id] extends { query: infer Query }
+    ? {
+        /** The operation's documented query parameters (paging, for a list). */
+        query?: Query
+      }
+    : { query?: undefined }) & {
     /** Sent as `Authorization: Bearer …`. */
     accessToken?: string
     /** Sent as `x-tula-attempt`. */
@@ -78,7 +84,7 @@ export interface TransportOptions {
    */
   sessionProfile?: string
   /**
-   * Where the key the client's sessions are bound to comes from (ADR 0043). When set, it is
+   * Where the key the client's sessions are bound to comes from. When set, it is
    * asked before every request that starts an attempt and before every refresh, and the
    * request carries a proof signed by the key it answers with in the `DPoP` header. An
    * answer of no key sends the request without one; a rejection is `device.key_failed`.
@@ -89,7 +95,7 @@ export interface TransportOptions {
 /**
  * Where a client's device key comes from, for a runtime that cannot hand one over when the
  * client is created: a key in a phone's secure hardware is found or made by a native call,
- * which takes time and can fail (ADR 0052). Asked before every request a key proves.
+ * which takes time and can fail. Asked before every request a key proves.
  *
  * @param operation - The request about to be sent: the operation id of one of the starts,
  *   or `refreshSession`.
@@ -203,12 +209,25 @@ function errorFromResponse(response: Response, payload: unknown, messages: Messa
   })
 }
 
-function buildUrl(baseUrl: string, path: string, params: Record<string, string>): string {
+function buildUrl(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string>,
+  query: Record<string, unknown> = {}
+): string {
+  const search = new URLSearchParams()
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== undefined) {
+      search.set(name, String(value))
+    }
+  }
+  const text = search.toString()
   return (
     baseUrl +
     path.replace(/\{(\w+)\}/g, (_placeholder, name: string) =>
       encodeURIComponent(params[name] ?? '')
-    )
+    ) +
+    (text === '' ? '' : `?${text}`)
   )
 }
 
@@ -276,7 +295,12 @@ export function createTransport(options: TransportOptions): Transport {
     if (input.attemptSecret) {
       headers.set(FLOW_ATTEMPT_HEADER, input.attemptSecret)
     }
-    const url = buildUrl(options.baseUrl, route.path, input.params ?? {})
+    const url = buildUrl(
+      options.baseUrl,
+      route.path,
+      input.params ?? {},
+      input.query as Record<string, unknown> | undefined
+    )
     const source = PROVEN.has(id) ? options.deviceKey : undefined
 
     // One deadline for the whole call, the repeat after a nonce challenge included: a refresh
@@ -298,6 +322,8 @@ export function createTransport(options: TransportOptions): Transport {
             headers,
             body: input.body === undefined ? undefined : JSON.stringify(input.body),
             signal: controller.signal,
+            // Never follow: the publishable-key header would travel on to wherever it points.
+            redirect: 'manual',
             // Only a browser client has a cookie to send (and to receive, when a flow
             // completes). The option is left out otherwise: some edge runtimes reject it.
             ...(options.client === 'web' && { credentials: 'include' as const }),
@@ -356,11 +382,14 @@ export function createTransport(options: TransportOptions): Transport {
     if (!response.ok) {
       throw errorFromResponse(response, payload, options.messages())
     }
-    if (payload === null) {
+    // Every success body is a JSON object (or a 204): anything else is not this API's answer.
+    // Unreadable keeps the HTTP status; readable but wrong-shaped is 0, like the callers' own
+    // checks.
+    if (response.status !== 204 && !isRecord(payload)) {
       throw new TulaError({
         code: 'response.invalid',
         message: formatMessage('response.invalid', { messages: options.messages() }),
-        status: response.status,
+        status: payload === null ? response.status : 0,
       })
     }
     return payload as Operations[Id]['response']

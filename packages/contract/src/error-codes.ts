@@ -48,7 +48,7 @@ export const ERROR_DEFINITIONS = {
   },
 
   'email.invalid': { status: 422, message: 'Enter a valid email address.' },
-  // Adding an address to an account that has one (ADR 0059). Changing an address is another
+  // Adding an address to an account that has one. Changing an address is another
   // operation, which does not exist. Only ever told to the account's own signed-in user, or
   // to an administrator, about that account.
   'email.already_set': { status: 409, message: 'This account already has an email address.' },
@@ -78,7 +78,7 @@ export const ERROR_DEFINITIONS = {
   },
   'password.sequence': { status: 422, message: 'Avoid sequences like "abcd" or "1234".' },
   // The new password is one of the account's last `params.history` passwords, the current one
-  // included (ADR 0038). Only ever told to someone who has already proven the account is theirs.
+  // included. Only ever told to someone who has already proven the account is theirs.
   'password.reused': {
     status: 422,
     message: 'You have used this password recently. Choose a different one.',
@@ -88,6 +88,25 @@ export const ERROR_DEFINITIONS = {
   'password.not_set': {
     status: 409,
     message: 'This account has no password yet. Use "forgot password" to set one.',
+  },
+
+  // The reasons one row of a user import (`POST /v1/admin/users/import`) is refused.
+  // They are reported per row, in the body of a 200, never as the request's own error.
+  'import.unsupported_algorithm': {
+    status: 422,
+    message: 'That password hash algorithm is not supported.',
+  },
+  'import.hash_malformed': {
+    status: 422,
+    message: 'That password hash is malformed.',
+  },
+  'import.hash_parameters_too_weak': {
+    status: 422,
+    message: 'That password hash is too weak to import.',
+  },
+  'import.hash_parameters_too_costly': {
+    status: 422,
+    message: 'That password hash is too costly to verify.',
   },
 
   'verification.invalid_code': { status: 422, message: 'That code is incorrect.' },
@@ -129,13 +148,13 @@ export const ERROR_DEFINITIONS = {
   },
   // The environment's `mfa.policy` is `required`, the user has no second factor, and all the
   // sign-in proved is a texted code. A phone number alone must not be what enrols an account's
-  // second factor (ADR 0037): sign in another way.
+  // second factor: sign in another way.
   'mfa.enrolment_needs_other_sign_in': {
     status: 403,
     message: 'Sign in another way to set up two-step verification.',
   },
   // A texted code is the account's only second factor and all the sign-in proved is a texted
-  // code to the same number: one phone is not two steps (ADR 0025). Sign in another way first.
+  // code to the same number: one phone is not two steps. Sign in another way first.
   'mfa.needs_other_sign_in': {
     status: 403,
     message: 'Sign in another way. A texted code cannot be both steps.',
@@ -156,7 +175,7 @@ export const ERROR_DEFINITIONS = {
     message: 'This app requires two-step verification. It cannot be turned off.',
   },
 
-  // Signing in with an OAuth provider (ADR 0026). None of these says anything about an account
+  // Signing in with an OAuth provider. None of these says anything about an account
   // except `oauth.account_exists`, which is only ever told to someone the provider vouches
   // controls that verified address.
   'oauth.access_denied': {
@@ -214,14 +233,14 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect another account first.',
   },
 
-  // A webhook endpoint's address is not one the server may call (ADR 0034): not `https`,
+  // A webhook endpoint's address is not one the server may call: not `https`,
   // credentials in it, or a host that does not resolve to public addresses only.
   // `params.reason` is a fixed word saying which rule; never the address or what it resolved to.
   'webhook.url_not_allowed': {
     status: 422,
     message: 'The server cannot deliver to that address.',
   },
-  // A past delivery cannot be sent again (ADR 0034). `params.reason` is a fixed word saying
+  // A past delivery cannot be sent again. `params.reason` is a fixed word saying
   // why: `delivery_pending` (the server is still retrying it), `endpoint_disabled` (nothing
   // is sent to an endpoint that is off), `event_gone` (its payload is no longer kept) or
   // `attempt_limit` (the delivery has had as many requests as one may have).
@@ -229,7 +248,7 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message: 'This delivery cannot be sent again.',
   },
-  // A signing secret cannot be replaced, or its overlap ended, right now (ADR 0034).
+  // A signing secret cannot be replaced, or its overlap ended, right now.
   // `params.reason` is a fixed word: `rotation_in_progress` (two secrets already sign),
   // `no_rotation_in_progress` (there is no previous secret to revoke) or `secret_unreadable`
   // (the server cannot open the current secret, so it could not keep signing).
@@ -238,7 +257,7 @@ export const ERROR_DEFINITIONS = {
     message: 'The signing secret cannot be changed now.',
   },
 
-  // Hooks (ADR 0035). The operator's hook refused a sign-up (`before_sign_up`) or a sign-in
+  // Hooks. The operator's hook refused a sign-up (`before_sign_up`) or a sign-in
   // (`before_session`); `params.code` is the hook's own message code when it gave one, for
   // the app to turn into words. Answered only where the address, or every factor, was
   // already proven, so it says nothing about any account. One code for both points: a client
@@ -253,7 +272,7 @@ export const ERROR_DEFINITIONS = {
   // A hook's address is not one the server may call: as `webhook.url_not_allowed`.
   'hook.url_not_allowed': { status: 422, message: 'The server cannot call that address.' },
 
-  // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
+  // Passkeys. A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {
     status: 422,
     message: 'That passkey could not be saved. Try again.',
@@ -272,7 +291,7 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect an account first.',
   },
 
-  // Phone numbers and SMS (ADR 0037). Both refusals of a send are answered to the signed-in
+  // Phone numbers and SMS. Both refusals of a send are answered to the signed-in
   // owner of the request, about the environment and the number they typed: neither says
   // anything about another account.
   'phone.invalid': {
@@ -309,7 +328,7 @@ export const ERROR_DEFINITIONS = {
       'You are signed in on too many devices. Sign out on another device, or reset your password to sign out everywhere, then try again.',
   },
 
-  // Device binding (ADR 0043). None of the three is a `session.*` code, on purpose: a session
+  // Device binding. None of the three is a `session.*` code, on purpose: a session
   // whose refresh is refused for its proof is still alive, and a client must not sign out.
   //
   // A proof (the `DPoP` header) is missing where the session is bound to a key, or is not a
@@ -326,7 +345,7 @@ export const ERROR_DEFINITIONS = {
   },
   // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`),
   // for a session profile whose `deviceBinding` is `none`, or to a deployment whose own
-  // public URL no proof can name (ADR 0043).
+  // public URL no proof can name.
   'device.binding_not_supported': {
     status: 400,
     message: 'A session of this kind of client cannot be bound to a device key.',
@@ -337,6 +356,231 @@ export const ERROR_DEFINITIONS = {
   'device.binding_required': {
     status: 400,
     message: 'Signing in here needs a device key.',
+  },
+
+  // Deleting a user who is the only member holding `org:sys:memberships:manage` of an
+  // organization. `params.organizationIds` is a comma-separated list of those
+  // organizations' ids (at most 20, ascending) and `params.count` how many there are. Nothing
+  // was deleted: give the organization another manager or delete it, then try again.
+  'user.last_organization_manager': {
+    status: 409,
+    message:
+      'This user is the only manager of an organization. Add another manager or delete the organization first.',
+  },
+  // The account is managed by an active single sign-on connection or SCIM directory (ADR 0067,
+  // DECISIONS 11): its address and password are the identity provider's to change, so a client
+  // route that would change either refuses. Administrators' routes are not affected.
+  'user.managed': {
+    status: 403,
+    message: 'This account is managed by your organization. Ask your administrator to change it.',
+  },
+  // Organizations. `disabled`: the environment's `organizations.enabled` setting is
+  // off, so every organization route answers this and touches nothing. It says nothing about any
+  // account. `slug_taken` and `member_exists` are conflicts on the organization's unique slug and
+  // on a user's one membership per organization. `last_manager`: the change would leave the
+  // organization with no member who holds `org:sys:memberships:manage`; nothing was changed.
+  // `role_unknown`: the role key names no role of the environment.
+  'organization.disabled': {
+    status: 403,
+    message: 'Organizations are not enabled for this environment.',
+  },
+  'organization.slug_taken': {
+    status: 409,
+    message: 'An organization with that slug already exists.',
+  },
+  'organization.member_exists': {
+    status: 409,
+    message: 'That user is already a member of this organization.',
+  },
+  'organization.last_manager': {
+    status: 409,
+    message: 'An organization must keep at least one member who can manage its members.',
+  },
+  'organization.role_unknown': {
+    status: 422,
+    message: 'That role does not exist in this environment.',
+  },
+  // A signed-in user's own organization routes. `not_a_member`: the
+  // organization is not one the user belongs to, which is also what an organization that does
+  // not exist, or is another environment's, answers: it says nothing about what exists.
+  // `creation_disabled`: users may not create organizations here (`allowUserCreated` is off).
+  // `limit_reached`: the user has created as many as `maxCreatedPerUser` allows.
+  // `personal_account_disabled`: the environment has no personal account
+  // (`personalAccount: false`), so the active organization cannot be cleared.
+  'organization.not_a_member': {
+    status: 403,
+    message: 'You are not a member of that organization.',
+  },
+  'organization.creation_disabled': {
+    status: 403,
+    message: 'Creating an organization is not allowed in this environment.',
+  },
+  'organization.limit_reached': {
+    status: 403,
+    message: 'You have reached the number of organizations you can create.',
+  },
+  'organization.personal_account_disabled': {
+    status: 409,
+    message: 'An organization must be active in this environment.',
+  },
+  // Custom roles. `role_exists`: the key is taken, by a custom role or by a built-in
+  // one (`admin`, `member`). `role_in_use`: members still hold the role, so it cannot be deleted.
+  // `role_built_in`: `admin` and `member` cannot be changed or deleted. `role_limit`: the
+  // environment has `params.max` custom roles already.
+  'organization.role_exists': {
+    status: 409,
+    message: 'A role with that key already exists in this environment.',
+  },
+  'organization.role_in_use': {
+    status: 409,
+    message: 'Members still hold this role. Give them another role first.',
+  },
+  'organization.role_built_in': {
+    status: 409,
+    message: 'A built-in role cannot be changed or deleted.',
+  },
+  'organization.role_limit': {
+    status: 409,
+    message: 'This environment has the most custom roles it can have.',
+  },
+  // Invitations to an organization. `permission_required`: the signed-in
+  // user is a member but their role lacks the permission the route needs (`params.permission`).
+  // `role_not_assignable`: an inviter may only invite to a role whose permissions they hold
+  // all of themselves. `invitation_exists`: the address has a pending invitation to this
+  // organization already. `invitation_not_found`: no invitation has this token (or id).
+  // `invitation_expired`, `invitation_revoked` and `invitation_used` (already accepted or
+  // declined): the invitation can no longer be accepted; ask for a new one.
+  // `invitation_wrong_account`: it was sent to another address than the signed-in account's.
+  // `invitation_email_unverified`: the account's address is the invited one but is not
+  // verified, and an unproven address joins nothing. `invitation_role_gone`: the role it names
+  // was deleted after it was sent; it is refused and not given another role.
+  'organization.permission_required': {
+    status: 403,
+    message: 'Your role does not allow that.',
+  },
+  'organization.role_not_assignable': {
+    status: 403,
+    message: 'You can only invite to a role no stronger than yours.',
+  },
+  'organization.invitation_exists': {
+    status: 409,
+    message: 'That address already has a pending invitation.',
+  },
+  'organization.invitation_not_found': {
+    status: 404,
+    message: 'This invitation does not exist.',
+  },
+  'organization.invitation_expired': {
+    status: 410,
+    message: 'This invitation has expired.',
+  },
+  'organization.invitation_revoked': {
+    status: 410,
+    message: 'This invitation was withdrawn.',
+  },
+  'organization.invitation_used': {
+    status: 410,
+    message: 'This invitation was already used.',
+  },
+  'organization.invitation_wrong_account': {
+    status: 403,
+    message: 'This invitation was sent to another email address.',
+  },
+  'organization.invitation_email_unverified': {
+    status: 403,
+    message: 'Verify your email address to accept this invitation.',
+  },
+  'organization.invitation_role_gone': {
+    status: 409,
+    message: 'The role this invitation offers no longer exists.',
+  },
+
+  // Verified domains. `domain_public`: a public mail domain (gmail.com, …) proves
+  // nothing about its holder and cannot be claimed. `domain_taken`: the domain is verified for
+  // an organization of this environment already (this one or another), so it cannot be
+  // claimed again. `domain_address_mismatch`: the address the code goes to is not, exactly,
+  // on the domain (a subdomain is another domain). `domain_limit`: the organization has
+  // `params.max` domains already. `suggestion_unavailable`: the organization is not one this
+  // user can join (no verified domain of it matches a verified address of theirs); it is also
+  // what an organization that does not exist answers.
+  'organization.domain_public': {
+    status: 422,
+    message: 'A public email domain cannot be claimed by an organization.',
+  },
+  'organization.domain_taken': {
+    status: 409,
+    message: 'That domain is verified for an organization already.',
+  },
+  'organization.domain_address_mismatch': {
+    status: 422,
+    message: 'That address is not on the domain.',
+  },
+  'organization.domain_limit': {
+    status: 409,
+    message: 'This organization has the most domains it can have.',
+  },
+  'organization.suggestion_unavailable': {
+    status: 403,
+    message: 'You cannot join that organization.',
+  },
+
+  // Enterprise single sign-on.
+  'sso.disabled': {
+    status: 403,
+    message: 'Single sign-on is not enabled for this environment.',
+  },
+  'sso.connection_not_found': { status: 404, message: 'No such single sign-on connection.' },
+  'sso.name_taken': {
+    status: 409,
+    message: 'The organization already has a connection with that name.',
+  },
+  'sso.domain_taken': {
+    status: 409,
+    message: 'Another active connection already serves one of those domains.',
+  },
+  'sso.domain_not_verified': {
+    status: 422,
+    message: "Every domain must be one of the organization's verified domains.",
+  },
+  'sso.issuer_not_allowed': {
+    status: 422,
+    message: 'The issuer is not an address the server may call.',
+  },
+  'sso.saml_invalid': {
+    status: 422,
+    message: 'The SAML settings could not be read or are incomplete.',
+  },
+  'sso.connection_in_use': {
+    status: 409,
+    message: 'The connection is active; disable it before deleting it.',
+  },
+  'sso.invalid_transition': {
+    status: 409,
+    message: 'A connection cannot move to that status from its current one.',
+  },
+  'sso.url_not_https': {
+    status: 422,
+    message: 'The identity provider’s sign-in address must start with https.',
+  },
+  'sso.test_required': {
+    status: 409,
+    message:
+      'Run a passing test sign-in of the connection’s current settings before activating it.',
+  },
+  'sso.test_not_found': { status: 404, message: 'No such test sign-in.' },
+  'sso.role_not_allowed': {
+    status: 403,
+    message: 'A setup link cannot map a group to a role that holds system permissions.',
+  },
+  'sso.unavailable': { status: 400, message: 'Single sign-on is not available for that address.' },
+  'sso.provider_error': { status: 401, message: 'The identity provider did not sign you in.' },
+  'sso.user_not_provisioned': {
+    status: 403,
+    message: 'Your account has not been set up for this organization. Ask its administrator.',
+  },
+  'sso.email_domain_mismatch': {
+    status: 403,
+    message: "Your email address is not on this connection's domains.",
   },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
@@ -352,7 +596,7 @@ export const ERROR_DEFINITIONS = {
   // An emailed sign-in link or a provider sign-in was asked for with a `redirectUrl` that is
   // not, exactly, one of the environment's `urls.allowedRedirectUrls`. Says nothing about any
   // account. With `params.reason` (a fixed word of `CUSTOM_SCHEME_REDIRECT_REFUSALS`) the URL
-  // is listed and is a custom scheme this request may not be returned to (ADR 0044):
+  // is listed and is a custom scheme this request may not be returned to:
   // `provider_without_pkce`, `client_not_native` or `not_a_provider_sign_in`.
   'request.redirect_not_allowed': {
     status: 400,

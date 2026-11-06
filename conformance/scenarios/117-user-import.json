@@ -1,0 +1,293 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "user import with a bcrypt hash",
+  "description": "An administrator imports users with the password hash they have in the system they come from. The answer says what became of each row (created, skipped as a duplicate, refused with a code) and a refused row stops nobody. The imported user signs in with their old password; a wrong one is refused like any wrong password; the first sign-in replaces the foreign hash, and a second one works. Importing the same row again creates nobody. Each user is recorded as user.imported by the administrator, not as user.created, and the log names the user by id and never by email or hash.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "weakEmail": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "a publishable key cannot import",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "body": {
+          "users": [{ "email": "{{email}}", "emailVerified": true }]
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "an empty batch is refused whole",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "users": []
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "an administrator imports a user with a bcrypt hash, beside rows that are repeated or refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "users": [
+            {
+              "email": "{{email}}",
+              "emailVerified": true,
+              "name": "Imported Person",
+              "externalId": "legacy|42",
+              "metadata": { "plan": "legacy" },
+              "password": {
+                "algorithm": "bcrypt",
+                "hash": "$2b$10$b58FLLZhv0tYNVr/p4vIGezjk7L0aSQ8h6wnY2TPpXQ15ZbsPK0oK"
+              }
+            },
+            {
+              "email": "{{email}}",
+              "emailVerified": true
+            },
+            {
+              "email": "{{weakEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "bcrypt",
+                "hash": "$2y$07$BCryptRequires22Chrcte/VlQH0piJtjXl.0t1XkA8pw9dMXTpOq"
+              }
+            },
+            {
+              "email": "not an address",
+              "emailVerified": false
+            },
+            {
+              "email": "{{weakEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "scrypt",
+                "hash": "anything"
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "created": 1,
+          "skipped": 1,
+          "refused": 3,
+          "results": [
+            { "index": 0, "status": "created", "id": "$any" },
+            { "index": 1, "status": "skipped", "reason": "repeated_in_batch" },
+            { "index": 2, "status": "refused", "code": "import.hash_parameters_too_weak" },
+            { "index": 3, "status": "refused", "code": "email.invalid" },
+            { "index": 4, "status": "refused", "code": "import.unsupported_algorithm" }
+          ]
+        },
+        "bodyExcludes": ["$2b$10$", "$2y$07$"]
+      },
+      "capture": {
+        "importedId": "results.0.id"
+      }
+    },
+    {
+      "name": "a person starts signing in with the imported address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a wrong password is refused like any wrong password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "not the old password"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "the old password signs the imported user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "import-conformance passphrase"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "complete",
+            "userId": "{{importedId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a second sign-in, now on the replaced hash, works too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "againId": "id",
+        "againSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the old password still signs in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{againId}}/password",
+        "attempt": "{{againSecret}}",
+        "body": {
+          "password": "import-conformance passphrase"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{importedId}}"
+          }
+        }
+      }
+    },
+    {
+      "name": "importing the row again creates nobody",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "users": [{ "email": "{{email}}", "emailVerified": true }]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "created": 0,
+          "skipped": 1,
+          "refused": 0,
+          "results": [
+            {
+              "index": 0,
+              "status": "skipped",
+              "reason": "email_exists",
+              "id": "$any",
+              "sameExternalId": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the import is in the audit log as user.imported, by an administrator, without the address or the hash",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{importedId}}&action=user.imported",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.imported",
+              "actor": {
+                "type": "admin",
+                "id": "$any"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{importedId}}"
+              },
+              "metadata": {
+                "emailVerified": true,
+                "passwordAlgorithm": "bcrypt"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{email}}", "$2b$10$", "legacy|42", "Imported Person"]
+      }
+    },
+    {
+      "name": "the import is not a user.created",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{importedId}}&action=user.created",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    }
+  ]
+}

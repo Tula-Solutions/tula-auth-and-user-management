@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { useSettings } from '../support'
+import { API_URL, bindSsoDomain, useSettings } from '../support'
 import {
+  ENVIRONMENT_ID,
   ENVIRONMENT_PATH,
   expect,
   open,
@@ -125,6 +126,126 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
   await shot(page, 'audit-log')
   await shot(page, 'audit-log-dark', 'dark')
   await shot(page, 'audit-log-mobile', 'light', PHONE)
+  // Organizations: a fixture organization with its manager, an invitation, a domain and a
+  // custom role, taken away again so that the environment is as every later spec expects.
+  const dashboard = {
+    'x-tula-dashboard': '1',
+    'x-tula-environment': ENVIRONMENT_ID,
+    origin: API_URL,
+  }
+  const send = async (
+    method: 'POST' | 'PATCH' | 'DELETE',
+    path: string,
+    data?: unknown,
+    extra: Record<string, string> = {}
+  ) => {
+    const response = await page.request.fetch(`${API_URL}${path}`, {
+      method,
+      headers: { ...dashboard, ...extra },
+      data,
+    })
+    expect(response.ok(), path).toBe(true)
+    return response.status() === 204 ? null : ((await response.json()) as { id: string })
+  }
+  await useSettings(page.request, {
+    organizations: { enabled: true },
+    urls: { allowedRedirectUrls: ['https://app.northline.example/join'] },
+  })
+  const users = await page.request.get(`${API_URL}/v1/admin/users?q=${EMAIL}`, {
+    headers: dashboard,
+  })
+  const manager = ((await users.json()) as { data: { id: string }[] }).data[0]?.id
+  const organization = await send('POST', '/v1/admin/organizations', {
+    name: 'Northline Labs',
+    slug: 'northline-labs',
+  })
+  const organizationId = organization?.id as string
+  await send('POST', `/v1/admin/organizations/${organizationId}/memberships`, {
+    userId: manager,
+    role: 'admin',
+  })
+  await send('POST', `/v1/admin/organizations/${organizationId}/invitations`, {
+    email: 'new.hire@northline.example',
+    role: 'member',
+    redirectUrl: 'https://app.northline.example/join',
+  })
+  await send('POST', '/v1/admin/organization-roles', {
+    key: 'billing',
+    name: 'Billing manager',
+    permissions: ['org:sys:memberships:read', 'org:billing:read'],
+  })
+  await open(page, `${ENVIRONMENT_PATH}/organizations`, 'Organizations')
+  await expect(page.getByRole('link', { name: 'Northline Labs' })).toBeVisible()
+  await shot(page, 'organizations')
+  await shot(page, 'organizations-dark', 'dark')
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${organizationId}`, 'Northline Labs')
+  await expect(page.getByRole('table', { name: 'Members of Northline Labs' })).toBeVisible()
+  await shot(page, 'organization')
+  await shot(page, 'organization-mobile', 'light', PHONE)
+  await open(page, `${ENVIRONMENT_PATH}/roles`, 'Roles')
+  await expect(page.getByText('Billing manager').first()).toBeVisible()
+  await shot(page, 'roles')
+  await shot(page, 'roles-dark', 'dark')
+  await open(page, `${ENVIRONMENT_PATH}/organization-settings`, 'Organization settings')
+  await shot(page, 'organization-settings')
+  await send('DELETE', `/v1/admin/organizations/${organizationId}`)
+  await send('DELETE', '/v1/admin/organization-roles/billing', undefined, { 'if-match': '"1"' })
+  await useSettings(page.request)
+
+  // Single sign-on: the fixture's organization with its active connection, taken away again.
+  await bindSsoDomain(page.request, 'northline.example')
+  const listed = await page.request.get(`${API_URL}/v1/admin/organizations?size=100`, {
+    headers: dashboard,
+  })
+  const ssoOrganization = (
+    (await listed.json()) as { data: { id: string; slug: string }[] }
+  ).data.find((entry) => entry.slug === 'sso-northline')
+  expect(ssoOrganization).toBeDefined()
+  const ssoId = ssoOrganization?.id as string
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${ssoId}`, 'SSO Org')
+  await expect(page.getByRole('listitem', { name: 'Connection Mock IdP' })).toBeVisible()
+  // The section is under the members and invitations: bring it into the picture.
+  const card = page.getByRole('listitem', { name: 'Connection Mock IdP' })
+  await card.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-sso')
+  await card.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-sso-dark', 'dark')
+  const made = await page.request.post(`${API_URL}/v1/admin/setup-links`, {
+    headers: dashboard,
+    data: { organizationId: ssoId, name: 'Screenshot', expiresInDays: 1 },
+  })
+  const setupLink = (await made.json()) as { id: string; url: string }
+  await page.context().clearCookies()
+  await page.goto(setupLink.url)
+  await expect(page.getByText(/Set up single sign-on for SSO Org/)).toBeVisible()
+  await shot(page, 'setup-portal')
+  await shot(page, 'setup-portal-dark', 'dark')
+  await signIn(page)
+  await send('DELETE', `/v1/admin/setup-links/${setupLink.id}?organizationId=${ssoId}`)
+
+  // SCIM provisioning, on the same organization: one token that has not been used yet.
+  await send('POST', '/v1/admin/scim-tokens', { organizationId: ssoId, name: 'Okta provisioning' })
+  // Not a reload: after the setup portal the page is still on the (now revoked) link's address.
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${ssoId}`, 'SSO Org')
+  const scim = page.getByRole('table', { name: 'SCIM tokens' })
+  await expect(scim).toBeVisible()
+  await scim.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-scim')
+  await scim.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-scim-dark', 'dark')
+  const connections = await page.request.get(
+    `${API_URL}/v1/admin/sso-connections?organizationId=${ssoId}`,
+    { headers: dashboard }
+  )
+  for (const connection of ((await connections.json()) as { connections: { id: string }[] })
+    .connections) {
+    // An active connection cannot be deleted (decision 13): disable it first.
+    await send('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'disabled' })
+    await send('DELETE', `/v1/admin/sso-connections/${connection.id}`)
+  }
+  await send('DELETE', `/v1/admin/organizations/${ssoId}`)
+  await useSettings(page.request)
+
   await open(page, 'instance/diagnostics', 'Diagnostics')
   await expect(page.getByRole('heading', { name: 'Checks' })).toBeVisible()
   await shot(page, 'diagnostics')

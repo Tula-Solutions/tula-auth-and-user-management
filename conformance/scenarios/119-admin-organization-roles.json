@@ -1,0 +1,718 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "admin organization roles",
+  "description": "An administrator switches organizations on (while they are off the role routes answer organization.disabled) and defines a custom role: a key of the documented grammar, a name and permissions of the form org:<feature>:<action>, which may include the system permissions Tula defines. A key that is taken, the key of a built-in role, a permission of the reserved sys feature that Tula does not define, a malformed or repeated permission and a role of more than 32 permissions are refused with their codes, and a publishable key cannot reach the routes. A role is changed only over the version that was read (If-Match, the ETag of the role): without it the change is refused, a stale version is refused, the built-in roles cannot be changed or deleted, and a role a member holds cannot be deleted until the member has another. The audit log records a change by the names of its fields and holds no name and no permission. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "memberEmail": {
+      "generate": "email"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "with organizations off, defining a role answers a code and stores nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "conf_{{suffix}}",
+          "name": "Conformance role",
+          "permissions": ["org:billing:read"]
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and listing the roles answers it too",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "an administrator switches organizations on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 5,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a publishable key cannot define a role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "body": {
+          "key": "conf_{{suffix}}",
+          "name": "Conformance role",
+          "permissions": ["org:billing:read"]
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an administrator defines a custom role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "conf_{{suffix}}",
+          "name": "Conformance role",
+          "permissions": ["org:billing:write", "org:billing:read", "org:sys:memberships:read"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "key": "conf_{{suffix}}",
+          "name": "Conformance role",
+          "builtIn": false,
+          "version": 1,
+          "permissions": ["org:billing:read", "org:billing:write", "org:sys:memberships:read"]
+        }
+      },
+      "capture": {
+        "roleId": "id"
+      },
+      "captureHeaders": {
+        "roleEtag": "ETag"
+      }
+    },
+    {
+      "name": "a second role with that key is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "conf_{{suffix}}",
+          "name": "Again",
+          "permissions": []
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.role_exists"
+        }
+      }
+    },
+    {
+      "name": "a custom role cannot take the key of a built-in one",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "admin",
+          "name": "Impostor",
+          "permissions": ["org:sys:organization:delete"]
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.role_exists"
+        }
+      }
+    },
+    {
+      "name": "a permission of the reserved system feature that Tula does not define is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "sys_{{suffix}}",
+          "name": "Sys",
+          "permissions": ["org:sys:billing:read"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a permission outside the grammar is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "bad_{{suffix}}",
+          "name": "Bad",
+          "permissions": ["billing.read"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a permission listed twice is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "twice_{{suffix}}",
+          "name": "Twice",
+          "permissions": ["org:a:b", "org:a:b"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a role of more than 32 permissions is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "big_{{suffix}}",
+          "name": "Big",
+          "permissions": [
+            "org:feature0:read",
+            "org:feature1:read",
+            "org:feature2:read",
+            "org:feature3:read",
+            "org:feature4:read",
+            "org:feature5:read",
+            "org:feature6:read",
+            "org:feature7:read",
+            "org:feature8:read",
+            "org:feature9:read",
+            "org:feature10:read",
+            "org:feature11:read",
+            "org:feature12:read",
+            "org:feature13:read",
+            "org:feature14:read",
+            "org:feature15:read",
+            "org:feature16:read",
+            "org:feature17:read",
+            "org:feature18:read",
+            "org:feature19:read",
+            "org:feature20:read",
+            "org:feature21:read",
+            "org:feature22:read",
+            "org:feature23:read",
+            "org:feature24:read",
+            "org:feature25:read",
+            "org:feature26:read",
+            "org:feature27:read",
+            "org:feature28:read",
+            "org:feature29:read",
+            "org:feature30:read",
+            "org:feature31:read",
+            "org:feature32:read"
+          ]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a key outside the grammar is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "Not A Key",
+          "name": "Bad",
+          "permissions": []
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the roles are listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": "$any"
+        }
+      }
+    },
+    {
+      "name": "the built-in admin role is there, and holds the system permissions",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/admin",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "key": "admin",
+          "builtIn": true
+        }
+      }
+    },
+    {
+      "name": "and the member role",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/member",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "key": "member",
+          "builtIn": true,
+          "permissions": ["org:sys:memberships:read"]
+        }
+      }
+    },
+    {
+      "name": "the role is read back with its version as the ETag",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{roleId}}",
+          "key": "conf_{{suffix}}",
+          "version": 1
+        }
+      }
+    },
+    {
+      "name": "changing a role without saying which version is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret",
+        "body": {
+          "name": "Renamed"
+        }
+      },
+      "expect": {
+        "status": 428,
+        "body": {
+          "code": "precondition.required"
+        }
+      }
+    },
+    {
+      "name": "the role is renamed and given a permission",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{roleEtag}}"
+        },
+        "body": {
+          "name": "Conformance renamed",
+          "permissions": ["org:billing:read", "org:billing:write", "org:reports:read"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "key": "conf_{{suffix}}",
+          "name": "Conformance renamed",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "the same version again is stale",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{roleEtag}}"
+        },
+        "body": {
+          "name": "Late"
+        }
+      },
+      "expect": {
+        "status": 412,
+        "body": {
+          "code": "precondition.failed"
+        }
+      }
+    },
+    {
+      "name": "a built-in role cannot be changed",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organization-roles/admin",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "permissions": []
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.role_built_in"
+        }
+      }
+    },
+    {
+      "name": "nor deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organization-roles/member",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.role_built_in"
+        }
+      }
+    },
+    {
+      "name": "an unknown role is not found",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/nobody_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "an administrator creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{memberEmail}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "and an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "the user is added with the custom role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "conf_{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "conf_{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "a role a member holds cannot be deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.role_in_use"
+        }
+      }
+    },
+    {
+      "name": "and is still there",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "key": "conf_{{suffix}}",
+          "version": 2
+        }
+      }
+    },
+    {
+      "name": "the member is given the member role",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{memberId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "role": "member"
+        }
+      }
+    },
+    {
+      "name": "the audit log records the change by the names of the fields",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{roleId}}&action=organization_role.updated",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "organization_role.updated",
+              "target": {
+                "type": "organization_role",
+                "id": "{{roleId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["Conformance renamed", "org:reports:read", "org:billing:write"]
+      }
+    },
+    {
+      "name": "with no member left, the role is deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organization-roles/conf_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "the organization is deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

@@ -1,5 +1,23 @@
 # @tula-tech/example-react-vite
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [b6eb6a3]
+- Updated dependencies [c66479e]
+- Updated dependencies [3e5e07c]
+- Updated dependencies [07874cb]
+- Updated dependencies [110ae64]
+- Updated dependencies [568bcec]
+- Updated dependencies [2ee73d3]
+- Updated dependencies [ef92c8b]
+- Updated dependencies [24288d6]
+- Updated dependencies [358f646]
+- Updated dependencies [bf692b6]
+- Updated dependencies [774be15]
+  - @tula-tech/react@0.3.0
+
 ## 0.0.3
 
 ### Patch Changes

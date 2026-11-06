@@ -8,6 +8,7 @@ import { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
+import { MemoryExportLeases } from '~/adapters/memory/export-leases'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { MemoryHookStore } from '~/adapters/memory/hooks'
@@ -18,16 +19,21 @@ import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryNativeAppStore } from '~/adapters/memory/native-apps'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { MemoryOrganizationDomainStore } from '~/adapters/memory/organization-domains'
+import { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryProposalStore } from '~/adapters/memory/proposals'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { MemoryScimStore } from '~/adapters/memory/scim'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
+import { MemorySetupLinkStore } from '~/adapters/memory/setup-links'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemorySmsSender } from '~/adapters/memory/sms-sender'
 import { MemorySmsUsageStore } from '~/adapters/memory/sms-usage'
+import { MemorySsoConnectionStore } from '~/adapters/memory/sso-connections'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
@@ -59,6 +65,7 @@ export interface TestDeps extends Deps {
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   proofReplay: MemoryProofReplayGuard
+  exportLeases: MemoryExportLeases
   mailer: MemoryMailer
   sms: MemorySmsSender
   smsUsage: MemorySmsUsageStore
@@ -72,6 +79,11 @@ export interface TestDeps extends Deps {
   webhookDeliveries: MemoryWebhookDeliveryStore
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
+  ssoConnections: MemorySsoConnectionStore
+  scim: MemoryScimStore
+  setupLinks: MemorySetupLinkStore
+  organizations: MemoryOrganizationStore
+  organizationDomains: MemoryOrganizationDomainStore
   proposals: MemoryProposalStore
   outbound: FakeOutbound
 }
@@ -117,6 +129,12 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   // beside memory ones) cannot report to a memory repository at all: it is taken as it is,
   // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
   const users = overrides.users ?? new MemoryUserRepository(activityLog)
+  const organizations = overrides.organizations ?? new MemoryOrganizationStore(activityLog, users)
+  const ssoConnections = new MemorySsoConnectionStore(
+    activityLog,
+    users,
+    organizations instanceof MemoryOrganizationStore ? organizations : null
+  )
   const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
   const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
   if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
@@ -145,7 +163,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
-    sessions: new MemorySessionStore(activityLog),
+    sessions: new MemorySessionStore(activityLog, users),
     users,
     factors,
     passkeys,
@@ -154,6 +172,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
     proofReplay: new MemoryProofReplayGuard(clock),
+    exportLeases: new MemoryExportLeases(clock),
     mailer: new MemoryMailer(),
     sms: new MemorySmsSender(clock),
     // No inbox route unless a test asks for one (`smsInbox: deps.sms`).
@@ -171,6 +190,21 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
+    ssoConnections,
+    scim: new MemoryScimStore(
+      activityLog,
+      organizations instanceof MemoryOrganizationStore ? organizations : null
+    ),
+    setupLinks: new MemorySetupLinkStore(
+      activityLog,
+      organizations instanceof MemoryOrganizationStore ? organizations : null
+    ),
+    organizations,
+    organizationDomains: new MemoryOrganizationDomainStore(
+      activityLog,
+      organizations,
+      ssoConnections
+    ),
     proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),

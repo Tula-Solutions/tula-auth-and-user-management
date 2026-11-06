@@ -284,11 +284,18 @@ describe('a proposal as the API answers it', () => {
   test.each([
     ['proposed by anything but an agent', { proposedBy: { type: 'admin', id: KEY } }],
     ['approved by an agent', { approvedBy: { type: 'agent', id: KEY } }],
-    ['with a status that is not on the list', { status: 'rejected' }],
+    ['with a status that is not on the list', { status: 'withdrawn' }],
     ['with a failure reason that is not a fixed word', { failureReason: 'the user was gone' }],
     ['with an expiry reason that is not a fixed word', { expiryReason: 'the key leaked' }],
     ['without saying why it expired, or that it did not', { expiryReason: undefined }],
   ])('one %s does not', (_what, change) => {
     expect(ProposalSchema.safeParse({ ...proposal, ...change }).success).toBe(false)
   })
+})
+
+test('the rejected status is documented without a reason: a rejection takes none', async () => {
+  const source = await Bun.file(new URL('./proposal.ts', import.meta.url)).text()
+  const line = source.split('\n').find((l) => l.includes('`rejected`: '))
+  expect(line).toBeDefined()
+  expect(line ?? '').not.toMatch(/reason/i)
 })

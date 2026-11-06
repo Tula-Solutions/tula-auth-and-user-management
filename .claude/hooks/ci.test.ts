@@ -99,6 +99,12 @@ describe('skipping a run whose tree already passed', () => {
     )
   })
 
+  test('a marker is believed only when the run that wrote it was a push', () => {
+    // The artifact record has no event, so the consumer reads the run itself.
+    expect(look()).toContain('actions/runs/$run" --jq .event')
+    expect(look()).toContain('= push ]')
+  })
+
   test('the two jobs hold no more than read access', () => {
     expect(job('duplicate').permissions).toEqual({ contents: 'read', actions: 'read' })
     expect(job('passed').permissions).toBeUndefined()
@@ -298,6 +304,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_BASE_URL=${at('two-ports', 'API_PORT')}`,
         `CONFORMANCE_SECOND_BASE_URL=${at('two-ports', 'API_2_PORT')}`,
         'CONFORMANCE_SETTLE_MS=0',
+        'CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso',
         `CONFORMANCE_SMS_INBOX_URLS=${at('two-ports', 'API_PORT')},${at('two-ports', 'API_2_PORT')}`,
         `CONFORMANCE_MAILPIT_URL=${at('two-ports', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY"',
@@ -310,6 +317,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_BASE_URL=${at('one-address', 'LB_PORT')}`,
         'CONFORMANCE_SECOND_BASE_URL=',
         'CONFORMANCE_SETTLE_MS=6000',
+        'CONFORMANCE_SSO_ISSUER=http://localhost:3003/v1/dev/sso',
         // Each instance keeps its own inbox, and through the one address a request may reach
         // either: the runner asks both, on their own ports.
         `CONFORMANCE_SMS_INBOX_URLS=${at('one-address', 'API_PORT')},${at('one-address', 'API_2_PORT')}`,
@@ -500,7 +508,7 @@ describe('the decision', () => {
     // `gh` answers what the test says the API would, and can be made to fail.
     writeFileSync(
       join(dir, 'gh'),
-      '#!/bin/sh\nprintf "%s\\n" "$STUB_GH_ANSWER"\nexit "$STUB_GH_EXIT"\n'
+      '#!/bin/sh\ncase "$*" in *actions/runs/*) [ "$STUB_GH_EXIT" = 0 ] && echo "$STUB_RUN_EVENT"; exit "$STUB_GH_EXIT";; esac\nprintf "%s\\n" "$STUB_GH_ANSWER"\nexit "$STUB_GH_EXIT"\n'
     )
     writeFileSync(join(dir, 'git'), '#!/bin/sh\necho 0123456789abcdef0123456789abcdef01234567\n')
     chmodSync(join(dir, 'gh'), 0o755)
@@ -511,7 +519,7 @@ describe('the decision', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  function decide(event: string, ref: string, answer: string, exit = 0) {
+  function decide(event: string, ref: string, answer: string, exit = 0, runEvent = 'push') {
     const output = join(dir, `output-${crypto.randomUUID()}`)
     writeFileSync(output, '')
     const result = Bun.spawnSync(['bash', '-euo', 'pipefail', '-c', look()], {
@@ -524,6 +532,7 @@ describe('the decision', () => {
         REPOSITORY_ID: '1',
         STUB_GH_ANSWER: answer,
         STUB_GH_EXIT: String(exit),
+        STUB_RUN_EVENT: runEvent,
       },
       timeout: 10_000,
     })
@@ -533,28 +542,27 @@ describe('the decision', () => {
   const TREE = 'tree=0123456789abcdef0123456789abcdef01234567\n'
 
   test.each([
-    [
-      'a pull request whose tree has a marker',
-      'pull_request',
-      'refs/pull/7/merge',
-      'true',
-      0,
-      true,
-    ],
-    ['a push to develop whose tree has a marker', 'push', 'refs/heads/develop', 'true', 0, true],
-    ['a tree with no marker', 'pull_request', 'refs/pull/7/merge', 'false', 0, false],
+    ['a pull request whose tree has a marker', 'pull_request', 'refs/pull/7/merge', '123', 0, true],
+    ['a push to develop whose tree has a marker', 'push', 'refs/heads/develop', '123', 0, true],
+    ['a tree with no marker', 'pull_request', 'refs/pull/7/merge', '', 0, false],
     ['a lookup that fails', 'pull_request', 'refs/pull/7/merge', '', 1, false],
-    ['a lookup that fails after answering', 'push', 'refs/heads/develop', 'true', 1, false],
-    ['an answer that is not exactly "true"', 'push', 'refs/heads/develop', 'true-ish', 0, false],
-    ['a push to main, marker or not', 'push', 'refs/heads/main', 'true', 0, false],
+    ['a lookup that fails after answering', 'push', 'refs/heads/develop', '123', 1, false],
+    ['a push to main, marker or not', 'push', 'refs/heads/main', '123', 0, false],
   ])('%s: skip is %p', (_case, event, ref, answer, exit, skip) => {
     const { exitCode, output } = decide(event, ref, answer, exit)
     expect(exitCode).toBe(0)
     expect(output).toBe(`${TREE}skip=${skip}\n`)
   })
 
+  test('a marker written by a run that was not a push is not believed', () => {
+    for (const runEvent of ['pull_request', 'workflow_dispatch', 'schedule']) {
+      const { output } = decide('pull_request', 'refs/pull/7/merge', '123', 0, runEvent)
+      expect(output).toBe(`${TREE}skip=false\n`)
+    }
+  })
+
   test('a pull request into main is not a push to main, and may be skipped', () => {
-    expect(decide('pull_request', 'refs/heads/main', 'true').output).toBe(`${TREE}skip=true\n`)
+    expect(decide('pull_request', 'refs/heads/main', '123').output).toBe(`${TREE}skip=true\n`)
   })
 })
 
@@ -634,6 +642,7 @@ describe('the Kotlin client: the JVM tests and the Android build are read apart'
       ':tula-auth-compose:assembleRelease',
       ':tula-auth-compose:lintRelease',
       ':compose-example:assembleDebug',
+      ':compose-example:assembleRelease',
       ':compose-example:assembleDebugAndroidTest',
       ':compose-example:lintDebug',
     ]) {

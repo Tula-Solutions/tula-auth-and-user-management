@@ -36,6 +36,8 @@ final class ClientTests: XCTestCase {
             (Fixture.key, "https://auth.example.test/?canary=1", 15, .invalidBaseURL),
             (Fixture.key, "https://auth.example.test/#canary", 15, .invalidBaseURL),
             (Fixture.key, "https://", 15, .invalidBaseURL),
+            (Fixture.key, "http://auth.example.test", 15, .insecureBaseURL),
+            (Fixture.key, "http://10.0.2.2:3003", 15, .insecureBaseURL),
             (Fixture.key, Fixture.base, 0, .invalidTimeout),
             (Fixture.key, Fixture.base, -.infinity, .invalidTimeout),
             (Fixture.key, Fixture.base, .nan, .invalidTimeout),
@@ -54,14 +56,25 @@ final class ClientTests: XCTestCase {
             }
         }
         let sentences = Set(
-            [TulaConfigurationError.notAPublishableKey, .invalidBaseURL, .invalidTimeout].map(\.description))
-        XCTAssertEqual(sentences.count, 3)
+            [TulaConfigurationError.notAPublishableKey, .invalidBaseURL, .insecureBaseURL, .invalidTimeout]
+                .map(\.description))
+        XCTAssertEqual(sentences.count, 4)
+        for url in ["http://localhost:3003", "http://127.0.0.1:1", "http://[::1]:3003", "http://app.localhost"] {
+            XCTAssertNoThrow(
+                try TulaClient(
+                    publishableKey: Fixture.key, baseURL: url, storage: MemoryTokenStorage(),
+                    transport: FakeAPI()))
+        }
+        XCTAssertNoThrow(
+            try TulaClient(
+                publishableKey: Fixture.key, baseURL: "http://10.0.2.2:3003", storage: MemoryTokenStorage(),
+                transport: FakeAPI(), allowInsecureHTTP: true))
     }
 
     func testTheAddressIsUsedAsWrittenWithoutATrailingSlash() throws {
-        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/"), "https://auth.example.test")
-        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/tula//"), "https://auth.example.test/tula")
-        XCTAssertEqual(try TulaClient.normalize("http://127.0.0.1:3003"), "http://127.0.0.1:3003")
+        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/", allowInsecureHTTP: false), "https://auth.example.test")
+        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/tula//", allowInsecureHTTP: false), "https://auth.example.test/tula")
+        XCTAssertEqual(try TulaClient.normalize("http://127.0.0.1:3003", allowInsecureHTTP: false), "http://127.0.0.1:3003")
     }
 
     func testTheStorageEntryIsNamedForTheApiAndTheEnvironment() async throws {

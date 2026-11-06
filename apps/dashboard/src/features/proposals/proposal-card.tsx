@@ -15,6 +15,8 @@ export interface ProposalCardProps {
   now: number
   /** True while the approval of **this** proposal is on its way. */
   approving: boolean
+  /** True while the rejection of **this** proposal is on its way. */
+  rejecting: boolean
   /**
    * Why this proposal cannot be asked about just now, in words: another approval is on its
    * way, or this one was answered and the list has not been read again. `null`: it can.
@@ -22,6 +24,8 @@ export interface ProposalCardProps {
   unavailable: string | null
   /** Ask about approving this proposal, as it is shown here. */
   onApprove: (proposal: Proposal, about: TargetSnapshot) => void
+  /** Ask about rejecting this proposal, as it is shown here. */
+  onReject: (proposal: Proposal, about: TargetSnapshot) => void
 }
 
 /** What a card said its target was, at one moment: the text, and whether it had been read. */
@@ -64,21 +68,29 @@ export function ProposalCard({
   proposal,
   now,
   approving,
+  rejecting,
   unavailable,
   onApprove,
+  onReject,
 }: ProposalCardProps) {
   const titleId = useId()
   const reasonId = useId()
   const about = useRef<HTMLSpanElement>(null)
 
   function approve() {
-    if (approving || unavailable !== null) {
+    ask(onApprove)
+  }
+  function reject() {
+    ask(onReject)
+  }
+  function ask(then: (proposal: Proposal, about: TargetSnapshot) => void) {
+    if (approving || rejecting || unavailable !== null) {
       return
     }
     // What the question says the proposal is about is what this card says now, kept as
     // text: the question must not change under the person reading it.
     const line = about.current?.querySelector('[data-testid="proposal-target"]')
-    onApprove(proposal, {
+    then(proposal, {
       text: line?.textContent ?? '',
       read: line?.getAttribute('data-read') === 'true',
     })
@@ -179,12 +191,23 @@ export function ProposalCard({
               <ActionButton
                 size='sm'
                 pending={approving}
-                aria-disabled={approving || unavailable !== null || undefined}
+                aria-disabled={approving || rejecting || unavailable !== null || undefined}
                 aria-describedby={unavailable !== null ? reasonId : undefined}
                 aria-label={`Approve ${named.operation} for ${named.what} ${named.id}`}
                 onClick={approve}
               >
                 Approve
+              </ActionButton>
+              <ActionButton
+                variant='outline'
+                size='sm'
+                pending={rejecting}
+                aria-disabled={approving || rejecting || unavailable !== null || undefined}
+                aria-describedby={unavailable !== null ? reasonId : undefined}
+                aria-label={`Reject ${named.operation} for ${named.what} ${named.id}`}
+                onClick={reject}
+              >
+                Reject
               </ActionButton>
               {unavailable !== null ? (
                 <p

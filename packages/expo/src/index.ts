@@ -13,6 +13,8 @@
  */
 
 export {
+  type AcceptedInvitation,
+  type ActiveOrganization,
   type AuthState,
   type ClientConfig,
   evaluatePassword,
@@ -20,12 +22,17 @@ export {
   type FlowStep,
   type Identity,
   type IdTokenProvider,
+  type InvitationLink,
+  type InvitationPreview,
   isStepUpRequired,
   isTulaError,
   type OAuthProvider,
+  type OrganizationInvitation,
+  type OrganizationSuggestion,
   type Passkey,
   type PasswordCheck,
   type PasswordEvaluation,
+  readInvitationLink,
   type SecondFactorProof,
   type Session,
   stepUpMethods,
@@ -34,6 +41,8 @@ export {
   TulaError,
   type TulaFieldError,
   type User,
+  type UserOrganization,
+  type UserOrganizationList,
 } from '@tula-tech/core'
 export type { TulaExpoClientOptions } from './client'
 export { TulaProvider, type TulaProviderProps, useTula } from './context'

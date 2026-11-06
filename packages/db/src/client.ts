@@ -41,7 +41,7 @@ export interface DatabaseHandle {
  * row-level security applies.
  *
  * @param url - Postgres connection string.
- * @param options - Pool size (default 10).
+ * @param options - Pool size (default 10) and how long to wait for a free connection (default 30s).
  * @returns The database, an advisory-lock helper on the same pool, and a `close` function for
  *   graceful shutdown.
  *
@@ -50,8 +50,17 @@ export interface DatabaseHandle {
  * const { db, close } = createDatabase(env.DATABASE_URL)
  * ```
  */
-export function createDatabase(url: string, options: { max?: number } = {}): DatabaseHandle {
-  const pool = new Pool({ connectionString: url, max: options.max ?? 10 })
+export function createDatabase(
+  url: string,
+  options: { max?: number; connectionTimeoutMillis?: number } = {}
+): DatabaseHandle {
+  const pool = new Pool({
+    connectionString: url,
+    max: options.max ?? 10,
+    // A request or lock holder waiting on an exhausted pool (lock holders pin one connection
+    // while their work needs another) fails after 30s instead of hanging for ever (H-230).
+    connectionTimeoutMillis: options.connectionTimeoutMillis ?? 30_000,
+  })
   return {
     db: drizzle(pool, { schema }),
     withAdvisoryLock: (key, fn) => withAdvisoryLock(pool, key, fn),

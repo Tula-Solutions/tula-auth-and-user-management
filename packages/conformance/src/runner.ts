@@ -109,6 +109,14 @@ export interface Target {
    */
   idToken?: (ask: IdTokenAsk) => Promise<string>
   /**
+   * The issuer of the server's mock enterprise identity provider, as the server itself reaches
+   * it, for `sso` steps. Left out: `<publicUrl>/v1/dev/sso`, the API calling its own address.
+   * An in-process target, which has no address, serves one.
+   *
+   * @returns The issuer, with no trailing slash.
+   */
+  ssoIssuer?: () => Promise<string>
+  /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
    * @param ms - How long.
@@ -542,6 +550,10 @@ async function runStep(
     await runOAuth(target, step, variables)
     return
   }
+  if ('sso' in step) {
+    await runSso(target, step, variables)
+    return
+  }
   if ('passkey' in step) {
     await runPasskey(step, variables)
     return
@@ -564,7 +576,7 @@ async function runStep(
     return
   }
   const request = fill(step.request, variables)
-  const expected = fill(step.expect, variables)
+  const expected = expandJson(fill(step.expect, variables)) as typeof step.expect
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
     const response = await instanceFor(target, request).fetch(
       buildRequest(
@@ -918,7 +930,26 @@ async function runOAuth(
   if (oauth.captureCallback) {
     variables[oauth.captureCallback] = callback
   }
-  const answered = await hop(target, callback, origin)
+  await followCallback(target, callback, origin, oauth, variables)
+}
+
+/** Request a provider's callback and read what it sends the app's page. */
+async function followCallback(
+  target: Target,
+  callback: string,
+  origin: string,
+  oauth: {
+    expectRedirectTo?: string
+    captureTicket?: string
+    expectError?: string
+    captureAttempt?: string
+    captureTest?: string
+  },
+  variables: Record<string, string>,
+  /** The callback's answer, when the caller has already made the request (a SAML ACS post). */
+  already?: { status: number; location: string | null }
+): Promise<void> {
+  const answered = already ?? (await hop(target, callback, origin))
   const fragment = answered.location?.split('#')[1]
   if (answered.status !== 303 || fragment === undefined) {
     throw new Error(`the callback answered ${answered.status}, not a redirect with a fragment`)
@@ -950,6 +981,123 @@ async function runOAuth(
   }
   if (oauth.captureAttempt) {
     variables[oauth.captureAttempt] = params.get('tula_attempt') ?? ''
+  }
+  if (oauth.captureTest) {
+    const test = params.get('tula_test')
+    if (!test) {
+      throw new Error('the callback sent no test id')
+    }
+    variables[oauth.captureTest] = test
+  }
+}
+
+/** The mock enterprise identity provider's issuer, as the server reaches it. */
+async function ssoIssuer(target: Target): Promise<string> {
+  return target.ssoIssuer ? target.ssoIssuer() : `${target.publicUrl ?? target.baseUrl}/v1/dev/sso`
+}
+
+/** Learn the mock identity provider's issuer, or sign in at it and follow the callback. */
+async function runSso(
+  target: Target,
+  step: Extract<Step, { sso: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const sso = fill(step.sso, variables)
+  if (sso.captureIssuer !== undefined) {
+    variables[sso.captureIssuer] = await ssoIssuer(target)
+    return
+  }
+  if (sso.captureSamlMetadata !== undefined) {
+    const response = await target.fetch(
+      new Request(`${target.baseUrl}${pathOf(`${await ssoIssuer(target)}/saml/metadata`)}`)
+    )
+    if (response.status !== 200) {
+      throw new Error(`the mock identity provider's metadata answered ${response.status}`)
+    }
+    variables[sso.captureSamlMetadata] = await response.text()
+    return
+  }
+  const authorization = new URL(sso.authorizationUrl ?? '')
+  authorization.searchParams.set('login_hint', sso.email ?? '')
+  for (const [name, value] of [
+    ['failure', sso.failure],
+    ['key', sso.key],
+  ] as const) {
+    if (value !== undefined) {
+      authorization.searchParams.set(name, value)
+    }
+  }
+  if (sso.subject !== undefined) {
+    authorization.searchParams.set('subject', sso.subject)
+  }
+  if (sso.groups !== undefined) {
+    authorization.searchParams.set('groups', sso.groups)
+  }
+  if (sso.unverified) {
+    authorization.searchParams.set('unverified', '1')
+  }
+  const origin = variables.origin ?? ''
+  if (authorization.pathname.endsWith('/saml/sso')) {
+    await runSamlSignIn(target, authorization, origin, sso, variables)
+    return
+  }
+  // The mock is served by the API itself: asked on the target, whatever address it named.
+  const signedIn = await hop(target, pathOf(authorization.toString()), origin)
+  if (signedIn.status !== 303 || !signedIn.location) {
+    throw new Error(
+      `the mock identity provider answered ${signedIn.status} without a redirect (is OAUTH_MOCK_PROVIDER on?)`
+    )
+  }
+  await followCallback(target, pathOf(signedIn.location), origin, sso, variables)
+}
+
+/**
+ * Play the browser at the mock SAML identity provider: load its page, post the form it holds
+ * to the assertion consumer service, and follow the redirect that answers. With
+ * `expectReplayRefused` the same form is posted again and must be refused.
+ */
+async function runSamlSignIn(
+  target: Target,
+  authorization: URL,
+  origin: string,
+  sso: {
+    captureTicket?: string
+    expectError?: string
+    captureAttempt?: string
+    captureTest?: string
+    expectReplayRefused?: boolean
+  },
+  variables: Record<string, string>
+): Promise<void> {
+  const page = await target.fetch(
+    new Request(`${target.baseUrl}${pathOf(authorization.toString())}`, {
+      headers: { 'x-forwarded-for': origin, 'user-agent': 'tula-conformance/1' },
+    })
+  )
+  const html = await page.text()
+  const action = /<form[^>]*action="([^"]+)"/.exec(html)?.[1]
+  if (page.status !== 200 || !action) {
+    throw new Error(
+      `the mock identity provider answered ${page.status} without a form (is OAUTH_MOCK_PROVIDER on?)`
+    )
+  }
+  const form = new URLSearchParams()
+  for (const input of html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)) {
+    form.set(input[1] ?? '', (input[2] ?? '').replaceAll('&amp;', '&').replaceAll('&#39;', "'"))
+  }
+  const acs = pathOf(action.replaceAll('&amp;', '&'))
+  const posted = await hop(target, acs, origin, form)
+  if (posted.status !== 303 || !posted.location) {
+    throw new Error(`the assertion consumer service answered ${posted.status} without a redirect`)
+  }
+  await followCallback(target, acs, origin, sso, variables, posted)
+  if (sso.expectReplayRefused) {
+    // Spent state gives the static page (400); a redirect must carry an error and no ticket.
+    const again = await hop(target, acs, origin, form)
+    const params = new URLSearchParams(again.location?.split('#')[1] ?? '')
+    if (again.status !== 400 && (again.status !== 303 || params.has('tula_ticket'))) {
+      throw new Error(`the replayed assertion was not refused (status ${again.status})`)
+    }
   }
 }
 
@@ -1016,6 +1164,20 @@ async function readEmailMessage(
     variables[expected.captureCode] = code
   }
   const problems: string[] = []
+  if (expected.captureFragmentParam !== undefined) {
+    const { name, capture, url } = expected.captureFragmentParam
+    const link = /https?:\/\/[^\s"<>]*#[^\s"<>]+/.exec(message.text)?.[0]
+    const at = link?.indexOf('#') ?? -1
+    const value = link === undefined ? null : new URLSearchParams(link.slice(at + 1)).get(name)
+    if (link === undefined || !value) {
+      problems.push('the text holds no link with the expected parameter in its fragment')
+    } else {
+      variables[capture] = value
+      if (url !== undefined && link.slice(0, at) !== fill(url, variables)) {
+        problems.push('the link, without its fragment, is not the expected URL')
+      }
+    }
+  }
   if (expected.subject !== undefined && message.subject !== fill(expected.subject, variables)) {
     problems.push('the subject is not the expected one')
   }

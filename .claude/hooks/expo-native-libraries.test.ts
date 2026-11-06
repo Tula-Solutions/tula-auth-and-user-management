@@ -48,7 +48,7 @@ const WITH_GOOGLEID =
 const ALLOWED: Record<string, Drift> = {
   'org.jetbrains.kotlinx:kotlinx-serialization-json': {
     module: '1.8.1',
-    catalog: '1.11.0',
+    catalog: '1.12.0',
     reason: TOGETHER,
   },
   'org.jetbrains.kotlinx:kotlinx-coroutines-android': {

@@ -15,7 +15,8 @@ import { realSchedule, type Schedule } from './secure-storage'
 // What an Expo client has in place of a browser: a passkey sheet where a page has
 // `navigator.credentials`, a system browser session where a page navigates, and memory
 // where a tab has `sessionStorage`. Nothing here imports a native module: the sheets and the
-// browser are handed in (`@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/google`,
+// browser are handed in (`@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`,
+// `@tula-tech/expo/google`,
 // `@tula-tech/expo/apple`, or an app's own).
 
 /**
@@ -135,10 +136,11 @@ export interface IdTokenSheet {
    * Show the sheet.
    *
    * @param request - The nonce to hand the provider, unchanged.
-   * @returns What the sheet handed over, or `null` when the user dismissed it. A rejection
-   *   is a failure.
+   * @returns What the sheet handed over, `null` when the user dismissed it, or `'no_account'`
+   *   when the device has no account of the provider to sign in with (not a dismissal: the
+   *   app can offer another way). A rejection is a failure.
    */
-  signIn(request: { nonce: string }): Promise<IdTokenCredential | null>
+  signIn(request: { nonce: string }): Promise<IdTokenCredential | null | 'no_account'>
 }
 
 /** A rejection that says only its `name`, as a browser's `DOMException` does. */
@@ -267,7 +269,7 @@ const LINK_ENTRY_PREFIX = 'tula.link.'
 
 /**
  * Where the binding of an emailed link is kept between asking for the link and opening it:
- * in memory, in the client's closure (ADR 0055). An entry is gone when the app is, and
+ * in memory, in the client's closure. An entry is gone when the app is, and
  * after {@link EMAIL_LINK_BINDING_TTL_MS} by itself.
  */
 function memoryLinks(now: () => number): LinkStorageLike & { alive(key: string): boolean } {
@@ -416,13 +418,13 @@ export function requireFreeSheet(client: TulaClient): void {
  * - `page` has an address only during a round trip, so `signIn.withOAuth` called on the
  *   client directly is refused before any request (`link.cross_origin`).
  * - `linkStorage` is memory too, and only for a client given the app link an emailed link
- *   leads to (`emailLinkUrl`, ADR 0055): the link's binding is kept in this closure for
+ *   leads to (`emailLinkUrl`): the link's binding is kept in this closure for
  *   fifteen minutes at most, never in the secure store, a file or a log, and is gone when
  *   the app is. Without the option it is absent: an emailed link cannot be asked for
  *   (`storage.failed`, before any request), and the code in the same email is the way.
  * - `passkeys` (a browser's globals) is absent whatever the runtime has: only the sheet is
  *   asked.
- * - `deviceKey` is where the device's key is found when a request needs a proof (ADR 0052),
+ * - `deviceKey` is where the device's key is found when a request needs a proof,
  *   when the app gave a key store.
  *
  * @param parts - The sheets, the browser, the app link of an emailed link and the source of

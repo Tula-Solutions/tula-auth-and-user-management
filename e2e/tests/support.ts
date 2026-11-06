@@ -102,11 +102,24 @@ export interface TestSettings {
   sessions?: {
     profiles?: Record<
       string,
-      { type?: 'hybrid' | 'stateful'; stepUpAfter?: string; accessTokenTtl?: string }
+      {
+        type?: 'hybrid' | 'stateful'
+        stepUpAfter?: string
+        accessTokenTtl?: string
+        jwtTemplate?: string
+      }
     >
     maxPerUser?: number | null
     onLimit?: 'end_oldest' | 'refuse_newest'
+    /** Named sets of custom claims a profile can add to its access tokens (ADR 0036). */
+    jwtTemplates?: Record<string, { claims: Record<string, { value: string }> }>
   }
+  /** Organizations (ADR 0065); off when left out. */
+  organizations?: { enabled: boolean; allowUserCreated?: boolean }
+  /** Enterprise single sign-on (ADR 0067). Off when left out. */
+  sso?: { enabled: boolean }
+  /** Addresses to change (an invitation's link leads to an allowed redirect URL). */
+  urls?: { allowedRedirectUrls?: string[] }
 }
 
 /**
@@ -529,4 +542,33 @@ export async function consentAtProvider(
     await page.getByLabel(/unverified$/).check()
   }
   await page.getByRole('button', { name: consent.cancel ? 'Cancel' : 'Continue' }).click()
+}
+
+/**
+ * Bind `domain` to an active single sign-on connection on the API's own mock identity provider,
+ * so that `anyone@<domain>` continues with SSO. Enables organizations and SSO for the
+ * environment: a scenario that calls it puts the settings back (`POST /__test/settings`, `{}`).
+ */
+export async function bindSsoDomain(request: APIRequestContext, domain: string): Promise<string> {
+  const response = await request.post(`${API_URL}/__test/sso`, { data: { domain } })
+  expect(response.ok()).toBe(true)
+  return ((await response.json()) as { issuer: string }).issuer
+}
+
+/**
+ * The mock identity provider signs in whoever the authorization request's `login_hint` names,
+ * and the API does not add one: play the user typing their address at the provider.
+ */
+export async function hintAtIdp(page: Page, email: string): Promise<void> {
+  await page.route('**/v1/dev/sso/authorize*', (route) => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('login_hint', email)
+    return route.continue({ url: url.toString() })
+  })
+}
+
+/** Put the fixture environment's settings back to the defaults. */
+export async function restoreSettings(request: APIRequestContext): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/settings`, { data: {} })
+  expect(response.ok()).toBe(true)
 }

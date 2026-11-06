@@ -17,7 +17,7 @@ types of the client API (the requests, the answers, the error codes) are not lis
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-Proving again that it is the user (ADR 0025): each call answers one of the methods an
+Proving again that it is the user: each call answers one of the methods an
 `auth.step_up_required` listed, and replaces the access token with one that carries the
 proof. A user with a second factor steps up with it, never with the password alone.
 
@@ -127,7 +127,7 @@ suspend fun withPasskey(): TulaCeremony<Unit>
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is synced,
+The signed-in user's passkeys. Never key material: a name, whether it is synced,
 and when it was added and last used.
 
 ```kotlin
@@ -177,7 +177,7 @@ suspend fun remove(id: String)
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in user's second factor (ADR 0025): an authenticator app and its backup codes,
+The signed-in user's second factor: an authenticator app and its backup codes,
 or a texted code.
 
 A setup key, its URI and backup codes are returned once and kept nowhere in the client.
@@ -289,7 +289,7 @@ suspend fun disableSms()
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-An email address for a signed-in account that has none (ADR 0059): an account whose first
+An email address for a signed-in account that has none: an account whose first
 sign-in was with a provider that gives no address.
 
 Both calls are refused `email.already_set` for an account that has an address, and need a
@@ -337,7 +337,7 @@ suspend fun verify(code: String): CurrentUser
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in account's phone number (ADR 0037): one optional number, proven with a texted
+The signed-in account's phone number: one optional number, proven with a texted
 code. It is contact data, and a way to sign in or a second step only where the
 environment switched those on.
 
@@ -399,7 +399,7 @@ suspend fun remove()
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The provider accounts the signed-in user signs in with (ADR 0026).
+The provider accounts the signed-in user signs in with.
 
 ```kotlin
 class TulaIdentities internal constructor(private val context: FlowContext)
@@ -849,7 +849,7 @@ fun of(key: ECPublicKey): DevicePublicKey
 
 _interface_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/DeviceKey.kt`
 
-A key a session can be bound to (ADR 0043): its public half, and a way to sign with the
+A key a session can be bound to: its public half, and a way to sign with the
 private half that never hands the private half out.
 
 ```kotlin
@@ -1912,7 +1912,9 @@ Each request runs on a thread of the engine's own pool and is given up (the conn
 closed) when the calling coroutine is cancelled, which is how the client's timeout ends it.
 Redirects are not followed, nothing is cached and no cookie is kept.
 
-`HttpURLConnection` has no `PATCH`; the client's calls do not need one today.
+A desktop JVM's `HttpURLConnection` has no `PATCH`, so a `PATCH` request (renaming an
+organization, giving a member another role, changing a domain's mode) goes through the JDK's
+`java.net.http` client there; on Android it goes through `HttpURLConnection`, which accepts it.
 
 **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
 implementation, and the API refuses a sign-in and ends a session with a `401` that has no
@@ -1921,7 +1923,753 @@ not tried on a device. An app that does not want to rest on it passes an [HttpEn
 its own (over OkHttp, for one).
 
 ```kotlin
-class UrlConnectionEngine : HttpEngine
+class UrlConnectionEngine internal constructor(private val patchingClass: String) : HttpEngine
+```
+
+#### `UrlConnectionEngine.constructor`
+
+_constructor_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Http.kt`
+
+The default engine.
+
+```kotlin
+constructor() : this(JDK_ENGINE)
+```
+
+### `TulaOrganizationMembers`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+An organization's members. Reading needs `org:sys:memberships:read` or
+`:manage`; changing needs `org:sys:memberships:manage`, which the API reads from the
+user's membership on every call.
+
+```kotlin
+val page = client.organizations.members.list(org.id)
+client.organizations.members.changeRole(org.id, page.data[0].userId, "admin")
+```
+
+```kotlin
+class TulaOrganizationMembers internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizationMembers.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+The organization's members, oldest first, with each one's name, address and role key.
+Only the first page.
+
+@param organizationId The organization.
+@return The page.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun list(organizationId: String): OrganizationMemberList
+```
+
+#### `TulaOrganizationMembers.changeRole`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Give a member another role, one whose permissions the user holds themselves. The
+member's sessions carry it from their next refresh.
+
+@param organizationId The organization.
+@param userId The member.
+@param role The key of the new role.
+@return The member, as they are now.
+@throws TulaError `organization.permission_required`, `organization.role_unknown`,
+  `organization.role_not_assignable`, `organization.last_manager`.
+
+```kotlin
+suspend fun changeRole(organizationId: String, userId: String, role: String): OrganizationMember
+```
+
+#### `TulaOrganizationMembers.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Remove a member. The user keeps their account; to remove yourself use
+[TulaOrganizations.leave].
+
+@param organizationId The organization.
+@param userId The member.
+@throws TulaError `organization.permission_required`, `organization.last_manager`.
+
+```kotlin
+suspend fun remove(organizationId: String, userId: String)
+```
+
+### `TulaOrganizationDomains`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+An organization's domains: the organization claims one by a
+code emailed to an address on it, and a verified one suggests or joins the people who sign
+up with a verified address on it. Needs `org:sys:domains:manage`, which the API reads from
+the user's membership on every call.
+
+```kotlin
+val claim = client.organizations.domains.start(org.id, "acme.com", "ada@acme.com", OrganizationDomainMode.Suggest)
+client.organizations.domains.verify(org.id, claim.id, "123456")
+```
+
+```kotlin
+class TulaOrganizationDomains internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizationDomains.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+The organization's domains, oldest first: claims waiting for a code and verified ones.
+Each row's `status` is pending, verified or needs-reverification; `expiresAt` is when a
+verified claim must be proved again.
+
+@param organizationId The organization.
+@return The domains.
+@throws TulaError `organization.not_a_member`, `auth.forbidden`, `organization.disabled`.
+
+```kotlin
+suspend fun list(organizationId: String): OrganizationDomainList
+```
+
+#### `TulaOrganizationDomains.start`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Claim a domain: email a code to an address on it. Sent again for a pending claim it
+emails a new code.
+
+@param organizationId The organization.
+@param domain The domain, such as `acme.com`.
+@param email An address on it, which receives the code.
+@param mode What a verified domain does: [OrganizationDomainMode.Suggest] or
+  [OrganizationDomainMode.AutoJoin].
+@return The claim, pending until [verify].
+@throws TulaError `organization.domain_public`, `organization.domain_taken`,
+  `organization.domain_address_mismatch`, `organization.domain_limit`, `rate_limited`.
+
+```kotlin
+suspend fun start(
+    organizationId: String,
+    domain: String,
+    email: String,
+    mode: OrganizationDomainMode,
+): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.verify`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Prove the claim with the code that was emailed.
+
+@param organizationId The organization.
+@param domainId The claim.
+@param code The emailed code.
+@return The verified domain.
+@throws TulaError `verification.invalid_code` and its siblings, `organization.domain_taken`.
+
+```kotlin
+suspend fun verify(organizationId: String, domainId: String, code: String): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.update`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Change what a domain does.
+
+@param organizationId The organization.
+@param domainId The domain.
+@param mode [OrganizationDomainMode.Suggest] or [OrganizationDomainMode.AutoJoin].
+@return The domain.
+@throws TulaError `auth.forbidden`, `organization.not_a_member`.
+
+```kotlin
+suspend fun update(organizationId: String, domainId: String, mode: OrganizationDomainMode): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Remove a domain. Later sign-ups are neither offered nor joined to the organization;
+members stay.
+
+@param organizationId The organization.
+@param domainId The domain.
+@throws TulaError `auth.forbidden`, `organization.not_a_member`.
+
+```kotlin
+suspend fun remove(organizationId: String, domainId: String)
+```
+
+### `TulaOrganizationClaims`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The active organization an access token says its session acts in: the `org_id`,
+`org_role` and `org_perms` claims.
+
+**Read for showing, never for deciding.** The claims are read from the token the client
+holds, without verifying its signature: this decides what an app draws, and the app's own
+server checks the same keys from a token it verifies. They are as old as the token (a role
+changed since is seen at the next refresh, within a minute).
+
+The three claims are returned together or not at all, as `@tula-tech/core` and
+`@tula-tech/nextjs` read them: a token with one but not the others, a value of another
+type, an id or a role key outside their grammar, more than [MAX_PERMISSIONS] permissions, a
+permission outside the permission grammar or claims over [MAX_BYTES] bytes has **no**
+active organization, whole. Never repaired and never partly believed.
+
+Kotlin cannot overload on the argument's name, so the two checks are [hasPermission] and
+[hasRole] (the other clients call both `has`).
+
+```kotlin
+val organization = client.organizations.active()
+if (organization?.hasPermission("org:billing:read") == true) showBilling()
+```
+
+```kotlin
+class TulaOrganizationClaims internal constructor(
+    /** The active organization's id. */
+    val organizationId: String,
+    /** The key of the member's role in it (`admin`, `member`, ...). */
+    val role: String,
+    /** The permission keys of that role, as of the token's issue. */
+    val permissions: List<String>,
+)
+```
+
+#### `TulaOrganizationClaims.hasPermission`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Whether the active organization's role holds a permission. Exact: there is no wildcard
+(`org:billing:*` matches nothing) and no key implies another (`manage` does not include
+`read`). An empty key never matches.
+
+@param permission A permission key such as `org:billing:read`.
+@return Whether the role's permissions list that very key.
+
+```kotlin
+fun hasPermission(permission: String): Boolean
+```
+
+#### `TulaOrganizationClaims.hasRole`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Whether the member's role in the active organization is this one. An empty key never
+matches.
+
+@param role A role key such as `admin`.
+@return Whether it is the member's role.
+
+```kotlin
+fun hasRole(role: String): Boolean
+```
+
+#### `TulaOrganizationClaims.ID_CLAIM`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The claim that holds the organization's id.
+
+```kotlin
+const val ID_CLAIM = "org_id"
+```
+
+#### `TulaOrganizationClaims.ROLE_CLAIM`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The claim that holds the key of the member's role.
+
+```kotlin
+const val ROLE_CLAIM = "org_role"
+```
+
+#### `TulaOrganizationClaims.PERMISSIONS_CLAIM`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The claim that holds the role's permission keys.
+
+```kotlin
+const val PERMISSIONS_CLAIM = "org_perms"
+```
+
+#### `TulaOrganizationClaims.MAX_PERMISSIONS`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Most permissions a role (and so the claim) holds.
+
+```kotlin
+const val MAX_PERMISSIONS = 32
+```
+
+#### `TulaOrganizationClaims.MAX_PERMISSION_KEY_LENGTH`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The longest a permission key may be, in characters.
+
+```kotlin
+const val MAX_PERMISSION_KEY_LENGTH = 100
+```
+
+#### `TulaOrganizationClaims.MAX_BYTES`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The most bytes the three claims' JSON may take.
+
+```kotlin
+const val MAX_BYTES = 2560
+```
+
+#### `TulaOrganizationClaims.read`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The organization claims of an access token, or `null` when it has no active
+organization (or claims that are not what a Tula server issues). The signature is
+not verified: see the type's note.
+
+@param accessToken An access token, such as `client.session.getToken()` returns.
+@return The claims, or `null`.
+
+```kotlin
+fun read(accessToken: String?): TulaOrganizationClaims?
+```
+
+### `TulaInvitationLink`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An invitation's token as read from the address an emailed link opened the app with.
+
+The token travels in the address's fragment (`#tula_invitation=...`), which is never sent
+to a server: it is in no log of the web page the link may lead to first, and in no
+`Referer`. The app is opened by an app link or a custom scheme; read the token from that
+address, hand it to [TulaOrganizationInvitations], and drop the address.
+
+It is a secret: it prints as its type's name, and it is never logged or put in an error.
+
+```kotlin
+class TulaInvitationLink private constructor(
+    /** The token, for `preview`, `accept` and `decline`. */
+    val token: String,
+    /** The address without the token, to keep instead of the one that carried it. */
+    val cleanUrl: String,
+)
+```
+
+#### `TulaInvitationLink.FRAGMENT_PARAMETER`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The fragment parameter the token travels in.
+
+```kotlin
+const val FRAGMENT_PARAMETER = "tula_invitation"
+```
+
+#### `TulaInvitationLink.read`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Read the invitation token from the address a link opened the app with.
+
+@param url The address, as the app was opened with it.
+@return The token and the address without it, or `null` when the address carries
+  no token (or an empty one).
+
+```kotlin
+fun read(url: String): TulaInvitationLink?
+```
+
+### `TulaOrganizations`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The signed-in user's organizations and the one the session acts in. While the
+environment's `organizations.enabled` setting is off, each call answers
+`organization.disabled`.
+
+```kotlin
+val page = client.organizations.list()
+val acme = client.organizations.create(name = "Acme", slug = "acme")
+client.organizations.setActive(acme.id) // the next access token carries the claims
+```
+
+```kotlin
+class TulaOrganizations internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizations.invitations`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Invitations by email: previewing, accepting and declining one with the token its link
+carries, and, for a member who may, inviting and withdrawing.
+
+```kotlin
+val invitations: TulaOrganizationInvitations get()
+```
+
+#### `TulaOrganizations.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The organizations the user belongs to, with their role and its permission keys in each,
+and the one the session acts in. Only the first page the API answers.
+
+@return The page; `activeOrganizationId` is `null` for the personal account.
+@throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+
+```kotlin
+suspend fun list(): UserOrganizationList
+```
+
+#### `TulaOrganizations.create`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Create an organization the user owns: they hold the environment's creator role in it.
+The session does not switch to it; [setActive] does.
+
+@param name Its name.
+@param slug Its slug: lower-case letters, digits and hyphens, unique in the environment.
+@return The organization, with the user's role and its permission keys.
+@throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+  `organization.slug_taken`, `organization.disabled`.
+
+```kotlin
+suspend fun create(name: String, slug: String): UserOrganization
+```
+
+#### `TulaOrganizations.setActive`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Make an organization the one the session acts in, or `null` for the personal account.
+The client installs the access token the API answers with, which carries `org_id`,
+`org_role` and `org_perms` (read them with [active]); the refresh token is not
+replaced. A refresh keeps the choice and reads the membership again.
+
+@param organizationId The organization, or `null`.
+@return The session's active organization now.
+@throws TulaError `organization.not_a_member` (also for an organization that does not
+  exist), `organization.personal_account_disabled` for `null` where the environment has
+  no personal accounts, `organization.disabled`, `auth.unauthenticated` when the client
+  was signed out, or signed in as someone else, while the call was in flight.
+
+```kotlin
+suspend fun setActive(organizationId: String?): ActiveOrganization
+```
+
+#### `TulaOrganizations.clearActive`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Go back to the personal account: the same as `setActive(null)`.
+
+@throws TulaError As [setActive].
+
+```kotlin
+suspend fun clearActive(): ActiveOrganization
+```
+
+#### `TulaOrganizations.active`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The active organization the client's access token says, or `null` for the personal
+account. A token about to expire is refreshed first. See [TulaOrganizationClaims] for
+what this is good for: showing, not deciding.
+
+@return The claims, or `null` when no organization is active (or nobody is signed in).
+@throws TulaError when a refresh was needed and could not be made.
+
+```kotlin
+suspend fun active(): TulaOrganizationClaims?
+```
+
+#### `TulaOrganizations.hasPermission`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Whether the active organization's role holds a permission: `active()?.hasPermission(...)`,
+`false` with no active organization.
+
+@param permission A permission key such as `org:billing:read`.
+@return Whether the active organization's role holds that very key.
+@throws TulaError As [active].
+
+```kotlin
+suspend fun hasPermission(permission: String): Boolean
+```
+
+#### `TulaOrganizations.hasRole`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Whether the member's role in the active organization is this one, `false` with no
+active organization.
+
+@param role A role key such as `admin`.
+@return Whether it is the member's role in the active organization.
+@throws TulaError As [active].
+
+```kotlin
+suspend fun hasRole(role: String): Boolean
+```
+
+#### `TulaOrganizations.suggestions`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The organizations the user may join because their **verified** email address is on a
+domain the organization verified: each one's id, name and slug, and nothing else. The
+list is empty for an address that is not verified and for a domain that is not exactly
+the address's.
+
+@return The page of suggestions, empty when there are none.
+@throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+
+```kotlin
+suspend fun suggestions(): OrganizationSuggestionList
+```
+
+#### `TulaOrganizations.join`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Join a suggested organization with the environment's default role. The server decides
+again, so an organization that is no longer offered is refused whatever the list said.
+
+@param organizationId The organization, from [suggestions].
+@return The organization, with the user's role and its permission keys.
+@throws TulaError `organization.suggestion_unavailable`, `organization.member_exists`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun join(organizationId: String): UserOrganization
+```
+
+#### `TulaOrganizations.update`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+the API reads from the user's membership on every call.
+
+@param organizationId The organization.
+@param name A new name, or `null` to keep it.
+@param slug A new slug, or `null` to keep it.
+@return The organization with the user's role, as it is now.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.slug_taken`, `organization.disabled`.
+
+```kotlin
+suspend fun update(organizationId: String, name: String? = null, slug: String? = null): UserOrganization
+```
+
+#### `TulaOrganizations.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Delete an organization for good, with its memberships, invitations and domains. Needs
+`org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+was this session's active organization, call [setActive] for another one.
+
+@param organizationId The organization.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun remove(organizationId: String)
+```
+
+#### `TulaOrganizations.leave`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Leave an organization: remove the signed-in user's own membership, which needs no
+permission. The last member who can manage members cannot leave.
+
+@param organizationId The organization.
+@throws TulaError `organization.not_a_member`, `organization.last_manager`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun leave(organizationId: String)
+```
+
+#### `TulaOrganizations.roles`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The roles the user may give to an invitation or a member: those whose permissions they
+hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+
+@param organizationId The organization.
+@return The roles' keys and names.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun roles(organizationId: String): AssignableRoleList
+```
+
+#### `TulaOrganizations.members`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An organization's members: reading, changing a role, removing one.
+
+```kotlin
+val members: TulaOrganizationMembers get()
+```
+
+#### `TulaOrganizations.domains`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An organization's domains: claiming one with an emailed code and what a verified one does.
+
+```kotlin
+val domains: TulaOrganizationDomains get()
+```
+
+### `TulaOrganizationInvitations`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Invitations to an organization, by email.
+
+The token an invitation's link carries is a secret: it is sent in a request body and
+nowhere else, and it is in no error, no log line and no URL the client builds. Read it
+from the opened address with [TulaInvitationLink.read].
+
+```kotlin
+TulaInvitationLink.read(openedUrl)?.let { link ->
+    val preview = client.organizations.invitations.preview(link.token)
+    // show preview.organizationName, then, once the user signed in as preview.email:
+    val joined = client.organizations.invitations.accept(link.token)
+}
+```
+
+```kotlin
+class TulaOrganizationInvitations internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizationInvitations.preview`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+What an invitation's token shows before anyone has signed in: the organization's name,
+the role's key and the address invited, to prefill a sign-up. Needs no session.
+
+@param token The token from the link's fragment.
+@return What the invitation is for.
+@throws TulaError `organization.invitation_not_found`, `organization.invitation_expired`,
+  `organization.invitation_revoked`, `organization.invitation_used`.
+
+```kotlin
+suspend fun preview(token: String): InvitationPreview
+```
+
+#### `TulaOrganizationInvitations.accept`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Join the organization the token invites to, with the invitation's role. Only the
+account the invitation was sent to may, and only with a verified address. The session
+does not switch to it; [TulaOrganizations.setActive] does.
+
+@param token The token from the link's fragment.
+@return The organization joined, with the role and its permission keys.
+@throws TulaError `organization.invitation_wrong_account`,
+  `organization.invitation_email_unverified`, `organization.invitation_role_gone`,
+  `organization.member_exists`, and what [preview] is refused with.
+
+```kotlin
+suspend fun accept(token: String): AcceptedInvitation
+```
+
+#### `TulaOrganizationInvitations.decline`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Turn an invitation down: it is used up and nobody joins.
+
+@param token The token from the link's fragment.
+@throws TulaError As [accept], but a deleted role does not matter.
+
+```kotlin
+suspend fun decline(token: String)
+```
+
+#### `TulaOrganizationInvitations.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An organization's pending invitations, newest first, for a member whose role holds
+`org:sys:invitations:manage`. Never a token. Only the first page.
+
+@param organizationId The organization.
+@return The first page of pending invitations.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun list(organizationId: String): OrganizationInvitationList
+```
+
+#### `TulaOrganizationInvitations.invite`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Email an invitation. The link leads to [redirectUrl] (one of the environment's allowed
+redirect URLs) with the token in its fragment. The role must be within the permissions
+of the inviter's own.
+
+@param organizationId The organization.
+@param email The address to invite.
+@param role The key of the role the invitation gives.
+@param redirectUrl Where the emailed link leads: the app's link, say.
+@return The invitation. The token is only in the email.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.role_not_assignable`, `organization.role_unknown`,
+  `organization.member_exists`, `organization.invitation_exists`,
+  `request.redirect_not_allowed`, `rate_limited`.
+
+```kotlin
+suspend fun invite(organizationId: String, email: String, role: String, redirectUrl: String): OrganizationInvitation
+```
+
+#### `TulaOrganizationInvitations.revoke`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Withdraw a pending invitation: its link stops working.
+
+@param organizationId The organization.
+@param invitationId The invitation.
+@throws TulaError `organization.invitation_used`, `organization.invitation_revoked`,
+  `organization.invitation_expired` for one that is no longer pending, and what [list]
+  is refused with.
+
+```kotlin
+suspend fun revoke(organizationId: String, invitationId: String)
 ```
 
 ### `IdTokenSignIn`
@@ -2481,7 +3229,8 @@ One client per API and environment for the life of the process: two clients over
 would each refresh the same token.
 
 @param publishableKey The environment's publishable key (`tula_pk_…`). Never a secret key.
-@param baseUrl The API's address, `https://…`; plain `http` is for a development server.
+@param baseUrl The API's address, `https://…`. Plain `http` is for this machine only (`localhost`,
+  `127.0.0.1`, `[::1]`): any other host needs [allowInsecureHttp].
 @param storage Where the refresh token is kept. There is no default on purpose: on a device
   it is `KeystoreTokenStorage`, and [MemoryTokenStorage] is a decision to forget the session
   when the process ends.
@@ -2501,6 +3250,9 @@ would each refresh the same token.
 @param deviceKeys Where the device's key is kept. `null` means no session of this client is
   bound to a key and no request carries a proof. With one, the six calls that start an
   attempt and every refresh carry a proof.
+@param allowInsecureHttp Allow a plain `http` [baseUrl] to another machine (an emulator's
+  `10.0.2.2`, a private network you trust). Off by default: the publishable key and the
+  session would cross the network in the clear.
 @throws IllegalArgumentException for options that can never work. Its message never repeats
   a value it was given.
 
@@ -2519,6 +3271,7 @@ class TulaClient internal constructor(
     browser: BrowserSession?,
     deviceKeys: DeviceKeyStore?,
     sheetCeilingMs: Long,
+    allowInsecureHttp: Boolean = false,
 ) : AutoCloseable
 ```
 
@@ -2540,9 +3293,10 @@ constructor(
     google: GoogleSheet? = null,
     browser: BrowserSession? = null,
     deviceKeys: DeviceKeyStore? = null,
+    allowInsecureHttp: Boolean = false,
 ) : this(
     publishableKey, baseUrl, storage, http, clock, timeoutMs, messages, sessionProfile,
-    passkeys, google, browser, deviceKeys, SHEET_CEILING_MS,
+    passkeys, google, browser, deviceKeys, SHEET_CEILING_MS, allowInsecureHttp,
 )
 ```
 
@@ -2667,7 +3421,7 @@ suspend fun signInWithPasskey(): TulaCeremony<SignInFlow>
 
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
 
-Start a sign-in with a provider's ID token (ADR 0045), for an app that shows the
+Start a sign-in with a provider's ID token, for an app that shows the
 provider's sheet itself. [signInWithGoogle] does both steps with the client's sheet.
 
 @param provider The provider. An Android client is taken for Google only: Apple on
@@ -2792,6 +3546,17 @@ The signed-in account's phone number: add, prove, remove.
 
 ```kotlin
 val phone: TulaPhone get()
+```
+
+#### `TulaClient.organizations`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+The signed-in user's organizations, the one the session acts in, invitations to them
+and the organizations a verified address is offered.
+
+```kotlin
+val organizations: TulaOrganizations get()
 ```
 
 #### `TulaClient.identities`
@@ -5846,7 +6611,7 @@ _class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/u
 The first screen's other ways to sign in (a passkey, a provider, a texted code).
 
 **A texted sign-in code's screens never say that a message was sent**: a number that signs
-nobody in is answered like one that does and is texted nothing (ADR 0037), so the words are
+nobody in is answered like one that does and is texted nothing, so the words are
 "if this number can sign in".
 
 ```kotlin
@@ -6032,7 +6797,7 @@ data class TulaAccountStrings(
     val sessionsTitle: String = "Where you’re signed in",
     /** Marks the session this app holds. */
     val thisDevice: String = "This device",
-    /** Marks a session bound to a device key. Never more than that of a device (ADR 0043). */
+    /** Marks a session bound to a device key. Never more than that of a device. */
     val deviceBound: String = "Bound to a device key",
     /** `{date}` is when the session was signed in. */
     val signedInOn: String = "Signed in {date}",
@@ -7150,10 +7915,11 @@ _fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/aut
 What puts a setup key or backup codes on the clipboard for the screens: as text marked
 sensitive, so that Android 13 and later do not show it in the clipboard's preview.
 
-It is called only when a person presses "Copy". **Android gives an app no way to make a clip
-expire or to take it back**: what was copied stays until something else is copied (some
-versions clear a clip by themselves after a time), and before Android 13 the mark is not read.
-The screens say "Copied." and nothing more.
+It is called only when a person presses "Copy". **Android has no expiry for a clip**, so after
+a minute the app clears the clipboard itself, but only when the clip is still the text it
+wrote (a later copy of the person's own is never lost). That timer lives in the process: if
+the process ends first, the copy stays until something else is copied. Before
+Android 13 the sensitive mark is not read. The screens say "Copied." and nothing more.
 
 @param context A context.
 @return The function a [dev.tula.auth.ui.TulaAuthModel] or a

@@ -151,6 +151,81 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 1 })
   })
 
+  test('removes a pending domain claim an hour after its code expired, never a verified one, and none sooner', async () => {
+    const at = deps.clock.now()
+    const organization = async (scope: Tenant) => {
+      const id = deps.ids.next()
+      await deps.organizations.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          name: 'Acme',
+          slug: `acme-${id.slice(-8)}`,
+          createdBy: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const claim = async (
+      scope: Tenant,
+      organizationId: string,
+      domain: string,
+      expiresIn: number
+    ) => {
+      const id = deps.ids.next()
+      await deps.organizationDomains.claim(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId,
+          domain,
+          mode: 'suggest',
+          codeHash: 'hash',
+          codeExpiresAt: from(expiresIn),
+          at,
+          limit: 10,
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const org = await organization(tenant)
+    const otherOrg = await organization(otherTenant)
+    await claim(tenant, org, 'old.example', -HOUR - 1)
+    await claim(tenant, org, 'recent.example', -HOUR + 60_000)
+    await claim(tenant, org, 'live.example', 10 * 60_000)
+    await claim(otherTenant, otherOrg, 'old.example', -5 * DAY)
+    const kept = await claim(tenant, org, 'verified.example', -5 * DAY)
+    // A verified claim has no code left to expire: it is the organization's, and stays.
+    await deps.organizationDomains.verify(
+      tenant.environmentId,
+      org,
+      kept,
+      'hash',
+      from(-6 * DAY),
+      from(300 * DAY),
+      Audit.none('fixture')
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 2, failed: 0 })
+    const left = await deps.organizationDomains.list(tenant.environmentId, org)
+    expect(left.map((row) => row.domain).sort()).toEqual([
+      'live.example',
+      'recent.example',
+      'verified.example',
+    ])
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 0 })
+    deps.clock.advance('2h')
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 2 })
+    expect(
+      (await deps.organizationDomains.list(tenant.environmentId, org)).map((row) => row.domain)
+    ).toEqual(['verified.example'])
+  })
+
   test('removes the counts of a hook\u2019s calls of hours more than seven days ago, and none sooner', async () => {
     const hook = async (scope: Tenant) => {
       const id = deps.ids.next()
@@ -199,6 +274,117 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 1 })
   })
 
+  test('removes organization invitations seven days after their expiry, whatever became of them, per environment', async () => {
+    async function invitation(scope: Tenant, email: string, expiresAt: Date) {
+      const org = await deps.organizations.insert(
+        {
+          id: deps.ids.next(),
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          name: 'Acme',
+          slug: `acme-${email}`,
+          createdBy: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      if (!org) {
+        throw new Error('the organization was not stored')
+      }
+      const id = deps.ids.next()
+      await deps.organizations.insertInvitation(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId: org.id,
+          email,
+          emailNormalized: email,
+          roleKey: 'member',
+          tokenHash: `hash-${email}`,
+          status: 'pending',
+          invitedBy: null,
+          expiresAt,
+          resolvedAt: null,
+          resolvedBy: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        // Judged at a time before every expiry here, so that none is replaced.
+        new Date(0),
+        Audit.none('fixture')
+      )
+      return { id, organizationId: org.id }
+    }
+    const lapsed = await invitation(tenant, 'old@example.com', from(-7 * DAY - 1))
+    const used = await invitation(tenant, 'used@example.com', from(-8 * DAY))
+    await deps.organizations.revokeInvitation(
+      tenant.environmentId,
+      used.organizationId,
+      used.id,
+      new Date(0),
+      Audit.none('fixture')
+    )
+    const recent = await invitation(tenant, 'recent@example.com', from(-7 * DAY + 1000))
+    const open = await invitation(tenant, 'open@example.com', from(DAY))
+    const theirs = await invitation(otherTenant, 'theirs@example.com', from(-30 * DAY))
+    const report = await Retention.purge(deps)
+    expect(report).toMatchObject({ invitations: 3, failed: 0 })
+    const find = (scope: Tenant, one: { id: string; organizationId: string }) =>
+      deps.organizations.findInvitation(scope.environmentId, one.organizationId, one.id)
+    expect(await find(tenant, lapsed)).toBeNull()
+    expect(await find(tenant, used)).toBeNull()
+    expect(await find(otherTenant, theirs)).toBeNull()
+    // Inside the seven days, a link followed just after it lapses still finds its row.
+    expect(await find(tenant, recent)).not.toBeNull()
+    expect(await find(tenant, open)).not.toBeNull()
+    expect(await Retention.purge(deps)).toMatchObject({ invitations: 0 })
+    deps.clock.advance('1d')
+    expect(await Retention.purge(deps)).toMatchObject({ invitations: 1 })
+  })
+
+  test('removes setup links thirty days after their expiry, revoked or not, per environment', async () => {
+    async function link(scope: Tenant, name: string, expiresAt: Date, revoked = false) {
+      const id = deps.ids.next()
+      await deps.setupLinks.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId: deps.ids.next(),
+          name,
+          prefix: 'tula_setup_',
+          tokenHash: `hash-${name}`,
+          expiresAt,
+          revokedAt: revoked ? deps.clock.now() : null,
+          lastUsedAt: null,
+          createdByType: 'admin',
+          createdById: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      return `hash-${name}`
+    }
+    const lapsed = await link(tenant, 'old', from(-30 * DAY - 1))
+    const revoked = await link(tenant, 'revoked', from(-31 * DAY), true)
+    const recent = await link(tenant, 'recent', from(-30 * DAY + 1000))
+    const open = await link(tenant, 'open', from(DAY))
+    const theirs = await link(otherTenant, 'theirs', from(-40 * DAY))
+    expect(await Retention.purge(deps)).toMatchObject({ setupLinks: 3, failed: 0 })
+    const find = (scope: Tenant, hash: string) =>
+      deps.setupLinks.findByHash(scope.environmentId, hash)
+    expect(await find(tenant, lapsed)).toBeNull()
+    expect(await find(tenant, revoked)).toBeNull()
+    expect(await find(otherTenant, theirs)).toBeNull()
+    expect(await find(tenant, recent)).not.toBeNull()
+    expect(await find(tenant, open)).not.toBeNull()
+    deps.clock.advance('1d')
+    expect(await Retention.purge(deps)).toMatchObject({ setupLinks: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -223,7 +409,10 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -311,7 +500,10 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -327,6 +519,50 @@ describe('purge', () => {
     expect((await Retention.purge(deps)).pendingFactors).toBe(1)
     expect(await has(tenant, valid)).toBe(false)
     expect(await has(tenant, confirmed)).toBe(true)
+  })
+
+  test('a run that removed only a lapsed invitation is logged at info, not debug', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    const debug = spyOn(logger, 'debug').mockImplementation(() => undefined)
+    spies.push(info, debug)
+    const org = await deps.organizations.insert(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        name: 'Acme',
+        slug: 'acme-log',
+        createdBy: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    await deps.organizations.insertInvitation(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        organizationId: org?.id ?? '',
+        email: 'old@example.com',
+        emailNormalized: 'old@example.com',
+        roleKey: 'member',
+        tokenHash: 'hash-log',
+        status: 'pending',
+        invitedBy: null,
+        expiresAt: from(-8 * DAY),
+        resolvedAt: null,
+        resolvedBy: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      new Date(0),
+      Audit.none('fixture')
+    )
+    const report = await Retention.run(deps)
+    expect(report).toMatchObject({ invitations: 1, failed: 0 })
+    expect(info).toHaveBeenCalledTimes(1)
+    expect(debug).not.toHaveBeenCalled()
   })
 
   test('a run that removed only lapsed enrolments is worth a log line, with the count', async () => {
@@ -363,7 +599,10 @@ describe('purge', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          invitations: 0,
+          setupLinks: 0,
           testUsers: 0,
+          domainClaims: 0,
         },
       ],
     ])
@@ -614,7 +853,10 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -1078,7 +1320,10 @@ describe('run', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          invitations: 0,
+          setupLinks: 0,
           testUsers: 0,
+          domainClaims: 0,
         },
       ],
     ])
@@ -1114,7 +1359,10 @@ describe('run', () => {
         passwordHistory: 0,
         proposals: 0,
         hookCallCounts: 0,
+        invitations: 0,
+        setupLinks: 0,
         testUsers: 0,
+        domainClaims: 0,
       },
     ])
   })

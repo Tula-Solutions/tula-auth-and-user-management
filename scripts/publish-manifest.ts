@@ -24,7 +24,7 @@ export type PublishableDir = (typeof PUBLISHABLE_PACKAGES)[number]
 /**
  * Publishable packages that are held back: built and checked like the others, never
  * published, and `"private": true` so that npm itself refuses them. The two Expo packages
- * have never been run on a device (docs/releasing.md).
+ * have never been run on a device (docs/internal/releasing.md).
  *
  * Releasing one is deleting its line here, removing `"private": true` from its manifest and
  * taking its name out of `create-tula`'s `UNRELEASED_TULA_PACKAGES`; the guardrail test
@@ -223,7 +223,16 @@ export function stagedManifestProblems(manifest: Manifest): string[] {
     for (const [name, range] of Object.entries(ranges)) {
       if (String(range).startsWith('workspace:')) {
         problems.push(`${manifest.name}: ${field}.${name} is still "${range}"`)
+      } else if (/^(?:[a-z][a-z0-9+.-]*:|[\w.-]+\/[\w.-]+$)/i.test(String(range))) {
+        // A URL, a path, a git host shorthand or an alias would pull code that is not on
+        // the registry's name for it.
+        problems.push(`${manifest.name}: ${field}.${name} is "${range}", not a registry version`)
       }
+    }
+  }
+  for (const field of ['bundledDependencies', 'bundleDependencies']) {
+    if (manifest[field] !== undefined) {
+      problems.push(`${manifest.name}: the packed manifest has "${field}"`)
     }
   }
   for (const field of ['scripts', 'devDependencies', 'publishConfig']) {

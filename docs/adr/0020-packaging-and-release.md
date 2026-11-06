@@ -74,7 +74,7 @@ the directory, is the point: it is the artefact a user installs.
 that every package is private, and the tarballs uploaded as an artifact. Publishing is blocked
 four independent ways (`private: true`; no upload code in the script; no credentials and
 read-only permissions in the workflow; `access: restricted`), and a harness test pins the first
-three. [docs/releasing.md](../releasing.md) lists the edits that turn publishing on.
+three. [docs/internal/releasing.md](../internal/releasing.md) lists the edits that turn publishing on.
 
 ### The contract gets Zod-free entry points
 

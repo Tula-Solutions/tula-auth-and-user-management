@@ -10,6 +10,7 @@ import { type Origin, systemActor } from '~/lib/actor'
 import { sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { canBeNamed, type ProofFailure, verifyProof } from '~/lib/dpop'
 import * as logger from '~/lib/logger'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Settings from '~/modules/settings/service'
 import type { SessionRecord } from '~/ports/session-store'
@@ -141,7 +142,7 @@ async function judge(
 ): Promise<{ thumbprint: string } | Refusal> {
   const verdict = await verifyProof(request.proof, {
     method: request.method,
-    url: `${deps.config.publicUrl.replace(/\/+$/, '')}${request.path}`,
+    url: `${publicBase(deps.config)}${request.path}`,
     now: deps.clock.now(),
   })
   if (!verdict.ok) {
@@ -345,7 +346,7 @@ export function available(config: Pick<Deps['config'], 'publicUrl'>): boolean {
   if (decided?.publicUrl !== config.publicUrl) {
     decided = {
       publicUrl: config.publicUrl,
-      available: canBeNamed(`${config.publicUrl.replace(/\/+$/, '')}/v1/client/sessions/refresh`),
+      available: canBeNamed(`${publicBase(config)}/v1/client/sessions/refresh`),
     }
   }
   return decided.available

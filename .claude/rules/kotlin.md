@@ -197,9 +197,18 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   OkHttp, Google's sign-in SDK or any other library without a line in ADR 0054.
 - **Not built, and said so in the list and the docs**: an emailed link (no call asks for
   one; `not_built` under TULA-76, the native clients' emailed link), a passkey's rename
-  (`HttpURLConnection` has no `PATCH`; TULA-76 too). **An account with no address gets one through `client.emailAddress`**
+  (no call asks for one yet; TULA-76 too). **The default engine sends `PATCH`** (TULA-130: renaming an organization, a member's role, a domain's mode) through `JdkHttpEngine` where `java.net.http` exists, found by name so that nothing compiled for Android refers to it, and through `HttpURLConnection` on Android, whose OkHttp-backed implementation lists `PATCH` (cited in `UrlConnectionEngine`; never run on a device). Never use reflection on `HttpURLConnection`'s `method` field. The jar ships `META-INF/proguard/tula-auth.pro` (`-dontwarn java.net.http.**`; `ConsumerRulesTest` holds it): R8 removes the unreachable `JdkHttpEngine` by itself, and the rule is for an app whose own rules keep `dev.tula.auth.**` (shown: that build fails on "Missing class java.net.http" without it and passes with it). CI assembles the Compose example as a minified release (`:compose-example:assembleRelease`) to keep it so. **An account with no address gets one through `client.emailAddress`**
   (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
   address).
+- **Organizations (`Organizations.kt`, TULA-121, ADR 0065) are the Swift client's rules on
+  the JVM**: the claims are read for showing and never for deciding (signature not
+  verified, all three claims or none, the contract's grammars as hand-kept copies that
+  `.claude/hooks/native-organizations.test.ts` holds to the contract's names and caps),
+  the invitation's token is a secret (`TulaInvitationLink` prints as its name, the token is
+  sent in a request body only and is in no error), and `SessionManager.setActiveOrganization`
+  installs only the access token of the answer, as `stepUp` does. Kotlin cannot overload
+  on a parameter's name, so the checks are `hasPermission` and `hasRole`. Keep them in step
+  with `TulaOrganizations.swift` and the three journeys in `JourneysTest.kt`.
 - **Never say more of Android than was run.** What ran (a JVM; a compile and a lint of the
   Android modules; the screens, with the client and `KeystoreTokenStorage` under them, on
   one emulator by the example's UI tests) and what did not is
@@ -458,3 +467,7 @@ that differs says why.
   it with an address of its own. Plain `http`
   is allowed to `127.0.0.1`, `localhost` and `10.0.2.2` only, and it does not set
   `FLAG_SECURE`, which is an app's choice and never the library's.
+  **The generated `verifySignInLink` operation is unused by the native clients** (TULA-157,
+  H-336): an emailed link is opened by the host. A client that adds it pairs the link's token
+  with an in-memory `attemptId` and link binding of the attempt that asked for it, as
+  `packages/expo/src/email-link.ts` does, and never with one read from storage.

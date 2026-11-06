@@ -1,6 +1,23 @@
 import type { OAuthProvider, UserSort } from '@tula-tech/contract'
 import type { Activity, Recorded } from '~/ports/activity-log'
 
+/** What deleting a user came to. */
+export type DeleteUserOutcome =
+  /**
+   * `endedSessionIds`: the sessions that were still active (not revoked) when the delete took
+   * them away by cascade. The caller denylists them: a sweep after the delete finds nothing.
+   */
+  | { outcome: 'deleted'; endedSessionIds: string[] }
+  | { outcome: 'not_found' }
+  /**
+   * The user is the only member who can manage members of these organizations (ids in
+   * ascending order). Nothing was deleted or recorded.
+   */
+  | { outcome: 'last_manager'; organizationIds: string[] }
+
+/** Who placed a ban: an operator, or a directory's deprovisioning (ADR 0067). */
+export type BanOrigin = 'operator' | 'directory'
+
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
   id: string
@@ -23,6 +40,8 @@ export interface UserRecord {
   firstName: string | null
   lastName: string | null
   bannedAt: Date | null
+  /** Who placed the ban; `null` exactly when `bannedAt` is. */
+  banOrigin: BanOrigin | null
   lastSignInAt: Date | null
   createdAt: Date
   /**
@@ -41,6 +60,13 @@ export interface UserRecord {
    * or replacing it with another, clears it in the same write.
    */
   smsFactorEnabledAt: Date | null
+  /**
+   * The SSO connection that provisioned the account (ADR 0067), or `null`/absent for one that
+   * signed up any other way. Set once, at creation; enforcement (TULA-140) reads it.
+   */
+  managedByConnectionId?: string | null
+  /** The organization whose SCIM directory provisioned and manages the account (ADR 0067), or `null`/absent. Set once, at creation. */
+  managedByDirectoryId?: string | null
 }
 
 /**
@@ -51,7 +77,12 @@ export interface UserRecord {
 export interface NewUser
   extends Omit<
     UserRecord,
-    'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt' | 'smsFactorEnabledAt'
+    | 'bannedAt'
+    | 'banOrigin'
+    | 'lastSignInAt'
+    | 'phoneNumber'
+    | 'phoneNumberVerifiedAt'
+    | 'smsFactorEnabledAt'
   > {
   /** Id for the `email` identity row. */
   identityId: string
@@ -64,6 +95,23 @@ export interface NewUser
    * the email one, in the same transaction.
    */
   oauthIdentity?: { id: string; provider: OAuthProvider; subject: string }
+  /** The user's id in the system an import brought them from (ADR 0066); stored, not unique. */
+  externalId?: string
+  /** What an import kept with the user, at most 4 KiB as JSON (ADR 0066). */
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Thrown by {@link UserRepository.create} when the store refuses the user's `externalId` or
+ * `metadata` itself (a check violation, a NUL or an invalid string), nothing having been
+ * written. A caller that took the data from a request turns it into a refusal of that one
+ * row, never a failure of the call (ADR 0066).
+ */
+export class InvalidUserDataError extends Error {
+  constructor() {
+    super('the store refused the data of the user')
+    this.name = 'InvalidUserDataError'
+  }
 }
 
 /** A provider account connected to a user. */
@@ -137,6 +185,12 @@ export interface NewEmailAddress {
  * - `not_found`: there is no such user in the environment.
  */
 export type AddEmailRefusal = 'taken' | 'has_email' | 'not_found'
+
+/**
+ * What replacing an address did, when it stored nothing: `taken` (another user of the
+ * environment has it) or `not_found`.
+ */
+export type ReplaceEmailRefusal = 'taken' | 'not_found'
 
 /** How many accounts depend on a provider, as a store counted them. */
 export interface DependentAccounts {
@@ -242,11 +296,34 @@ export interface UserRepository {
   findById(environmentId: string, id: string): Promise<UserRecord | null>
 
   /**
+   * Several users by id in one lookup (a page of a member list, not one query per member).
+   *
+   * @param environmentId - The environment to look in; an id of another environment is skipped.
+   * @param ids - User ids. Duplicates and unknown ids are fine.
+   * @returns The users that exist, once each, in no particular order.
+   */
+  findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]>
+
+  /**
    * @param environmentId - The environment to look in.
    * @param emailNormalized - Normalized email.
    * @returns The user, or `null`.
    */
   findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null>
+
+  /**
+   * The id and import `externalId` of the user with this address, for an import that found
+   * the address taken (ADR 0066, "A retried batch"). Nothing else of the user is read.
+   *
+   * @param environmentId - The environment to look in.
+   * @param emailNormalized - Normalized email.
+   * @returns The user's id and external id (`null` when none was stored), or `null` when no
+   *   user has the address.
+   */
+  findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null>
 
   /**
    * Look a user up for sign-in, with their password hash, in a single query, so known and
@@ -478,6 +555,26 @@ export interface UserRepository {
   ): Promise<UserRecord | AddEmailRefusal>
 
   /**
+   * Replace the address of a user who has one (a directory renaming its own account, ADR 0067).
+   * The `email` identity follows the address; nothing else of the user changes and no session
+   * ends.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param address - The new address, proven or not (`verifiedAt`).
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the address was stored.
+   * @returns The user as they now are, or why nothing was written.
+   */
+  replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal>
+
+  /**
    * Count the users who have an account of a provider connected and could not sign in
    * without it (ADR 0059): what an operator is shown before the provider is switched off.
    *
@@ -523,13 +620,17 @@ export interface UserRepository {
   ): Promise<{ users: UserRecord[]; totalCount: number }>
 
   /**
-   * Ban or unban a user. Banning keeps the first ban time if they are already banned.
+   * Ban or unban a user. Banning keeps the first ban time if they are already banned. An
+   * `operator` ban of a user the `directory` banned takes the ban over (the origin changes,
+   * nothing else is written or recorded): a directory's reactivation then leaves it. The
+   * origin never goes the other way.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param bannedAt - Ban time, or `null` to unban.
    * @param at - Update time.
    * @param activity - Recorded in the same transaction, only if the ban state changed.
+   * @param origin - Who is banning (ignored when unbanning); an operator by default.
    * @returns The user as they now are, or `null` when they do not exist.
    */
   setBanned(
@@ -537,8 +638,39 @@ export interface UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
+    activity: Recorded,
+    origin?: BanOrigin
+  ): Promise<UserRecord | null>
+
+  /**
+   * Set a user's first and last name (a directory's rename, ADR 0067).
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param names - The new names; `null` clears one.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if a name changed.
+   * @returns The user as they now are, or `null` when they do not exist.
+   */
+  setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    at: Date,
     activity: Recorded
   ): Promise<UserRecord | null>
+
+  /**
+   * Clear the mark that says a directory created this account, when it is that organization's.
+   *
+   * Not recorded: the mark is bookkeeping for the directory's own repair, not a permission.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param organizationId - The directory's organization; another organization's mark stays.
+   * @returns Nothing.
+   */
+  releaseDirectory(environmentId: string, userId: string, organizationId: string): Promise<void>
 
   /**
    * The users of an environment whose account holds a phone number, oldest account first.
@@ -678,14 +810,37 @@ export interface UserRepository {
 
   /**
    * Delete a user and, by cascade, their identities, credentials (with every previous
-   * password kept for them), sessions and attempts.
+   * password kept for them), sessions, attempts and organization memberships.
+   *
+   * **Refused while the user is the only member of an organization who holds
+   * `org:sys:memberships:manage`** (ADR 0065, TULA-124): the cascade would leave that
+   * organization nobody can manage. The check and the delete are one transaction that first
+   * locks the rows of the organizations the user belongs to, in id order, as removing and
+   * demoting a member do, so a deletion and a demotion of the other manager take turns.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param activity - Recorded in the same transaction, only if the user was deleted.
-   * @returns `false` when they do not exist.
+   * **The user's row is locked first and the sessions still active are read under that lock**,
+   * so a session created concurrently either is in the list or fails its foreign key; the
+   * cascade then leaves nothing for a later sweep to find.
+   *
+   * @returns `deleted` with `endedSessionIds`; `not_found` when they do not exist; `last_manager` with the ids of the
+   *   organizations they alone manage, when nothing was deleted or recorded.
    */
-  delete(environmentId: string, userId: string, activity: Recorded): Promise<boolean>
+  delete(environmentId: string, userId: string, activity: Recorded): Promise<DeleteUserOutcome>
+
+  /**
+   * The organizations whose only manager the user is, read without locks (ADR 0065,
+   * TULA-124). It lets a caller refuse a deletion before it does anything else; it never
+   * decides one, because the answer can be stale by the time it is used: `delete` checks
+   * again under the organizations' locks.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @returns The organization ids, ascending; empty when there are none or the user is unknown.
+   */
+  soleManagerOf(environmentId: string, userId: string): Promise<string[]>
 
   /**
    * Record that a sign-in test started or finished (ADR 0058), and nothing else: the entry

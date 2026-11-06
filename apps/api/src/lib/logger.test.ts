@@ -24,6 +24,12 @@ describe('createLogger', () => {
     expect(line.safe).toBe('visible')
   })
 
+  test('names the setup-link token header and the operator credentials', () => {
+    expect(REDACTED_KEYS).toEqual(
+      expect.arrayContaining(['x-tula-setup-token', 'x-tula-admin-token', 'secretKey', 'apiKey'])
+    )
+  })
+
   test('omits pid and hostname', () => {
     const { log, lines } = capture()
     log.info('hello')

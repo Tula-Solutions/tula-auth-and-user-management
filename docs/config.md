@@ -4,8 +4,7 @@ An environment's sign-in behaviour is its **settings** (app name, password polic
 methods, allowed origins and redirect URLs, notices, the MFA policy, passkeys, session profiles)
 and its **OAuth providers**. Both can be written in a file, reviewed in a pull request and
 applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#webhook-endpoints),
-below). The decisions behind this page are in
-[ADR 0030](adr/0030-config-and-apply.md).
+below), hooks, native apps and [organization roles](#organization-roles).
 
 > `@tula-tech/config` and `@tula-tech/cli` are released to npm
 > (`bun add -d @tula-tech/config@latest @tula-tech/cli@latest`). Inside this repository the CLI is `bun run tula -- <args>`,
@@ -331,7 +330,7 @@ hooks: {
   is still a change to who can sign in: if its endpoint does not answer, every sign-up or
   sign-in it guards is refused from that moment. Deploy the receiver first.
 - **Order.** Hooks are written after the settings, every provider and every webhook
-  endpoint (only [native apps](#native-apps) come later). An endpoint registered in the same run is then there for the `hook.*` events
+  endpoint (only [native apps](#native-apps) are written after them). An endpoint registered in the same run is then there for the `hook.*` events
   the hook writes produce, and an address the server refuses for a hook does not stop
   anything about signing in. Among themselves: new hooks, then changes that weaken nothing,
   then changes that weaken, then removals. What tightens is in place before anything is
@@ -420,7 +419,7 @@ nativeApps: [
 
   | In the plan | Path |
   | --- | --- |
-  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on, [ADR 0047](adr/0047-native-apple-sign-in.md)) | `nativeApps.<platform>/<identifier>` |
+  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on) | `nativeApps.<platform>/<identifier>` |
   | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
   | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
   | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
@@ -455,6 +454,77 @@ Native apps
 ```
 
 (The fingerprints are printed whole; they are shortened here.)
+
+## Organization roles
+
+An environment's custom [organization](organizations.md) [roles](roles-and-permissions.md) can be written in the
+file, beside the built-in `admin` and `member`, which are never the file's to name.
+
+<!-- snippet: examples/tula-config/tula.config.ts#organization-roles -->
+```ts
+// The custom roles of the environment's organizations, beside the built-in
+// `admin` and `member`. A role is its key; the permissions are a set. Giving a role a
+// permission it did not have widens what its members may do, so `tula apply --yes`
+// asks for `--allow-weaker`. `dev` has no `organizationRoles` key: its roles are not
+// managed by this file.
+organizationRoles: [
+  {
+    key: 'billing_manager',
+    name: 'Billing manager',
+    permissions: ['org:billing:read', 'org:billing:write', 'org:sys:memberships:read'],
+  },
+  { key: 'viewer', name: 'Viewer', permissions: ['org:billing:read'] },
+],
+```
+<!-- /snippet -->
+
+- **No `organizationRoles` key: not managed.** The roles are not read and not touched,
+  `--prune` included, and the file's fingerprint is what it was before the key existed. With
+  a list, the listed roles are managed; a custom role the server has and the list leaves out
+  is *unmanaged*, shown in the plan and removed only with `--prune`. `organizationRoles: []`
+  manages them and lists none.
+- **A role is its key**: lower-case letters, digits and underscores, starting with a letter,
+  at most 32 characters. It cannot be changed: another key is another role. A key listed
+  twice, `admin` or `member` as a key, a permission outside the grammar `org:<feature>:<action>`,
+  an `org:sys:…` key that Tula does not define, a role of more than 32 permissions and a list
+  of more than 50 roles are refused when the file is loaded, by position
+  (`organizationRoles.1.key`).
+- **What can change** is the role's `name` and its `permissions`, a set: order and repeats are
+  not a change, and a change shows the permissions added and removed. A role may hold the
+  system permissions Tula defines (such as `org:sys:memberships:manage`, which makes a second
+  kind of manager).
+- **What weakens.** The rule is the server's own (`organizationRoleWeakenings`, the one behind
+  the audit log's `weakened`): a role that gains a permission, under
+  `organizationRoles.<key>.permissions`. Members who hold it may do more from their next
+  token refresh, so `tula apply --yes` refuses such a plan, before any write, without
+  `--allow-weaker`. A new role (nobody holds it), a permission taken away, a rename and the
+  removal of an unused role weaken nothing and need no flag.
+- **Removing a role** (`--prune`) is refused by the server while a member holds it
+  (`organization.role_in_use`): the run stops there and says which role, and reports what was and
+  was not applied. Give those members another role first.
+- **Order.** Roles are written last, after the native apps, and after the settings that
+  switch organizations on: removals, then changes that give a role nothing, then changes that
+  give it a permission, then new roles. While organizations are off the server refuses every
+  role write with `organization.disabled`; `tula diff` then treats the roles as
+  none (and says so in the plan, `organizationRoles.unread` in `--json`), so a file that switches organizations on and defines roles applies in one run; a role the server already has then fails its definition with `organization.role_exists`, written over nothing.
+- **Someone else's change.** A role has a version, and every update and removal sends the one
+  the plan read (`If-Match`). A role changed since is refused by the server and `apply` says
+  so, writing nothing to it; run `tula diff` again. A role defined by someone else in the
+  meantime makes the definition fail (`organization.role_exists`), reported as a failed
+  operation.
+- **Nothing here is a secret.** A role's key, name and permission keys are printed in the
+  plan, through the same filter as every text from the server.
+
+In the plan:
+
+```
+Organization roles
+  + billing_manager: define (name "Billing manager", permissions org:billing:read org:billing:write)
+  ~ viewer: update (permissions +org:reports:read)
+  = auditor: unmanaged (on the server, not in the file; --prune removes it)
+
+  ! weakens security: organizationRoles.viewer.permissions (`tula apply --yes` needs --allow-weaker)
+```
 
 ## Pointing the CLI at an environment
 
@@ -608,11 +678,11 @@ Changes pending. Run `tula apply` to make them.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
   (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'
-  paths come first in the list, then the providers', then the hooks', then the native apps'.
+  paths come first in the list, then the providers', then the hooks', then the native apps',
+  then the organization roles'.
 - A provider is flagged when it gains a client id (`providers.google.additionalClientIds`)
   and when it is **switched off or removed while accounts can sign in only with it**
-  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`;
-  [ADR 0059](adr/0059-email-for-accounts-without-one.md)). For each provider that is on at
+  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`). For each provider that is on at
   the server and that the plan switches off or removes, and for no other, `tula` asks the
   server how many accounts depend on it and prints the answer under the plan:
 
@@ -665,6 +735,8 @@ Changes pending. Run `tula apply` to make them.
 - A [native app](#native-apps) is flagged when it is registered
   (`nativeApps.<platform>/<identifier>`), when an iOS app's team changes (`….teamId`) and
   when an Android app gains a fingerprint (`….sha256CertFingerprints`).
+- An [organization role](#organization-roles) is flagged when it gains a permission
+  (`organizationRoles.<key>.permissions`).
 - `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
   period where the server keeps entries for ever (`null`, which is also what leaving it out
   means), or a shorter period than the server has. A longer period, the same one, or none
@@ -681,7 +753,8 @@ Changes pending. Run `tula apply` to make them.
   in the dashboard or through the API. The differences are in the plan.
 - `--json` prints the same plan as data: `weakened` and `unknown` list the paths, `webhooks`
   holds the endpoints, `hooks` the hooks (`{ "managed", "hooks" }`), `nativeApps` the
-  native apps (`{ "managed", "apps", "overLimit" }`), `blockers` the reasons
+  native apps (`{ "managed", "apps", "overLimit" }`), `organizationRoles` the custom
+  roles (`{ "managed", "roles", "overLimit" }`), `blockers` the reasons
   the plan cannot be applied at all, and
   `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true, "allowWebhookRemoval":
   false, "webhookSecrets": false, "hookSecrets": false }`) says what `apply` will ask for:
@@ -692,7 +765,7 @@ Changes pending. Run `tula apply` to make them.
 | --- | --- |
 | `0` | the environment is as the file says |
 | `2` | there are changes to apply |
-| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints, more than 20 native apps) |
+| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints, more than 20 native apps, more than 50 custom roles) |
 
 ## `tula apply`
 
@@ -753,8 +826,7 @@ tula apply --env prod --yes    # no question: for CI
   not. The key is sent only when the file names an id, so a file without one still applies
   to a server from before the field.
 - **Switching a provider off, or removing it, while accounts can sign in only with it is a
-  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`;
-  [ADR 0059](adr/0059-email-for-accounts-without-one.md)): those accounts are locked out
+  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`): those accounts are locked out
   until it is back, so `apply --yes` refuses it, before any write, without
   `--allow-weaker`, and at a terminal the question names it. What is counted, and what a
   count that could not be read means, is under [`tula diff`](#tula-diff).
@@ -770,10 +842,10 @@ tula apply --env prod --yes    # no question: for CI
 | `--env`, `-e <name>` | the entry in the file; may be left out when it has one |
 | `--config`, `-c <path>` | default `tula.config.ts` in the current directory |
 | `--yes`, `-y` | apply without asking |
-| `--prune` | delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list |
+| `--prune` | delete providers, and remove webhook endpoints, hooks, native apps and custom organization roles, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a provider switched off or removed while accounts can sign in only with it, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a provider switched off or removed while accounts can sign in only with it, a [hook](#hooks), a [native app](#native-apps) registered or widened, or an [organization role](#organization-roles) given a permission) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
 | `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |

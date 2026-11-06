@@ -37,6 +37,8 @@ const sessionColumns = {
   authMethods: sessions.authMethods,
   hookClaims: sessions.hookClaims,
   deviceThumbprint: sessions.deviceThumbprint,
+  activeOrganizationId: sessions.activeOrganizationId,
+  ssoConnectionId: sessions.ssoConnectionId,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,
@@ -173,6 +175,31 @@ export class PostgresSessionStore implements SessionStore {
         .returning({ id: sessions.id })
     )
     return rows.length === 1
+  }
+
+  /** @inheritdoc */
+  async setActiveOrganization(
+    environmentId: string,
+    id: string,
+    organizationId: string | null,
+    at: Date
+  ): Promise<SessionRecord | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(sessions)
+        .set({ activeOrganizationId: organizationId, updatedAt: at })
+        .where(
+          and(
+            eq(sessions.id, id),
+            eq(sessions.environmentId, environmentId),
+            isNull(sessions.revokedAt),
+            gt(sessions.idleExpiresAt, at),
+            or(isNull(sessions.absoluteExpiresAt), gt(sessions.absoluteExpiresAt, at))
+          )
+        )
+        .returning(sessionColumns)
+    )
+    return row ?? null
   }
 
   /** @inheritdoc */
@@ -438,7 +465,7 @@ export class PostgresSessionStore implements SessionStore {
     at: Date,
     options: RevokeByUserOptions
   ): Promise<string[]> {
-    const { exceptSessionId, activity } = options
+    const { exceptSessionId, onlyIds, activity } = options
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .update(sessions)
@@ -448,7 +475,8 @@ export class PostgresSessionStore implements SessionStore {
             eq(sessions.environmentId, environmentId),
             eq(sessions.userId, userId),
             isNull(sessions.revokedAt),
-            exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined
+            exceptSessionId ? ne(sessions.id, exceptSessionId) : undefined,
+            onlyIds ? inArray(sessions.id, onlyIds) : undefined
           )
         )
         .returning({ id: sessions.id })

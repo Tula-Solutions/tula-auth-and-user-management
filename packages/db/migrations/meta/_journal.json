@@ -253,6 +253,160 @@
       "when": 1791856146299,
       "tag": "0035_proposals_target_id_text",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792719557239,
+      "tag": "0036_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792722417362,
+      "tag": "0037_user_import_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792723428178,
+      "tag": "0038_organization_custom_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792726732330,
+      "tag": "0039_session_active_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792729555982,
+      "tag": "0040_organization_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792734367525,
+      "tag": "0041_organization_domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792739520399,
+      "tag": "0042_organization_domain_lifetime",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792745535429,
+      "tag": "0044_organization_invitations_email_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792751006253,
+      "tag": "0045_organization_search_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793685820312,
+      "tag": "0047_sso_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793712276035,
+      "tag": "0048_user_and_session_sso_connection",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793714689494,
+      "tag": "0049_sso_saml_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793716986445,
+      "tag": "0050_sso_enforcement",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793717000000,
+      "tag": "0051_scim",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793717116165,
+      "tag": "0053_sso_attribute_mapping",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793719356258,
+      "tag": "0054_sso_connection_tested",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793720254131,
+      "tag": "0056_sso_setup_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793724004355,
+      "tag": "0057_scim_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1793899066432,
+      "tag": "0058_scim_token_via_setup_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793899282647,
+      "tag": "0059_user_ban_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793908102424,
+      "tag": "0060_proposals_pending_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793980763577,
+      "tag": "0061_proposals_rejected",
+      "breakpoints": true
     }
   ]
 }

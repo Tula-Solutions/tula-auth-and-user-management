@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { CUSTOM_CLAIMS_CLAIM } from './custom-claims'
+import {
+  CUSTOM_CLAIMS_CLAIM,
+  ORGANIZATION_ID_CLAIM,
+  ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ROLE_CLAIM,
+  SSO_CONNECTION_CLAIM,
+} from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */
 export const ACCESS_TOKEN_VERSION = 1
@@ -15,10 +21,18 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
 
 /**
  * Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
- * server (ADR 0053). It reads what a secret key reads and can ask for a change as a
+ * server. It reads what a secret key reads and can ask for a change as a
  * proposal; every route that changes anything refuses it.
  */
 export const AGENT_KEY_PREFIX = 'tula_ak_'
+
+/**
+ * Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`:
+ * the bearer token an organization's identity provider presents to
+ * `/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+ * answer it like a wrong key.
+ */
+export const SCIM_TOKEN_PREFIX = 'tula_scim_'
 
 /**
  * What `amr` (RFC 8176, "authentication methods references") can hold in a Tula access token:
@@ -26,14 +40,14 @@ export const AGENT_KEY_PREFIX = 'tula_ak_'
  * - `pwd`: the password.
  * - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
  *   password reset's code).
- * - `sms`: a code texted to the account's phone number: as a sign-in's first factor
- *   (ADR 0037), or as the second factor of a user who has nothing stronger (ADR 0025). It
+ * - `sms`: a code texted to the account's phone number: as a sign-in's first factor,
+ * or as the second factor of a user who has nothing stronger. It
  *   **never brings `mfa`**: an application that wants an authenticator app or a passkey
  *   tests for `mfa`, and one that accepts a texted second step tests for `sms` beside
  *   another value. `sms` alone is never a recent authentication.
  * - `otp`: a code from an authenticator app (TOTP).
  * - `backup_code`: a single-use backup code.
- * - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
+ * - `hwk` / `swk`: a passkey, proven with user verification. `hwk` for a credential
  *   bound to one device, `swk` for one its authenticator reports as eligible for backup (a
  *   synced passkey). Always beside `user`.
  * - `user`: the authenticator tested that the user was present and verified them.
@@ -116,13 +130,13 @@ export const AccessTokenClaimsSchema = z
     amr: z.array(z.string()).optional(),
     /**
      * The name of the session's profile (`web`, `mobile` or one the environment defined), as
-     * stored when the session was created (ADR 0028). The server reads it to find the
+     * stored when the session was created. The server reads it to find the
      * profile's step-up window; a resource server may use it to tell an `admin` session from
      * an ordinary one. Optional: tokens issued before profiles existed do not carry it.
      */
     sp: z.string().optional(),
     /**
-     * The key a **device-bound** session is bound to (ADR 0043), in the shape of RFC 7800 and
+     * The key a **device-bound** session is bound to, in the shape of RFC 7800 and
      * RFC 9449: `jkt` is the SHA-256 thumbprint (RFC 7638) of the public key the session's
      * refreshes must be proven with. **Absent** for a session that is not bound.
      *
@@ -132,7 +146,25 @@ export const AccessTokenClaimsSchema = z
      */
     cnf: z.object({ jkt: z.string() }).optional(),
     /**
-     * The session's custom claims: what the JWT template of its profile defines (ADR 0036),
+     * The organization the session is acting in: its id. **Absent** while no
+     * organization is active (the user's personal account), when the environment has
+     * organizations off, and from the first refresh after the user stopped being a member.
+     * Present only together with `org_role` and `org_perms`; read the three with
+     * `readOrganizationClaims`, which treats any other combination as no organization.
+     */
+    [ORGANIZATION_ID_CLAIM]: z.string().optional(),
+    /** The SSO connection the session was signed in through; absent for any other sign-in. */
+    [SSO_CONNECTION_CLAIM]: z.string().optional(),
+    /** The key of the user's role in the active organization (`admin`, `member`, …). */
+    [ORGANIZATION_ROLE_CLAIM]: z.string().optional(),
+    /**
+     * The permission keys of that role (`org:sys:memberships:read`, `org:billing:read`), at
+     * most 32. They are as of the last refresh: a role changed since is seen at the next one.
+     * A missing list is no permission.
+     */
+    [ORGANIZATION_PERMISSIONS_CLAIM]: z.array(z.string()).optional(),
+    /**
+     * The session's custom claims: what the JWT template of its profile defines,
      * each key holding one string, number or boolean. **Absent** when the profile uses no
      * template or the template yields nothing for this user; never an empty object.
      *
@@ -170,3 +202,11 @@ export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>
 export type Jwk = z.infer<typeof JwkSchema>
 /** JWK set. */
 export type Jwks = z.infer<typeof JwksSchema>
+
+/**
+ * Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
+ * `_`: the credential of the self-serve SSO setup portal, sent in
+ * `x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
+ * answers it like a wrong key, and the setup routes answer every other credential so.
+ */
+export const SETUP_LINK_TOKEN_PREFIX = 'tula_setup_'

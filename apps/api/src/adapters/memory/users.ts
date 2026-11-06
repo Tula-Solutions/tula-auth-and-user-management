@@ -7,6 +7,8 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
+  BanOrigin,
+  DeleteUserOutcome,
   DependentAccounts,
   IdentityRecord,
   LinkGuard,
@@ -16,6 +18,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -37,7 +40,14 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 /** Users held in memory, for tests. */
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
+  readonly #deletionListeners: Array<(environmentId: string, userId: string) => void>
+  readonly #sessionCascades: Array<(environmentId: string, userId: string) => string[]>
+  readonly #deletionGuards: Array<
+    (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
+  >
   readonly #passwords: Map<string, string>
+  /** The `externalId` an import stored, kept for the import's duplicate check only. */
+  readonly #externalIds = new Map<string, string>()
   /** When each user's current password was set. A key exactly where `#passwords` has one. */
   readonly #passwordsChangedAt = new Map<string, Date>()
   /** Each user's previous password hashes, the most recent first. */
@@ -48,11 +58,28 @@ export class MemoryUserRepository implements UserRepository {
   #confirmedTotp: ((environmentId: string, userId: string) => boolean) | null
   #passkeysReported: boolean
 
+  /**
+   * Forget which connection managed its users, as deleting the connection does (decision 13).
+   *
+   * @param environmentId - The environment.
+   * @param connectionId - The deleted connection.
+   */
+  clearManagedByConnection(environmentId: string, connectionId: string): void {
+    for (const user of this.#users.values()) {
+      if (user.environmentId === environmentId && user.managedByConnectionId === connectionId) {
+        user.managedByConnectionId = null
+      }
+    }
+  }
+
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#users = new Map()
+    this.#deletionListeners = []
+    this.#sessionCascades = []
+    this.#deletionGuards = []
     this.#passwords = new Map()
     this.#history = new Map()
     this.#identities = new Map()
@@ -110,9 +137,30 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const found: UserRecord[] = []
+    for (const id of new Set(ids)) {
+      const user = this.#users.get(id)
+      if (user?.environmentId === environmentId) {
+        found.push({ ...user })
+      }
+    }
+    return found
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const user = this.#byEmail(environmentId, emailNormalized)
     return user ? { ...user } : null
+  }
+
+  /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const user = this.#byEmail(environmentId, emailNormalized)
+    return user ? { id: user.id, externalId: this.#externalIds.get(user.id) ?? null } : null
   }
 
   /** @inheritdoc */
@@ -139,6 +187,7 @@ export class MemoryUserRepository implements UserRepository {
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
     if (
+      this.#users.has(user.id) ||
       (user.emailNormalized !== null && this.#byEmail(user.environmentId, user.emailNormalized)) ||
       (oauthIdentity &&
         this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
@@ -150,11 +199,19 @@ export class MemoryUserRepository implements UserRepository {
       credentialId: _credentialId,
       oauthIdentity: _oauthIdentity,
       passwordHash,
+      externalId,
+      metadata: _metadata,
       ...record
     } = user
+    if (externalId !== undefined) {
+      this.#externalIds.set(user.id, externalId)
+    }
     this.#users.set(user.id, {
       ...record,
+      managedByConnectionId: record.managedByConnectionId ?? null,
+      managedByDirectoryId: record.managedByDirectoryId ?? null,
       bannedAt: null,
+      banOrigin: null,
       lastSignInAt: null,
       phoneNumber: null,
       phoneNumberVerifiedAt: null,
@@ -434,7 +491,8 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     _at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    origin: BanOrigin = 'operator'
   ): Promise<UserRecord | null> {
     const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
@@ -444,9 +502,45 @@ export class MemoryUserRepository implements UserRepository {
     // Only a real change writes: a repeated ban keeps the original time and records nothing.
     if ((user.bannedAt === null) !== (bannedAt === null)) {
       user.bannedAt = bannedAt
+      user.banOrigin = bannedAt === null ? null : origin
+      this.#activityLog.record(activity ? [activity] : [])
+    } else if (bannedAt !== null && origin === 'operator') {
+      user.banOrigin = 'operator'
+    }
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    if (user.firstName !== names.firstName || user.lastName !== names.lastName) {
+      user.firstName = names.firstName
+      user.lastName = names.lastName
       this.#activityLog.record(activity ? [activity] : [])
     }
     return { ...user }
+  }
+
+  /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    const user = this.#user(environmentId, userId)
+    if (user && user.managedByDirectoryId === organizationId) {
+      user.managedByDirectoryId = null
+    }
   }
 
   /** @inheritdoc */
@@ -612,6 +706,30 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return 'not_found'
+    }
+    const holder = this.#byEmail(environmentId, address.normalized)
+    if (holder && holder.id !== userId) {
+      return 'taken'
+    }
+    user.email = address.email
+    user.emailNormalized = address.normalized
+    user.emailVerifiedAt = address.verifiedAt === null ? null : new Date(address.verifiedAt)
+    const activity = activityOf(recorded)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...user }
+  }
+
+  /** @inheritdoc */
   async countDependentOn(
     environmentId: string,
     provider: OAuthProvider,
@@ -633,11 +751,23 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+  async delete(
+    environmentId: string,
+    userId: string,
+    recorded: Recorded
+  ): Promise<DeleteUserOutcome> {
     const activity = activityOf(recorded)
     if (!this.#user(environmentId, userId)) {
-      return false
+      return { outcome: 'not_found' }
     }
+    const blocked = this.#blockedBy(environmentId, [userId]).get(userId)
+    if (blocked) {
+      return { outcome: 'last_manager', organizationIds: blocked }
+    }
+    // What the database cascades: the sessions go with the user, and the active ones are named.
+    const endedSessionIds = this.#sessionCascades.flatMap((cascade) =>
+      cascade(environmentId, userId)
+    )
     this.#passwords.delete(userId)
     this.#passwordsChangedAt.delete(userId)
     this.#history.delete(userId)
@@ -645,8 +775,60 @@ export class MemoryUserRepository implements UserRepository {
       this.#identities.delete(identity.id)
     }
     this.#users.delete(userId)
+    this.#externalIds.delete(userId)
+    for (const listener of this.#deletionListeners) {
+      listener(environmentId, userId)
+    }
     this.#activityLog.record(activity ? [activity] : [])
-    return true
+    return { outcome: 'deleted', endedSessionIds }
+  }
+
+  /** What the guards say stops these users from being deleted: user id to organization ids. */
+  #blockedBy(environmentId: string, userIds: readonly string[]): Map<string, string[]> {
+    const blocked = new Map<string, string[]>()
+    for (const guard of this.#deletionGuards) {
+      for (const [userId, organizationIds] of guard(environmentId, userIds)) {
+        blocked.set(userId, [...(blocked.get(userId) ?? []), ...organizationIds].sort())
+      }
+    }
+    return blocked
+  }
+
+  /**
+   * Let the session store cascade a user's deletion the way `sessions_user_fk` does.
+   *
+   * @param cascade - Removes the user's sessions and returns the ids of those still active.
+   */
+  onDeleteSessions(cascade: (environmentId: string, userId: string) => string[]): void {
+    this.#sessionCascades.push(cascade)
+  }
+
+  /**
+   * Tell a store about every deletion of a user, so that it drops what the database would
+   * cascade (the organization store's memberships).
+   *
+   * @param listener - Called with the environment and the id of each user deleted.
+   */
+  onDelete(listener: (environmentId: string, userId: string) => void): void {
+    this.#deletionListeners.push(listener)
+  }
+
+  /**
+   * Let a store stop a deletion, as a database constraint or a lock-and-check would (the
+   * organization store's last-manager rule, TULA-124).
+   *
+   * @param guard - Given the environment and the users about to be deleted, returns for each
+   *   one it refuses the ids of the organizations that block it.
+   */
+  onBeforeDelete(
+    guard: (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
+  ): void {
+    this.#deletionGuards.push(guard)
+  }
+
+  /** @inheritdoc */
+  async soleManagerOf(environmentId: string, userId: string): Promise<string[]> {
+    return this.#blockedBy(environmentId, [userId]).get(userId) ?? []
   }
 
   /** @inheritdoc */
@@ -672,11 +854,17 @@ export class MemoryUserRepository implements UserRepository {
           user.createdAt.getTime() < before.getTime()
       )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
-      .slice(0, Math.max(0, limit))
-    for (const user of old) {
+    // A test user who is the only manager of an organization is left for a later round, and
+    // the pick goes on past them (TULA-124).
+    const blocked = this.#blockedBy(
+      environmentId,
+      old.map((user) => user.id)
+    )
+    const deletable = old.filter((user) => !blocked.has(user.id)).slice(0, Math.max(0, limit))
+    for (const user of deletable) {
       await this.delete(environmentId, user.id, record(user.id))
     }
-    return old.length
+    return deletable.length
   }
 
   #byEmail(environmentId: string, emailNormalized: string): UserRecord | undefined {

@@ -826,3 +826,15 @@ on the shared store. A client that loses its key loses its sessions.
 - **Not shown by this step**: any hardware key (every key in the tests is software), and
   the eleven scenarios against a live server, on two ports or through the proxy (they run in
   process; CI's `self-host` jobs run them live).
+
+## Decisions (TULA-157)
+
+- **Decision (TULA-157, H-316): keep the device key without a presence gate and without
+  attestation for now; schedule both as opt-ins, not defaults.** The key proves "the same
+  app instance on the same device", not "a person is here" or "this is hardware". Recommendation:
+  (1) an opt-in presence gate per profile (Secure Enclave `.userPresence`, Android
+  `setUserAuthenticationRequired`), because a default prompt on every refresh would break the
+  silent refresh the binding exists to protect; (2) attestation (App Attest, Key Attestation) as
+  a later, separate ADR, because it needs a server-side verifier and the vendors' root
+  certificates. Until then the server must not claim a bound session is hardware-backed. Nothing
+  in code changed; what a gate does on a locked or re-enrolled device needs a device (device, TULA-195).

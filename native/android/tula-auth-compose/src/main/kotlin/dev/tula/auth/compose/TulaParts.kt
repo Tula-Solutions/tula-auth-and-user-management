@@ -3,6 +3,8 @@ package dev.tula.auth.compose
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.PersistableBundle
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
@@ -71,6 +73,9 @@ import dev.tula.auth.ui.TulaQrMatrix
 /** `ClipDescription.EXTRA_IS_SENSITIVE`, which the platform names from API 33 and reads from then. */
 private const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
 
+/** How long a copied setup key or backup codes stay on the clipboard before the app takes them back. */
+private const val COPY_LIFETIME_MS = 60_000L
+
 /** How wide a QR code is drawn, its quiet zone included. */
 private val QR_SIZE = 220.dp
 
@@ -81,10 +86,11 @@ private const val QUIET_ZONE = 4
  * What puts a setup key or backup codes on the clipboard for the screens: as text marked
  * sensitive, so that Android 13 and later do not show it in the clipboard's preview.
  *
- * It is called only when a person presses "Copy". **Android gives an app no way to make a clip
- * expire or to take it back**: what was copied stays until something else is copied (some
- * versions clear a clip by themselves after a time), and before Android 13 the mark is not read.
- * The screens say "Copied." and nothing more.
+ * It is called only when a person presses "Copy". **Android has no expiry for a clip**, so after
+ * a minute the app clears the clipboard itself, but only when the clip is still the text it
+ * wrote (a later copy of the person's own is never lost). That timer lives in the process: if
+ * the process ends first, the copy stays until something else is copied. Before
+ * Android 13 the sensitive mark is not read. The screens say "Copied." and nothing more.
  *
  * @param context A context.
  * @return The function a [dev.tula.auth.ui.TulaAuthModel] or a
@@ -95,7 +101,13 @@ fun tulaSensitiveCopy(context: Context): (String) -> Unit {
     return { text ->
         val clip = ClipData.newPlainText("", text)
         clip.description.extras = PersistableBundle().apply { putBoolean(EXTRA_IS_SENSITIVE, true) }
-        application.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
+        val board = application.getSystemService(ClipboardManager::class.java)
+        board?.setPrimaryClip(clip)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (board?.primaryClip?.getItemAt(0)?.text?.toString() == text) {
+                board.clearPrimaryClip()
+            }
+        }, COPY_LIFETIME_MS)
     }
 }
 

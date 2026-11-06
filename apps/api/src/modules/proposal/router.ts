@@ -216,4 +216,38 @@ router.post(
   }
 )
 
+router.post(
+  '/admin/proposals/:id/reject',
+  describeRoute({
+    operationId: 'rejectProposal',
+    tags: ['Proposals'],
+    summary: 'Reject a proposal',
+    description:
+      'Reject a pending proposal: nothing is carried out and the proposal is decided for ' +
+      'good (`rejected`). It takes a secret key or a dashboard session, **never an agent ' +
+      'key** (`auth.invalid_key`). It takes no body. Refused with `resource.conflict` and a fixed `params.reason`: ' +
+      '`already_decided` (approved or rejected before) or `expired`. Nothing is changed by a ' +
+      'refused rejection. A rejection and an approval at the same moment: one succeeds.',
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The proposal, rejected.', content: json(ProposalSchema) },
+      409: openapi.responses[409],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', ProposalIdParamSchema, validationHook),
+  async (c) => {
+    const proposal = await Proposals.reject(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').id,
+      adminActor(c)
+    )
+    return c.json(ProposalSchema.parse(proposal))
+  }
+)
+
 export default router

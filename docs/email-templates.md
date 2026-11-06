@@ -7,9 +7,6 @@ the footer stay Tula's.
 
 An environment that has saved no template sends exactly what it always did.
 
-The reasoning, and what a template can and cannot be made to do, is in
-[ADR 0039](adr/0039-email-templates.md).
-
 ## Write a template
 
 Templates live in the environment's settings, under `emails.templates`, keyed by the
@@ -20,7 +17,7 @@ the part you leave out keeps the built-in wording.
 | --- | --- |
 | `tula.config.ts` | `settings.emails.templates` ([settings as code](config.md)). |
 | Admin API | `PUT /v1/admin/settings`, which replaces the whole document: read it, change `emails.templates`, send it back with `If-Match`. |
-| Dashboard | Not yet. Saving any settings screen keeps the templates the environment has. |
+| Dashboard | The **Messages** screen ([the Messages screen](dashboard.md#the-messages-screen)). Saving any other settings screen keeps the templates the environment has. |
 
 ```ts
 import { defineConfig } from '@tula-tech/config'
@@ -97,6 +94,7 @@ template is refused when you save it.
 | `password_reset` | A password reset was asked for an address that has an account. | `code` | `appName`, `expiresInMinutes` |
 | `sign_in` | A sign-in by emailed code or link was asked for an address that has an account. | `code`, `link` | `appName`, `expiresInMinutes` |
 | `step_up` | A signed-in user without a second factor confirms it is them before a sensitive change. | `code` | `appName`, `expiresInMinutes` |
+| `organization_domain_verification` | An administrator of an organization claims a domain; the code is sent to an address on it. | `code` | `appName`, `expiresInMinutes` |
 
 The built-in subjects lead with the code, so that it can be read from a notification. Yours
 need not.
@@ -117,7 +115,22 @@ follow the [rules for notices](#notices).
 | `account_exists` | Someone tried to sign up with an address that already has an account. | `appName` |
 | `no_account` | A password reset was asked for an address with no account. | `appName` |
 | `no_account_sign_in` | A sign-in by email was asked for an address with no account. | `appName` |
-| `email_in_use` | A signed-in user of an account with no address asked to add an address that already has an account. Sent to that address instead of a code ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). | `appName` |
+| `email_in_use` | A signed-in user of an account with no address asked to add an address that already has an account. Sent to that address instead of a code. | `appName` |
+| `organization_domain_expiring` | Sent to an organization's managers 30 and 7 days before a verified domain needs to be verified again. The server's wording names the organization and how many domains, never a domain. | `appName`, `expiresInDays` |
+
+### Organization invitations
+
+| Kind | Sent when | Required | Optional |
+| --- | --- | --- | --- |
+| `organization_invitation` | Someone invited an address to an organization. | `link` | `appName`, `expiresInDays` |
+
+The link is the server's own: the redirect URL the inviter chose, with the invitation's token
+after a `#`. The organization's name is text a user typed, so **there is no placeholder for it**
+and none for the invited address: only Tula's own wording names the organization, with the name
+escaped. The subject follows the rule for notices (it never starts with a digit, so it is never
+mistaken for a code), and after your paragraphs Tula still writes its own last sentence: if the
+reader was not expecting the invitation they can ignore it, because nobody joins unless the
+invited address accepts while signed in. Do not write that sentence yourself.
 
 ### Security notices
 
@@ -154,6 +167,7 @@ Which of them are sent at all is the environment's `notifications` setting.
 | `code` | The six-digit code. |
 | `link` | The sign-in link, which works only in the browser that asked for it ([emailed link](methods/email-link.md)). |
 | `expiresInMinutes` | How long the code works, as a number. |
+| `expiresInDays` | How many days an organization invitation works, as a number. |
 | `time` | When it happened, in UTC: `2026-10-03 14:05 UTC`. |
 | `device` | The kind of device, from Tula's fixed list: `Chrome on Windows`. |
 | `provider` | The provider's name: `Google`. |
@@ -306,9 +320,9 @@ app's name is put into every message as it is, a name may be a domain name, and 
 client may turn one into a link. Treat a secret key and a dashboard session accordingly, and watch
 for `emails.templates` in the audit log.
 
-## Not built
+## Limits
 
-- "Send me a test", and a preview of the HTML part.
-- Your own HTML, and templates per language.
-- Translating the button of a sign-in link, and the facts and the last sentence under a
-  notice.
+- There is no "send me a test", and the preview shows the text part, not the HTML part.
+- The HTML layout is the server's own, and a wording is not kept per language.
+- The button of a sign-in link, and the facts and the last sentence under a notice, are not
+  translated.

@@ -11,7 +11,7 @@ This is the **canonical** standards document for every contributor, human or AI 
 (webhooks, the Swift client, the dashboard, …) are in that area's file under `.claude/rules/`,
 listed in ["Area rules"](#area-rules) and equally binding. A rule is written once: never copy
 one between this file and an area's. Product context lives in
-[`docs/business-plan.md`](docs/business-plan.md); screens in [`docs/design/Design.pdf`](docs/design/Design.pdf);
+[`docs/internal/business-plan.md`](docs/internal/business-plan.md); screens in [`docs/design/Design.pdf`](docs/design/Design.pdf);
 architecture decisions in [`docs/adr/`](docs/adr/).
 
 ## General guidelines
@@ -108,7 +108,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up, a password reset and the signed-in user's account ([ADR 0061](docs/adr/0061-compose-screens.md), [ADR 0062](docs/adr/0062-compose-second-step-and-account.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
 | `packages/conformance` | `@tula-tech/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
-| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API; `scripts/native-reference.ts` is the scan that writes the Swift and Kotlin pages. `scripts/worker-check/` is the check CI's `self-host` job runs against its worker stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
+| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/internal/releasing.md](docs/internal/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API; `scripts/native-reference.ts` is the scan that writes the Swift and Kotlin pages. `scripts/worker-check/` is the check CI's `self-host` job runs against its worker stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
 | `docker/` | `postgres/init.sql` (the roles of a fresh local database), `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture), `self-host/*.env` (the ports and settings of each of the three stacks CI's `self-host` job runs side by side) and `worker-check/compose.yml` (the worker check's receiver, in the worker's network namespace; laid over the Compose file by that check only). |
 | `examples/docs-snippets` | The `@tula-tech/core` and `@tula-tech/admin` calls shown in `docs/methods/*.md`, as compiled TypeScript (`typecheck:scripts`). Not a workspace package; nothing runs it. A sample in the docs is a `#region` here or a file of an example app. |
 | `examples/core-playground` | A static page for trying `@tula-tech/core` by hand in a browser (`bun run playground`). Not a workspace package. |
@@ -124,7 +124,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 
 `@tula-tech/contract`, `@tula-tech/core`, `@tula-tech/react`, `@tula-tech/nextjs`, `@tula-tech/expo`, `@tula-tech/expo-screens`, `@tula-tech/admin`, `@tula-tech/config`, `@tula-tech/mcp`, `@tula-tech/cli` and `create-tula` are built for npm. **Nine are released** (plain `0.x` versions, dist-tag
 `latest`); **`@tula-tech/expo` and `@tula-tech/expo-screens` are held back**: built and checked, never published,
-and `"private": true` like every package that is not released ([docs/releasing.md](docs/releasing.md)).
+and `"private": true` like every package that is not released ([docs/internal/releasing.md](docs/internal/releasing.md)).
 
 ### Area rules
 
@@ -150,6 +150,7 @@ above or below and the file it is in has none of that name, the section is in th
 | Password history (`modules/password`, see ADR 0038) | `.claude/rules/passwords.md` |
 | Password expiry (`modules/flow`, `modules/password`, see ADR 0041) | `.claude/rules/passwords.md` |
 | Native apps (`modules/native-app`, see ADR 0040) | `.claude/rules/native-apps.md` |
+| Organizations (`modules/organization`, `modules/organization-domain`, see ADR 0065) | `.claude/rules/organizations.md` |
 | Device binding (`modules/session/device-binding.ts`, `lib/dpop.ts`, see ADR 0043) | `.claude/rules/device-binding.md` |
 | Generated native types (`packages/core/scripts/native`, see ADR 0050) | `.claude/rules/native-types.md` |
 | Swift SDK (`native/swift`, see ADR 0051) | `.claude/rules/swift.md` |
@@ -223,11 +224,13 @@ takes it (the day's count of text messages is a store method of its own for that
 `bootJobs(container)`, which starts the jobs their `ProcessPlan` names; neither names a job
 or sets a timer of its own (`jobs.test.ts` reads both files).
 `deps.jobLock.runExclusive(job, fn)` lets one process through and the others skip
-the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
+the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are three,
 each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):
 the webhook worker (`Webhooks.run` in `modules/webhook`,
-[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router.
-Retention runs in every API instance and never in a worker; the delivery job runs in every
+[ADR 0034](docs/adr/0034-webhooks.md)), `modules/retention`, which has no router, and the
+daily domain reminders (`modules/organization-domain/reminders.ts`,
+`.claude/rules/organizations.md`). Retention and the reminders run in every API instance and
+never in a worker; the delivery job runs in every
 API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes
 (`.claude/rules/webhooks.md`). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
 retention job's deletes go through store methods that take
@@ -470,8 +473,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
   as a separate step, and never put a secret or an email address in one. A settings change
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
-  writes are a password-hash upgrade after sign-in and an environment's first signing keys
-  (ADR 0012).
+  writes are a password-hash upgrade after sign-in, an environment's first signing keys and a
+  session's choice among memberships it already holds (ADR 0012, "What is deliberately not
+  recorded").
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family
@@ -488,7 +492,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,proposal,sign-in-test}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,organization,organization-role,organization-domain,proposal,sign-in-test}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,agent-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -626,6 +630,8 @@ apps/api/src/
                       # counts by destination prefix; the dev-only inbox route),
                       # native-app (an environment's iOS and Android apps, and the two
                       # association files built from them),
+                      # organization (organizations, roles and memberships: the admin routes),
+                      # organization-role (an environment's custom roles: the admin routes),
                       # message-preview (what the server would send for a draft wording),
                       # proposal (what an agent asked for, a human's approval of it and
                       # the carrying out; the agent's route and the admin routes),
@@ -700,7 +706,7 @@ bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill th
 bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
 bun run release:dry-run     # the same, then report what a release would publish (publishes nothing)
-bun run release:publish     # the same, then UPLOAD the nine released packages (docs/releasing.md; never unasked)
+bun run release:publish     # the same, then UPLOAD the nine released packages (docs/internal/releasing.md; never unasked)
 bun run playground          # @tula-tech/core test bench on http://localhost:5173 (examples/core-playground)
 bun run --filter @tula-tech/example-react-vite dev
                             # the @tula-tech/react example on http://localhost:5174 (needs

@@ -34,6 +34,8 @@ export const EventActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export interface EventActor {
@@ -55,6 +57,8 @@ export const UserCreatedEventDataMethod = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
+  scim: 'scim',
 } as const;
 
 /**
@@ -87,6 +91,48 @@ export interface UserCreatedEvent {
   actor: EventActor;
   target: UserCreatedEventTarget;
   data: UserCreatedEventData;
+  test?: true;
+}
+
+export type UserImportedEventDataPasswordAlgorithm = typeof UserImportedEventDataPasswordAlgorithm[keyof typeof UserImportedEventDataPasswordAlgorithm];
+
+
+export const UserImportedEventDataPasswordAlgorithm = {
+  bcrypt: 'bcrypt',
+  argon2id: 'argon2id',
+  argon2i: 'argon2i',
+  pbkdf2_sha256: 'pbkdf2_sha256',
+  firebase_scrypt: 'firebase_scrypt',
+} as const;
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEventData {
+  emailVerified: boolean;
+  passwordless?: boolean;
+  passwordAlgorithm?: UserImportedEventDataPasswordAlgorithm;
+}
+
+export type UserImportedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.imported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserImportedEventTarget;
+  data: UserImportedEventData;
   test?: true;
 }
 
@@ -466,6 +512,45 @@ export interface UserIdentityUnlinkedEvent {
   actor: EventActor;
   target: UserIdentityUnlinkedEventTarget;
   data: UserIdentityUnlinkedEventData;
+  test?: true;
+}
+
+export type UserSsoLinkedEventDataMethod = typeof UserSsoLinkedEventDataMethod[keyof typeof UserSsoLinkedEventDataMethod];
+
+
+export const UserSsoLinkedEventDataMethod = {
+  email: 'email',
+  provisioned: 'provisioned',
+} as const;
+
+/**
+ * An account was given its identity at a single sign-on connection (ADR 0067).
+ */
+export interface UserSsoLinkedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  connectionId: string;
+  method: UserSsoLinkedEventDataMethod;
+}
+
+export type UserSsoLinkedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An account was given its identity at a single sign-on connection (ADR 0067).
+ */
+export interface UserSsoLinkedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sso_linked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSsoLinkedEventTarget;
+  data: UserSsoLinkedEventData;
   test?: true;
 }
 
@@ -1215,7 +1300,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 50
+     * @maximum 83
      */
   eventTypes: number;
   enabled: boolean;
@@ -1695,6 +1780,1099 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
+export type SsoConnectionCreatedEventDataProtocol = typeof SsoConnectionCreatedEventDataProtocol[keyof typeof SsoConnectionCreatedEventDataProtocol];
+
+
+export const SsoConnectionCreatedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionCreatedEventDataStatus = typeof SsoConnectionCreatedEventDataStatus[keyof typeof SsoConnectionCreatedEventDataStatus];
+
+
+export const SsoConnectionCreatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEventData {
+  protocol: SsoConnectionCreatedEventDataProtocol;
+  status: SsoConnectionCreatedEventDataStatus;
+  /**
+     * @minimum 0
+     * @maximum 20
+     */
+  domains: number;
+}
+
+export type SsoConnectionCreatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.
+ */
+export interface SsoConnectionCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionCreatedEventTarget;
+  data: SsoConnectionCreatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionUpdatedEventDataProtocol = typeof SsoConnectionUpdatedEventDataProtocol[keyof typeof SsoConnectionUpdatedEventDataProtocol];
+
+
+export const SsoConnectionUpdatedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionUpdatedEventDataChangedItem = typeof SsoConnectionUpdatedEventDataChangedItem[keyof typeof SsoConnectionUpdatedEventDataChangedItem];
+
+
+export const SsoConnectionUpdatedEventDataChangedItem = {
+  name: 'name',
+  issuer: 'issuer',
+  clientId: 'clientId',
+  clientSecret: 'clientSecret',
+  saml: 'saml',
+  defaultRole: 'defaultRole',
+  enforced: 'enforced',
+  breakGlassRole: 'breakGlassRole',
+  trustIdpMfa: 'trustIdpMfa',
+  domains: 'domains',
+  status: 'status',
+  attributeMapping: 'attributeMapping',
+  groupRoles: 'groupRoles',
+  test: 'test',
+} as const;
+
+export type SsoConnectionUpdatedEventDataStatus = typeof SsoConnectionUpdatedEventDataStatus[keyof typeof SsoConnectionUpdatedEventDataStatus];
+
+
+export const SsoConnectionUpdatedEventDataStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEventData {
+  protocol: SsoConnectionUpdatedEventDataProtocol;
+  /**
+     * @minItems 1
+     * @maxItems 14
+     */
+  changed: SsoConnectionUpdatedEventDataChangedItem[];
+  status: SsoConnectionUpdatedEventDataStatus;
+  weakened?: boolean;
+}
+
+export type SsoConnectionUpdatedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was changed.
+ */
+export interface SsoConnectionUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionUpdatedEventTarget;
+  data: SsoConnectionUpdatedEventData;
+  test?: true;
+}
+
+export type SsoConnectionDeletedEventDataProtocol = typeof SsoConnectionDeletedEventDataProtocol[keyof typeof SsoConnectionDeletedEventDataProtocol];
+
+
+export const SsoConnectionDeletedEventDataProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEventData {
+  protocol: SsoConnectionDeletedEventDataProtocol;
+}
+
+export type SsoConnectionDeletedEventTarget = {
+  type: 'sso_connection';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A single sign-on connection was removed.
+ */
+export interface SsoConnectionDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sso_connection.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SsoConnectionDeletedEventTarget;
+  data: SsoConnectionDeletedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenCreatedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenCreatedEventTarget;
+  data: ScimTokenCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenRevokedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenRevokedEventTarget;
+  data: ScimTokenRevokedEventData;
+  test?: true;
+}
+
+/**
+ * A setup link was created for an organization (ADR 0067). The token is not in the event.
+ */
+export interface SetupLinkCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type SetupLinkCreatedEventTarget = {
+  type: 'setup_link';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A setup link was created for an organization (ADR 0067). The token is not in the event.
+ */
+export interface SetupLinkCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'setup_link.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SetupLinkCreatedEventTarget;
+  data: SetupLinkCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A setup link was revoked: the portal it opened refuses it from the next request.
+ */
+export interface SetupLinkRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type SetupLinkRevokedEventTarget = {
+  type: 'setup_link';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A setup link was revoked: the portal it opened refuses it from the next request.
+ */
+export interface SetupLinkRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'setup_link.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SetupLinkRevokedEventTarget;
+  data: SetupLinkRevokedEventData;
+  test?: true;
+}
+
+export type UserScimProvisionedEventDataMethod = typeof UserScimProvisionedEventDataMethod[keyof typeof UserScimProvisionedEventDataMethod];
+
+
+export const UserScimProvisionedEventDataMethod = {
+  created: 'created',
+  linked: 'linked',
+} as const;
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  method: UserScimProvisionedEventDataMethod;
+}
+
+export type UserScimProvisionedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_provisioned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimProvisionedEventTarget;
+  data: UserScimProvisionedEventData;
+  test?: true;
+}
+
+export type UserScimUpdatedEventDataChangedItem = typeof UserScimUpdatedEventDataChangedItem[keyof typeof UserScimUpdatedEventDataChangedItem];
+
+
+export const UserScimUpdatedEventDataChangedItem = {
+  name: 'name',
+  email: 'email',
+} as const;
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
+ */
+export interface UserScimUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: UserScimUpdatedEventDataChangedItem[];
+}
+
+export type UserScimUpdatedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
+ */
+export interface UserScimUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimUpdatedEventTarget;
+  data: UserScimUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupCreatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory pushed a new group. The group's name is not in the event.
+ */
+export interface ScimGroupCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupCreatedEventTarget;
+  data: ScimGroupCreatedEventData;
+  test?: true;
+}
+
+export type ScimGroupUpdatedEventDataChangedItem = typeof ScimGroupUpdatedEventDataChangedItem[keyof typeof ScimGroupUpdatedEventDataChangedItem];
+
+
+export const ScimGroupUpdatedEventDataChangedItem = {
+  displayName: 'displayName',
+  externalId: 'externalId',
+  members: 'members',
+} as const;
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  changed: ScimGroupUpdatedEventDataChangedItem[];
+}
+
+export type ScimGroupUpdatedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory changed. Which fields, never their values.
+ */
+export interface ScimGroupUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupUpdatedEventTarget;
+  data: ScimGroupUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimGroupDeletedEventTarget = {
+  type: 'scim_group';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A group of an organization's directory was removed.
+ */
+export interface ScimGroupDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_group.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimGroupDeletedEventTarget;
+  data: ScimGroupDeletedEventData;
+  test?: true;
+}
+
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEventData { [key: string]: unknown }
+
+export type OrganizationCreatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationCreatedEventTarget;
+  data: OrganizationCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationUpdatedEventDataChangedItem = typeof OrganizationUpdatedEventDataChangedItem[keyof typeof OrganizationUpdatedEventDataChangedItem];
+
+
+export const OrganizationUpdatedEventDataChangedItem = {
+  name: 'name',
+  slug: 'slug',
+} as const;
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEventData {
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationUpdatedEventDataChangedItem[];
+}
+
+export type OrganizationUpdatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationUpdatedEventTarget;
+  data: OrganizationUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEventData {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  memberships: number;
+}
+
+export type OrganizationDeletedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDeletedEventTarget;
+  data: OrganizationDeletedEventData;
+  test?: true;
+}
+
+/**
+ * @pattern ^[a-z][a-z0-9_]{0,31}$
+ */
+export type OrganizationRoleKey = string;
+
+export type OrganizationMembershipAddedEventDataVia = typeof OrganizationMembershipAddedEventDataVia[keyof typeof OrganizationMembershipAddedEventDataVia];
+
+
+export const OrganizationMembershipAddedEventDataVia = {
+  domain_auto_join: 'domain_auto_join',
+  domain_suggestion: 'domain_suggestion',
+} as const;
+
+/**
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
+ */
+export interface OrganizationMembershipAddedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+  via?: OrganizationMembershipAddedEventDataVia;
+}
+
+export type OrganizationMembershipAddedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
+ */
+export interface OrganizationMembershipAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipAddedEventTarget;
+  data: OrganizationMembershipAddedEventData;
+  test?: true;
+}
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+  previousRole: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRoleChangedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.role_changed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRoleChangedEventTarget;
+  data: OrganizationMembershipRoleChangedEventData;
+  test?: true;
+}
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRemovedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRemovedEventTarget;
+  data: OrganizationMembershipRemovedEventData;
+  test?: true;
+}
+
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+}
+
+export type OrganizationRoleCreatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleCreatedEventTarget;
+  data: OrganizationRoleCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationRoleUpdatedEventDataChangedItem = typeof OrganizationRoleUpdatedEventDataChangedItem[keyof typeof OrganizationRoleUpdatedEventDataChangedItem];
+
+
+export const OrganizationRoleUpdatedEventDataChangedItem = {
+  name: 'name',
+  permissions: 'permissions',
+} as const;
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationRoleUpdatedEventDataChangedItem[];
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+  weakened?: true;
+}
+
+export type OrganizationRoleUpdatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleUpdatedEventTarget;
+  data: OrganizationRoleUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEventData {
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationRoleDeletedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleDeletedEventTarget;
+  data: OrganizationRoleDeletedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainClaimedEventDataMode = typeof OrganizationDomainClaimedEventDataMode[keyof typeof OrganizationDomainClaimedEventDataMode];
+
+
+export const OrganizationDomainClaimedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainClaimedEventDataMode;
+}
+
+export type OrganizationDomainClaimedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.claimed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainClaimedEventTarget;
+  data: OrganizationDomainClaimedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainVerifiedEventDataMode = typeof OrganizationDomainVerifiedEventDataMode[keyof typeof OrganizationDomainVerifiedEventDataMode];
+
+
+export const OrganizationDomainVerifiedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainVerifiedEventDataMode;
+  reverified?: true;
+  weakened?: true;
+}
+
+export type OrganizationDomainVerifiedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.verified';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainVerifiedEventTarget;
+  data: OrganizationDomainVerifiedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainUpdatedEventDataMode = typeof OrganizationDomainUpdatedEventDataMode[keyof typeof OrganizationDomainUpdatedEventDataMode];
+
+
+export const OrganizationDomainUpdatedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export type OrganizationDomainUpdatedEventDataPreviousMode = typeof OrganizationDomainUpdatedEventDataPreviousMode[keyof typeof OrganizationDomainUpdatedEventDataPreviousMode];
+
+
+export const OrganizationDomainUpdatedEventDataPreviousMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainUpdatedEventDataMode;
+  previousMode: OrganizationDomainUpdatedEventDataPreviousMode;
+  weakened?: true;
+}
+
+export type OrganizationDomainUpdatedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainUpdatedEventTarget;
+  data: OrganizationDomainUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+}
+
+export type OrganizationDomainRemovedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainRemovedEventTarget;
+  data: OrganizationDomainRemovedEventData;
+  test?: true;
+}
+
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationCreatedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationCreatedEventTarget;
+  data: OrganizationInvitationCreatedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationAcceptedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.accepted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationAcceptedEventTarget;
+  data: OrganizationInvitationAcceptedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationDeclinedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.declined';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationDeclinedEventTarget;
+  data: OrganizationInvitationDeclinedEventData;
+  test?: true;
+}
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationRevokedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationRevokedEventTarget;
+  data: OrganizationInvitationRevokedEventData;
+  test?: true;
+}
+
 export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
 
 
@@ -1794,6 +2972,58 @@ export interface ProposalApprovedEvent {
   actor: EventActor;
   target: ProposalApprovedEventTarget;
   data: ProposalApprovedEventData;
+  test?: true;
+}
+
+export type ProposalRejectedEventDataOperation = typeof ProposalRejectedEventDataOperation[keyof typeof ProposalRejectedEventDataOperation];
+
+
+export const ProposalRejectedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalRejectedEventDataTargetType = typeof ProposalRejectedEventDataTargetType[keyof typeof ProposalRejectedEventDataTargetType];
+
+
+export const ProposalRejectedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+/**
+ * A human rejected an agent’s proposal. The actor is the human; nothing was carried out.
+ */
+export interface ProposalRejectedEventData {
+  operation: ProposalRejectedEventDataOperation;
+  targetType: ProposalRejectedEventDataTargetType;
+  targetId: string | OAuthProvider;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposedBy: string;
+}
+
+export type ProposalRejectedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A human rejected an agent’s proposal. The actor is the human; nothing was carried out.
+ */
+export interface ProposalRejectedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.rejected';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalRejectedEventTarget;
+  data: ProposalRejectedEventData;
   test?: true;
 }
 
@@ -1911,6 +3141,172 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
+export type AuditExportedEventDataPhase = typeof AuditExportedEventDataPhase[keyof typeof AuditExportedEventDataPhase];
+
+
+export const AuditExportedEventDataPhase = {
+  started: 'started',
+  finished: 'finished',
+} as const;
+
+export type AuditExportedEventDataFormat = typeof AuditExportedEventDataFormat[keyof typeof AuditExportedEventDataFormat];
+
+
+export const AuditExportedEventDataFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export type AuditExportedEventDataAction = typeof AuditExportedEventDataAction[keyof typeof AuditExportedEventDataAction];
+
+
+export const AuditExportedEventDataAction = {
+  usercreated: 'user.created',
+  userimported: 'user.imported',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export type AuditExportedEventDataActorType = typeof AuditExportedEventDataActorType[keyof typeof AuditExportedEventDataActorType];
+
+
+export const AuditExportedEventDataActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
+} as const;
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEventData {
+  phase?: AuditExportedEventDataPhase;
+  format: AuditExportedEventDataFormat;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  rowCount: number;
+  resumed: boolean;
+  action?: AuditExportedEventDataAction;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  actorType?: AuditExportedEventDataActorType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+}
+
+export type AuditExportedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'audit.exported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: AuditExportedEventTarget;
+  data: AuditExportedEventData;
+  test?: true;
+}
+
 /**
  * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
  */
@@ -1988,7 +3384,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | SetupLinkCreatedEvent | SetupLinkRevokedEvent | UserScimProvisionedEvent | UserScimUpdatedEvent | ScimGroupCreatedEvent | ScimGroupUpdatedEvent | ScimGroupDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalRejectedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2004,6 +3400,7 @@ export const HookBeforeSignUpDataMethod = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
 } as const;
 
 /**
@@ -2147,6 +3544,10 @@ export const ErrorCode = {
   passwordsequence: 'password.sequence',
   passwordreused: 'password.reused',
   passwordnot_set: 'password.not_set',
+  importunsupported_algorithm: 'import.unsupported_algorithm',
+  importhash_malformed: 'import.hash_malformed',
+  importhash_parameters_too_weak: 'import.hash_parameters_too_weak',
+  importhash_parameters_too_costly: 'import.hash_parameters_too_costly',
   verificationinvalid_code: 'verification.invalid_code',
   verificationexpired: 'verification.expired',
   verificationtoo_many_attempts: 'verification.too_many_attempts',
@@ -2195,6 +3596,53 @@ export const ErrorCode = {
   devicenonce_required: 'device.nonce_required',
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
+  userlast_organization_manager: 'user.last_organization_manager',
+  usermanaged: 'user.managed',
+  organizationdisabled: 'organization.disabled',
+  organizationslug_taken: 'organization.slug_taken',
+  organizationmember_exists: 'organization.member_exists',
+  organizationlast_manager: 'organization.last_manager',
+  organizationrole_unknown: 'organization.role_unknown',
+  organizationnot_a_member: 'organization.not_a_member',
+  organizationcreation_disabled: 'organization.creation_disabled',
+  organizationlimit_reached: 'organization.limit_reached',
+  organizationpersonal_account_disabled: 'organization.personal_account_disabled',
+  organizationrole_exists: 'organization.role_exists',
+  organizationrole_in_use: 'organization.role_in_use',
+  organizationrole_built_in: 'organization.role_built_in',
+  organizationrole_limit: 'organization.role_limit',
+  organizationpermission_required: 'organization.permission_required',
+  organizationrole_not_assignable: 'organization.role_not_assignable',
+  organizationinvitation_exists: 'organization.invitation_exists',
+  organizationinvitation_not_found: 'organization.invitation_not_found',
+  organizationinvitation_expired: 'organization.invitation_expired',
+  organizationinvitation_revoked: 'organization.invitation_revoked',
+  organizationinvitation_used: 'organization.invitation_used',
+  organizationinvitation_wrong_account: 'organization.invitation_wrong_account',
+  organizationinvitation_email_unverified: 'organization.invitation_email_unverified',
+  organizationinvitation_role_gone: 'organization.invitation_role_gone',
+  organizationdomain_public: 'organization.domain_public',
+  organizationdomain_taken: 'organization.domain_taken',
+  organizationdomain_address_mismatch: 'organization.domain_address_mismatch',
+  organizationdomain_limit: 'organization.domain_limit',
+  organizationsuggestion_unavailable: 'organization.suggestion_unavailable',
+  ssodisabled: 'sso.disabled',
+  ssoconnection_not_found: 'sso.connection_not_found',
+  ssoname_taken: 'sso.name_taken',
+  ssodomain_taken: 'sso.domain_taken',
+  ssodomain_not_verified: 'sso.domain_not_verified',
+  ssoissuer_not_allowed: 'sso.issuer_not_allowed',
+  ssosaml_invalid: 'sso.saml_invalid',
+  ssoconnection_in_use: 'sso.connection_in_use',
+  ssoinvalid_transition: 'sso.invalid_transition',
+  ssourl_not_https: 'sso.url_not_https',
+  ssotest_required: 'sso.test_required',
+  ssotest_not_found: 'sso.test_not_found',
+  ssorole_not_allowed: 'sso.role_not_allowed',
+  ssounavailable: 'sso.unavailable',
+  ssoprovider_error: 'sso.provider_error',
+  ssouser_not_provisioned: 'sso.user_not_provisioned',
+  ssoemail_domain_mismatch: 'sso.email_domain_mismatch',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -2591,6 +4039,10 @@ export interface AccessTokenClaims {
   amr?: string[];
   sp?: string;
   cnf?: AccessTokenClaimsCnf;
+  org_id?: string;
+  sso_conn?: string;
+  org_role?: string;
+  org_perms?: string[];
   ext?: AccessTokenClaimsExt;
 }
 
@@ -2647,6 +4099,7 @@ export const FirstFactorStrategy = {
   oauth_linkedin: 'oauth_linkedin',
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
+  sso: 'sso',
 } as const;
 
 export type PreparedFirstFactorStrategy = typeof PreparedFirstFactorStrategy[keyof typeof PreparedFirstFactorStrategy];
@@ -2871,6 +4324,11 @@ export interface OAuthStartRequest {
   redirectUrl: string;
 }
 
+export interface SsoStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
 export interface OAuthExchangeRequest {
   /**
      * @minLength 1
@@ -3020,6 +4478,117 @@ export interface CreateUserRequest {
   emailVerified?: boolean;
 }
 
+export type ImportSkipReason = typeof ImportSkipReason[keyof typeof ImportSkipReason];
+
+
+export const ImportSkipReason = {
+  email_exists: 'email_exists',
+  repeated_in_batch: 'repeated_in_batch',
+} as const;
+
+export type ImportRowResult = {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'created';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'skipped';
+  reason: ImportSkipReason;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id?: string;
+  sameExternalId?: boolean;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'refused';
+  code: string;
+  message: string;
+};
+
+export interface ImportUsersResult {
+  results: ImportRowResult[];
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  created: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  skipped: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  refused: number;
+}
+
+export type ImportPasswordParams = {[key: string]: string | number};
+
+export interface ImportPassword {
+  /** @maxLength 64 */
+  algorithm: string;
+  /** @maxLength 1024 */
+  hash: string;
+  params?: ImportPasswordParams;
+}
+
+export type ImportUserRowMetadata = {[key: string]: unknown};
+
+export interface ImportUserRow {
+  /** @maxLength 320 */
+  email: string;
+  emailVerified: boolean;
+  /** @maxLength 200 */
+  name?: string;
+  metadata?: ImportUserRowMetadata;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  externalId?: string;
+  password?: ImportPassword;
+}
+
+export interface FirebaseScryptParams {
+  /** @maxLength 512 */
+  signerKey: string;
+  /** @maxLength 256 */
+  saltSeparator: string;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  rounds: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  memCost: number;
+}
+
+export interface ImportUsersRequest {
+  /**
+     * @minItems 1
+     * @maxItems 500
+     */
+  users: ImportUserRow[];
+  firebaseScrypt?: FirebaseScryptParams;
+}
+
 export interface Passkey {
   id: string;
   name: string;
@@ -3163,6 +4732,7 @@ export type ActivityType = typeof ActivityType[keyof typeof ActivityType];
 
 export const ActivityType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -3174,6 +4744,7 @@ export const ActivityType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -3206,10 +4777,41 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -3223,6 +4825,8 @@ export const AuditLogQueryActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export interface AuditLogQuery {
@@ -3246,6 +4850,45 @@ export interface AuditLogQuery {
      * @maximum 100
      */
   size?: number;
+}
+
+export type AuditExportRequestActorType = typeof AuditExportRequestActorType[keyof typeof AuditExportRequestActorType];
+
+
+export const AuditExportRequestActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
+} as const;
+
+export type AuditExportRequestFormat = typeof AuditExportRequestFormat[keyof typeof AuditExportRequestFormat];
+
+
+export const AuditExportRequestFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export interface AuditExportRequest {
+  action?: ActivityType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  actorType?: AuditExportRequestActorType;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  format?: AuditExportRequestFormat;
+  /** @pattern ^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)~([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$ */
+  after?: string;
 }
 
 export type SignUpPasswordMode = typeof SignUpPasswordMode[keyof typeof SignUpPasswordMode];
@@ -3411,6 +5054,9 @@ export interface EmailTemplates {
   identity_unlinked?: EmailTemplate;
   email_in_use?: EmailTemplate;
   email_added?: EmailTemplate;
+  organization_domain_verification?: EmailTemplate;
+  organization_domain_expiring?: EmailTemplate;
+  organization_invitation?: EmailTemplate;
 }
 
 export interface EmailSettings {
@@ -3492,6 +5138,19 @@ export type EnvironmentSettingsStateSettingsAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsStateSettingsOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
+export type EnvironmentSettingsStateSettingsSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3534,6 +5193,8 @@ export type EnvironmentSettingsStateSettings = {
   urls: EnvironmentSettingsStateSettingsUrls;
   audit?: EnvironmentSettingsStateSettingsAudit;
   agents?: EnvironmentSettingsStateSettingsAgents;
+  organizations?: EnvironmentSettingsStateSettingsOrganizations;
+  sso?: EnvironmentSettingsStateSettingsSso;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -3624,6 +5285,19 @@ export type EnvironmentSettingsInputAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsInputOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
+export type EnvironmentSettingsInputSso = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3666,6 +5340,8 @@ export interface EnvironmentSettingsInput {
   urls?: EnvironmentSettingsInputUrls;
   audit?: EnvironmentSettingsInputAudit;
   agents?: EnvironmentSettingsInputAgents;
+  organizations?: EnvironmentSettingsInputOrganizations;
+  sso?: EnvironmentSettingsInputSso;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -3698,6 +5374,12 @@ export type ClientConfigPhone = {
   enabled: boolean;
 };
 
+export type ClientConfigOrganizations = {
+  enabled: boolean;
+  allowUserCreated: boolean;
+  personalAccount: boolean;
+};
+
 export interface ClientConfig {
   app: ClientConfigApp;
   signIn: ClientConfigSignIn;
@@ -3705,6 +5387,7 @@ export interface ClientConfig {
   password: PasswordPolicy;
   mfa?: ClientConfigMfa;
   phone?: ClientConfigPhone;
+  organizations?: ClientConfigOrganizations;
 }
 
 export interface OAuthProviderSettings {
@@ -3979,6 +5662,7 @@ export type CreateWebhookEndpointRequestEventTypesItem = typeof CreateWebhookEnd
 
 export const CreateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -3990,6 +5674,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4022,10 +5707,41 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4039,7 +5755,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 50
+     * @maxItems 83
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4050,6 +5766,7 @@ export type UpdateWebhookEndpointRequestEventTypesItem = typeof UpdateWebhookEnd
 
 export const UpdateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4061,6 +5778,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4093,10 +5811,41 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4110,7 +5859,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 50
+     * @maxItems 83
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4239,6 +5988,7 @@ export type SendTestWebhookRequestEventType = typeof SendTestWebhookRequestEvent
 
 export const SendTestWebhookRequestEventType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4250,6 +6000,7 @@ export const SendTestWebhookRequestEventType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  usersso_linked: 'user.sso_linked',
   useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
@@ -4282,10 +6033,41 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  setup_linkcreated: 'setup_link.created',
+  setup_linkrevoked: 'setup_link.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
+  userscim_updated: 'user.scim_updated',
+  scim_groupcreated: 'scim_group.created',
+  scim_groupupdated: 'scim_group.updated',
+  scim_groupdeleted: 'scim_group.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
+  proposalrejected: 'proposal.rejected',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4453,6 +6235,384 @@ export interface UpdateHookRequest {
   failureMode?: UpdateHookRequestFailureMode;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  createdBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationList {
+  meta: PaginationMeta;
+  data: Organization[];
+}
+
+export interface OrganizationSearchQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+  /** @maxLength 100 */
+  q?: string;
+}
+
+/**
+ * @minLength 2
+ * @maxLength 48
+ * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+ */
+export type OrganizationSlug = string;
+
+export interface CreateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  slug: OrganizationSlug;
+}
+
+export interface UpdateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  slug?: OrganizationSlug;
+}
+
+export interface OrganizationMembership {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationMembershipList {
+  meta: PaginationMeta;
+  data: OrganizationMembership[];
+}
+
+export interface OrganizationPageQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+}
+
+export interface AddOrganizationMemberRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export interface UpdateOrganizationMemberRequest {
+  role: OrganizationRoleKey;
+}
+
+export interface OrganizationRole {
+  id: string;
+  key: string;
+  name: string;
+  permissions: string[];
+  builtIn: boolean;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationRoleList {
+  data: OrganizationRole[];
+}
+
+/**
+ * @maxItems 32
+ */
+export type OrganizationRolePermissions = string[];
+
+export interface CreateOrganizationRoleRequest {
+  key: OrganizationRoleKey;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  permissions: OrganizationRolePermissions;
+}
+
+export interface UpdateOrganizationRoleRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  permissions?: OrganizationRolePermissions;
+}
+
+export interface UserOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface UserOrganizationList {
+  /** @nullable */
+  activeOrganizationId: string | null;
+  meta: PaginationMeta;
+  data: UserOrganization[];
+}
+
+export interface ActiveOrganization {
+  sessionId: string;
+  /** @nullable */
+  organizationId: string | null;
+  accessToken?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  accessTokenExpiresAt?: string;
+}
+
+export interface SetActiveOrganizationRequest {
+  organizationId: string | null;
+}
+
+export type OrganizationDomainMode = typeof OrganizationDomainMode[keyof typeof OrganizationDomainMode];
+
+
+export const OrganizationDomainMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export type OrganizationDomainStatus = typeof OrganizationDomainStatus[keyof typeof OrganizationDomainStatus];
+
+
+export const OrganizationDomainStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  needs_reverification: 'needs_reverification',
+} as const;
+
+export interface OrganizationDomain {
+  id: string;
+  domain: string;
+  mode: OrganizationDomainMode;
+  status: OrganizationDomainStatus;
+  verifiedAt: string | null;
+  expiresAt: string | null;
+  codeExpiresAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationDomainList {
+  data: OrganizationDomain[];
+}
+
+/**
+ * @maxLength 506
+ */
+export type OrganizationDomainName = string;
+
+export interface StartOrganizationDomainRequest {
+  domain: OrganizationDomainName;
+  /** @maxLength 320 */
+  email: string;
+  mode: OrganizationDomainMode;
+}
+
+export interface VerifyOrganizationDomainRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface UpdateOrganizationDomainRequest {
+  mode: OrganizationDomainMode;
+}
+
+export interface OrganizationSuggestion {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface OrganizationSuggestionList {
+  data: OrganizationSuggestion[];
+}
+
+export type OrganizationInvitationStatus = typeof OrganizationInvitationStatus[keyof typeof OrganizationInvitationStatus];
+
+
+export const OrganizationInvitationStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitation {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string;
+  status: OrganizationInvitationStatus;
+  /** @nullable */
+  invitedBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface OrganizationInvitationList {
+  meta: PaginationMeta;
+  data: OrganizationInvitation[];
+}
+
+export type OrganizationInvitationQueryStatus = typeof OrganizationInvitationQueryStatus[keyof typeof OrganizationInvitationQueryStatus];
+
+
+export const OrganizationInvitationQueryStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitationQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+  status?: OrganizationInvitationQueryStatus;
+}
+
+export interface CreateOrganizationInvitationRequest {
+  /** @maxLength 320 */
+  email: string;
+  role: OrganizationRoleKey;
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  role: string;
+  email: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface InvitationTokenRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  token: string;
+}
+
+export interface AcceptedInvitation {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface MyOrganizationInvitation {
+  id: string;
+  organizationName: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface MyOrganizationInvitationList {
+  meta: PaginationMeta;
+  data: MyOrganizationInvitation[];
+}
+
+export interface OrganizationMember {
+  userId: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  email: string | null;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface OrganizationMemberList {
+  meta: PaginationMeta;
+  data: OrganizationMember[];
+}
+
+export interface AssignableRole {
+  key: string;
+  name: string;
+}
+
+export interface AssignableRoleList {
+  data: AssignableRole[];
+}
+
+export interface UserMembership {
+  organizationId: string;
+  name: string;
+  slug: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  joinedAt: string;
+}
+
+export interface UserMembershipList {
+  meta: PaginationMeta;
+  data: UserMembership[];
+}
+
 export type AppleAppSiteAssociationWebcredentials = {
   /** @minItems 1 */
   apps: string[];
@@ -4585,6 +6745,544 @@ export interface UpdateNativeAppRequest {
   appLinkPaths?: string[];
 }
 
+export type SamlConnectionCertificatesItem = {
+  fingerprint: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  notAfter: string;
+  expired: boolean;
+};
+
+export interface SamlConnection {
+  idpEntityId: string;
+  ssoUrl: string;
+  /** @nullable */
+  metadataUrl: string | null;
+  certificates: SamlConnectionCertificatesItem[];
+  spEntityId: string;
+  acsUrl: string;
+  spMetadataUrl: string;
+}
+
+export type SsoAttributeMappingIdp = typeof SsoAttributeMappingIdp[keyof typeof SsoAttributeMappingIdp];
+
+
+export const SsoAttributeMappingIdp = {
+  okta: 'okta',
+  entra: 'entra',
+  google_workspace: 'google_workspace',
+  jumpcloud: 'jumpcloud',
+  onelogin: 'onelogin',
+  ping: 'ping',
+  generic: 'generic',
+} as const;
+
+export interface SsoAttributeMapping {
+  idp?: SsoAttributeMappingIdp;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  email?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  firstName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  lastName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  groups?: string;
+}
+
+export type SsoConnectionProtocol = typeof SsoConnectionProtocol[keyof typeof SsoConnectionProtocol];
+
+
+export const SsoConnectionProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export type SsoConnectionStatus = typeof SsoConnectionStatus[keyof typeof SsoConnectionStatus];
+
+
+export const SsoConnectionStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface SsoConnection {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol: SsoConnectionProtocol;
+  name: string;
+  status: SsoConnectionStatus;
+  issuer: string;
+  clientId: string;
+  clientSecretSet: boolean;
+  saml: SamlConnection | null;
+  /** @nullable */
+  redirectUri: string | null;
+  attributeMapping: SsoAttributeMapping | null;
+  defaultRole: string;
+  enforced: boolean;
+  /** @nullable */
+  breakGlassRole: string | null;
+  trustIdpMfa: boolean;
+  domains: string[];
+  tested: boolean;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface SsoConnectionList {
+  connections: SsoConnection[];
+}
+
+export interface SamlSettingsInput {
+  /**
+     * @minLength 1
+     * @maxLength 524288
+     */
+  metadataXml?: string;
+  /** @maxLength 2048 */
+  metadataUrl?: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  idpEntityId?: string;
+  /** @maxLength 2048 */
+  ssoUrl?: string;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     * @items.minLength 1
+     * @items.maxLength 16384
+     */
+  certificates?: string[];
+}
+
+export type CreateSsoConnectionRequestProtocol = typeof CreateSsoConnectionRequestProtocol[keyof typeof CreateSsoConnectionRequestProtocol];
+
+
+export const CreateSsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface CreateSsoConnectionRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  protocol?: CreateSsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export type SsoGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+};
+
+export interface SsoGroupRoles {
+  /** @maxItems 100 */
+  mappings: SsoGroupRolesMappingsItem[];
+}
+
+export type UpdateSsoConnectionRequestStatus = typeof UpdateSsoConnectionRequestStatus[keyof typeof UpdateSsoConnectionRequestStatus];
+
+
+export const UpdateSsoConnectionRequestStatus = {
+  draft: 'draft',
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface UpdateSsoConnectionRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  enforced?: boolean;
+  breakGlassRole?: OrganizationRoleKey | null;
+  trustIdpMfa?: boolean;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: UpdateSsoConnectionRequestStatus;
+}
+
+export interface SsoTestStart {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  authorizationUrl: string;
+}
+
+export interface AdminSsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl?: string;
+}
+
+export type SsoTestResultStatus = typeof SsoTestResultStatus[keyof typeof SsoTestResultStatus];
+
+
+export const SsoTestResultStatus = {
+  pending: 'pending',
+  passed: 'passed',
+  failed: 'failed',
+} as const;
+
+export type SsoTestResultReason = typeof SsoTestResultReason[keyof typeof SsoTestResultReason] | null;
+
+
+export const SsoTestResultReason = {
+  wrong_audience: 'wrong_audience',
+  wrong_issuer: 'wrong_issuer',
+  wrong_recipient: 'wrong_recipient',
+  unsigned_assertion: 'unsigned_assertion',
+  signature_invalid: 'signature_invalid',
+  signature_algorithm: 'signature_algorithm',
+  certificate_not_trusted: 'certificate_not_trusted',
+  certificate_expired: 'certificate_expired',
+  assertion_expired: 'assertion_expired',
+  clock_skew: 'clock_skew',
+  response_not_to_this_request: 'response_not_to_this_request',
+  replayed: 'replayed',
+  idp_refused: 'idp_refused',
+  encrypted_assertion: 'encrypted_assertion',
+  malformed_response: 'malformed_response',
+  discovery_failed: 'discovery_failed',
+  token_exchange_failed: 'token_exchange_failed',
+  no_id_token: 'no_id_token',
+  id_token_invalid: 'id_token_invalid',
+  email_missing: 'email_missing',
+  email_outside_domains: 'email_outside_domains',
+} as const;
+
+export type SsoTestResultAttributesItem = {
+  name: string;
+  values: string[];
+};
+
+export type SsoTestResultMapped = {
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  givenName: string | null;
+  /** @nullable */
+  familyName: string | null;
+  emailOnVerifiedDomain: boolean;
+} | null;
+
+export interface SsoTestResult {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  status: SsoTestResultStatus;
+  reason: SsoTestResultReason;
+  /** @nullable */
+  message: string | null;
+  attributes: SsoTestResultAttributesItem[];
+  groups: string[];
+  mapped: SsoTestResultMapped;
+}
+
+export type CreateMySsoConnectionRequestProtocol = typeof CreateMySsoConnectionRequestProtocol[keyof typeof CreateMySsoConnectionRequestProtocol];
+
+
+export const CreateMySsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface CreateMySsoConnectionRequest {
+  protocol?: CreateMySsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export interface SsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface ScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface ScimTokenList {
+  tokens: ScimToken[];
+}
+
+export interface CreatedScimToken {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell tokens apart in a list. */
+  prefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The bearer token. Shown once; only its hash is stored. */
+  token: string;
+  /** The base URL to give the identity provider. */
+  scimBaseUrl: string;
+}
+
+export interface CreateScimTokenRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface SetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface SetupLinkList {
+  links: SetupLink[];
+}
+
+export interface CreatedSetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The setup token. Shown once; only its hash is stored. */
+  token: string;
+  /** The address to send to the IT administrator. The token is in its fragment. */
+  url: string;
+}
+
+export interface CreateSetupLinkRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export interface CreateMySetupLinkRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export type SetupPortalOrganization = {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  name: string;
+};
+
+export interface SetupPortal {
+  organization: SetupPortalOrganization;
+  /** The organization’s verified domains. */
+  domains: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  connections: SsoConnection[];
+}
+
+export type SetupConnectionCreateProtocol = typeof SetupConnectionCreateProtocol[keyof typeof SetupConnectionCreateProtocol];
+
+
+export const SetupConnectionCreateProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface SetupConnectionCreate {
+  protocol?: SetupConnectionCreateProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export interface SetupScimTokenCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
+export interface SetupConnectionUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: 'active';
+}
+
+export type SetupGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+  locked: boolean;
+};
+
+export interface SetupGroupRoles {
+  mappings: SetupGroupRolesMappingsItem[];
+}
+
 export interface SmsPrefixUsage {
   /** @pattern ^\+[0-9]{1,4}$ */
   prefix: string;
@@ -4701,7 +7399,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_domain_expiring' | 'organization_invitation';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -4747,6 +7445,7 @@ export const ProposalStatus = {
   approved: 'approved',
   executed: 'executed',
   failed: 'failed',
+  rejected: 'rejected',
 } as const;
 
 export type ProposalProposedBy = {
@@ -5146,6 +7845,8 @@ export const ListAuditLogsActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
+  setup_link: 'setup_link',
 } as const;
 
 export type ListWebhookDeliveriesParams = {
@@ -5171,6 +7872,109 @@ export const ListWebhookDeliveriesState = {
   delivered: 'delivered',
   failed: 'failed',
 } as const;
+
+export type ListOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+/**
+ * @maxLength 100
+ */
+q?: string;
+};
+
+export type ListOrganizationMembershipsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListOrganizationInvitationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+status?: ListOrganizationInvitationsStatus;
+};
+
+export type ListOrganizationInvitationsStatus = typeof ListOrganizationInvitationsStatus[keyof typeof ListOrganizationInvitationsStatus];
+
+
+export const ListOrganizationInvitationsStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export type ListUserOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListSsoConnectionsParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId?: string;
+};
+
+export type ListScimTokensParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeScimTokenParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type ListSetupLinksParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeSetupLinkParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
 
 export type GetSmsUsageParams = {
 /**
@@ -6469,6 +9273,95 @@ export const useCreateUser = <TError = ErrorEnvelope,
       return useMutation(getCreateUserMutationOptions(options), queryClient);
     }
 
+export const getImportUsersUrl = () => {
+
+
+
+
+  return `/v1/admin/users/import`
+}
+
+/**
+ * Creates up to 500 users in one call, with the password hash they have in the system they come from (`bcrypt`, `argon2id` or `argon2i`). The call is not all-or-nothing: every row is created or not on its own, and the answer says what became of each: `created` (with the user’s id), `skipped` (the normalized email exists already, or an earlier row of the call has it) or `refused` (with a contract error code: an invalid email, a malformed hash, an algorithm that is not supported, parameters below the minimum or above the maximum). Importing the same file again creates nobody twice. An imported user signs in with their old password; the first successful sign-in replaces the hash with an argon2id one. Each user is recorded as `user.imported`, not `user.created`, so a migration does not fire a `user.created` delivery per user. A hash is never returned.
+ * @summary Import users
+ */
+export const importUsers = async (importUsersRequest: ImportUsersRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<ImportUsersResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<ImportUsersResult>(getImportUsersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(importUsersRequest)
+  }
+);}
+
+
+
+
+
+export const getImportUsersMutationKey = () => ['importUsers'] as const;
+
+export const getImportUsersMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext> => {
+
+const mutationKey = getImportUsersMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importUsers>>, ImportUsersMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  importUsers(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportUsersMutationResult = NonNullable<Awaited<ReturnType<typeof importUsers>>>
+    export type ImportUsersMutationBody = ImportUsersRequest
+    export type ImportUsersMutationError = ErrorEnvelope
+    export type ImportUsersMutationVariables = {data: ImportUsersRequest}
+
+    /**
+ * @summary Import users
+ */
+export const useImportUsers = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof importUsers>>,
+        TError,
+        ImportUsersMutationVariables,
+        TContext
+      > => {
+      return useMutation(getImportUsersMutationOptions(options), queryClient);
+    }
+
 export const getGetUserUrl = (userId: string,) => {
 
 
@@ -6579,7 +9472,7 @@ export const getDeleteUserUrl = (userId: string,) => {
 }
 
 /**
- * Ends the user’s sessions and deletes them with everything they own.
+ * Ends the user’s sessions and deletes them with everything they own. Refused with `user.last_organization_manager` (409, `params.organizationIds`) while they are the only member who holds `org:sys:memberships:manage` of an organization: add another manager or delete the organization first. No user data is deleted then.
  * @summary Delete a user
  */
 export const deleteUser = async (userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
@@ -7264,6 +10157,95 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
+
+export const getExportAuditLogsUrl = () => {
+
+
+
+
+  return `/v1/admin/audit-logs/export`
+}
+
+/**
+ * Streams the secret key’s environment’s audit log, **oldest first**, as NDJSON (one entry per line, the fields of the list) or CSV (a header, then one row per entry; a cell that a spreadsheet would run as a formula is prefixed with `'`). Takes the list’s filters and `organizationId`. One request writes at most 100,000 entries: to continue, send `after` with the last entry’s `occurredAt` and `id` joined by `~`. Every export is itself recorded (`audit.exported`) with its filters and row count. A POST because it writes that entry, which also means an agent key is refused.
+ * @summary Export the audit log
+ */
+export const exportAuditLogs = async (auditExportRequest: AuditExportRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Response> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Response>(getExportAuditLogsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(auditExportRequest)
+  }
+);}
+
+
+
+
+
+export const getExportAuditLogsMutationKey = () => ['exportAuditLogs'] as const;
+
+export const getExportAuditLogsMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext> => {
+
+const mutationKey = getExportAuditLogsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportAuditLogs>>, ExportAuditLogsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  exportAuditLogs(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportAuditLogsMutationResult = NonNullable<Awaited<ReturnType<typeof exportAuditLogs>>>
+    export type ExportAuditLogsMutationBody = AuditExportRequest
+    export type ExportAuditLogsMutationError = ErrorEnvelope
+    export type ExportAuditLogsMutationVariables = {data: AuditExportRequest}
+
+    /**
+ * @summary Export the audit log
+ */
+export const useExportAuditLogs = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof exportAuditLogs>>,
+        TError,
+        ExportAuditLogsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExportAuditLogsMutationOptions(options), queryClient);
+    }
 
 export const getGetEnvironmentSettingsUrl = () => {
 
@@ -9285,6 +12267,2159 @@ export const useDeleteHook = <TError = ErrorEnvelope,
       return useMutation(getDeleteHookMutationOptions(options), queryClient);
     }
 
+export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations?${stringifiedParams}` : `/v1/admin/organizations`
+}
+
+/**
+ * Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps the organizations whose name or slug starts with it (ignoring case), counted and paged as a match. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organizations
+ */
+export const listOrganizations = async (params?: ListOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationList> => {
+
+  return dashboardFetch<OrganizationList>(getListOrganizationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationsQueryKey = (params?: ListOrganizationsParams,) => {
+    return [
+    `/v1/admin/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizations>>> = ({ signal }) => listOrganizations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizations>>>
+export type ListOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params: undefined |  ListOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organizations
+ */
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationUrl = () => {
+
+
+
+
+  return `/v1/admin/organizations`
+}
+
+/**
+ * Creates an organization with no member. The `slug` is lower-case letters and digits joined by single hyphens, 2 to 48 characters, and unique in the environment (a taken one answers `organization.slug_taken`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Create an organization
+ */
+export const createOrganization = async (createOrganizationRequest: CreateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getCreateOrganizationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationMutationKey = () => ['createOrganization'] as const;
+
+export const getCreateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganization>>, CreateOrganizationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganization(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganization>>>
+    export type CreateOrganizationMutationBody = CreateOrganizationRequest
+    export type CreateOrganizationMutationError = ErrorEnvelope
+    export type CreateOrganizationMutationVariables = {data: CreateOrganizationRequest}
+
+    /**
+ * @summary Create an organization
+ */
+export const useCreateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganization>>,
+        TError,
+        CreateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * One organization of the environment. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization
+ */
+export const getOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+  return dashboardFetch<Organization>(getGetOrganizationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationQueryOptions = <TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganization>>> = ({ signal }) => getOrganization(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganization>>>
+export type GetOrganizationQueryError = ErrorEnvelope
+
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization
+ */
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Changes the organization’s `name`, its `slug` or both. A request that changes nothing writes nothing. Recorded in the audit log by the names of the fields that changed, never their values. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Rename an organization
+ */
+export const updateOrganization = async (id: string,
+    updateOrganizationRequest: UpdateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getUpdateOrganizationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMutationKey = () => ['updateOrganization'] as const;
+
+export const getUpdateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganization>>, UpdateOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganization>>>
+    export type UpdateOrganizationMutationBody = UpdateOrganizationRequest
+    export type UpdateOrganizationMutationError = ErrorEnvelope
+    export type UpdateOrganizationMutationVariables = {id: string;data: UpdateOrganizationRequest}
+
+    /**
+ * @summary Rename an organization
+ */
+export const useUpdateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganization>>,
+        TError,
+        UpdateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Deletes the organization and its memberships. The users keep their accounts; a session that had the organization active leaves it at its next refresh. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete an organization
+ */
+export const deleteOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationMutationKey = () => ['deleteOrganization'] as const;
+
+export const getDeleteOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganization>>, DeleteOrganizationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganization>>>
+
+    export type DeleteOrganizationMutationError = ErrorEnvelope
+    export type DeleteOrganizationMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an organization
+ */
+export const useDeleteOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganization>>,
+        TError,
+        DeleteOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationMembershipsUrl = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/memberships?${stringifiedParams}` : `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * The organization’s memberships, oldest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s members
+ */
+export const listOrganizationMemberships = async (id: string,
+    params?: ListOrganizationMembershipsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembershipList> => {
+
+  return dashboardFetch<OrganizationMembershipList>(getListOrganizationMembershipsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationMembershipsQueryKey = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/memberships`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationMembershipsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationMembershipsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationMemberships>>> = ({ signal }) => listOrganizationMemberships(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationMembershipsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationMemberships>>>
+export type ListOrganizationMembershipsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationMembershipsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s members
+ */
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationMembershipsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddOrganizationMemberUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * Adds an existing user with the role of the given key (`admin` and `member` are built in). A user who is a member already answers `organization.member_exists` (409), and a key that names no role `organization.role_unknown` (422). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Add a member to an organization
+ */
+export const addOrganizationMember = async (id: string,
+    addOrganizationMemberRequest: AddOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getAddOrganizationMemberUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getAddOrganizationMemberMutationKey = () => ['addOrganizationMember'] as const;
+
+export const getAddOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getAddOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addOrganizationMember>>, AddOrganizationMemberMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  addOrganizationMember(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof addOrganizationMember>>>
+    export type AddOrganizationMemberMutationBody = AddOrganizationMemberRequest
+    export type AddOrganizationMemberMutationError = ErrorEnvelope
+    export type AddOrganizationMemberMutationVariables = {id: string;data: AddOrganizationMemberRequest}
+
+    /**
+ * @summary Add a member to an organization
+ */
+export const useAddOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addOrganizationMember>>,
+        TError,
+        AddOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Gives the member another role. The member’s sessions carry it from their next refresh. The last member who holds `org:sys:memberships:manage` cannot be moved to a role without it (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a member’s role
+ */
+export const updateOrganizationMember = async (id: string,
+    userId: string,
+    updateOrganizationMemberRequest: UpdateOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getUpdateOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMemberMutationKey = () => ['updateOrganizationMember'] as const;
+
+export const getUpdateOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationMember>>, UpdateOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId,data} = props ?? {};
+
+          return  updateOrganizationMember(id,userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationMember>>>
+    export type UpdateOrganizationMemberMutationBody = UpdateOrganizationMemberRequest
+    export type UpdateOrganizationMemberMutationError = ErrorEnvelope
+    export type UpdateOrganizationMemberMutationVariables = {id: string;userId: string;data: UpdateOrganizationMemberRequest}
+
+    /**
+ * @summary Change a member’s role
+ */
+export const useUpdateOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationMember>>,
+        TError,
+        UpdateOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Removes the membership. The user keeps their account; a session that had the organization active leaves it at its next refresh. The last member who holds `org:sys:memberships:manage` cannot be removed (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a member from an organization
+ */
+export const removeOrganizationMember = async (id: string,
+    userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationMemberMutationKey = () => ['removeOrganizationMember'] as const;
+
+export const getRemoveOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationMember>>, RemoveOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId} = props ?? {};
+
+          return  removeOrganizationMember(id,userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationMember>>>
+
+    export type RemoveOrganizationMemberMutationError = ErrorEnvelope
+    export type RemoveOrganizationMemberMutationVariables = {id: string;userId: string}
+
+    /**
+ * @summary Remove a member from an organization
+ */
+export const useRemoveOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationMember>>,
+        TError,
+        RemoveOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationRolesUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * The environment’s roles: the built-in `admin` and `member` first, then the custom roles by key. Roles are shared by all the environment’s organizations. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organization roles
+ */
+export const listOrganizationRoles = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRoleList> => {
+
+  return dashboardFetch<OrganizationRoleList>(getListOrganizationRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationRolesQueryKey = () => {
+    return [
+    `/v1/admin/organization-roles`
+    ] as const;
+    }
+
+
+export const getListOrganizationRolesQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationRolesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationRoles>>> = ({ signal }) => listOrganizationRoles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationRolesQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationRoles>>>
+export type ListOrganizationRolesQueryError = ErrorEnvelope
+
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organization roles
+ */
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationRolesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationRoleUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Define a custom role
+ */
+export const createOrganizationRole = async (createOrganizationRoleRequest: CreateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getCreateOrganizationRoleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationRoleMutationKey = () => ['createOrganizationRole'] as const;
+
+export const getCreateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganizationRole>>, CreateOrganizationRoleMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganizationRole(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganizationRole>>>
+    export type CreateOrganizationRoleMutationBody = CreateOrganizationRoleRequest
+    export type CreateOrganizationRoleMutationError = ErrorEnvelope
+    export type CreateOrganizationRoleMutationVariables = {data: CreateOrganizationRoleRequest}
+
+    /**
+ * @summary Define a custom role
+ */
+export const useCreateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganizationRole>>,
+        TError,
+        CreateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * One role of the environment, by its key. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization role
+ */
+export const getOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+  return dashboardFetch<OrganizationRole>(getGetOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationRoleQueryKey = (key: OrganizationRoleKey,) => {
+    return [
+    `/v1/admin/organization-roles/${key}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationRoleQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRoleQueryKey(key);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRole>>> = ({ signal }) => getOrganizationRole(key, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: key !== null && key !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationRoleQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganizationRole>>>
+export type GetOrganizationRoleQueryError = ErrorEnvelope
+
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization role
+ */
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationRoleQueryOptions(key,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a custom role
+ */
+export const updateOrganizationRole = async (key: OrganizationRoleKey,
+    updateOrganizationRoleRequest: UpdateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getUpdateOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationRoleMutationKey = () => ['updateOrganizationRole'] as const;
+
+export const getUpdateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationRole>>, UpdateOrganizationRoleMutationVariables> = (props) => {
+          const {key,data} = props ?? {};
+
+          return  updateOrganizationRole(key,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationRole>>>
+    export type UpdateOrganizationRoleMutationBody = UpdateOrganizationRoleRequest
+    export type UpdateOrganizationRoleMutationError = ErrorEnvelope
+    export type UpdateOrganizationRoleMutationVariables = {key: OrganizationRoleKey;data: UpdateOrganizationRoleRequest}
+
+    /**
+ * @summary Change a custom role
+ */
+export const useUpdateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationRole>>,
+        TError,
+        UpdateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Deletes a custom role that no member holds, in any organization of the environment: one that is still assigned is refused (`organization.role_in_use`, 409) and nothing is changed. `admin` and `member` cannot be deleted (`organization.role_built_in`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete a custom role
+ */
+export const deleteOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationRoleMutationKey = () => ['deleteOrganizationRole'] as const;
+
+export const getDeleteOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganizationRole>>, DeleteOrganizationRoleMutationVariables> = (props) => {
+          const {key} = props ?? {};
+
+          return  deleteOrganizationRole(key,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganizationRole>>>
+
+    export type DeleteOrganizationRoleMutationError = ErrorEnvelope
+    export type DeleteOrganizationRoleMutationVariables = {key: OrganizationRoleKey}
+
+    /**
+ * @summary Delete a custom role
+ */
+export const useDeleteOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganizationRole>>,
+        TError,
+        DeleteOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationDomainsUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * The domains the organization has claimed, oldest first: verified ones, and claims still waiting for their code. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s domains
+ */
+export const listOrganizationDomains = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomainList> => {
+
+  return dashboardFetch<OrganizationDomainList>(getListOrganizationDomainsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationDomainsQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}/domains`
+    ] as const;
+    }
+
+
+export const getListOrganizationDomainsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationDomainsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationDomains>>> = ({ signal }) => listOrganizationDomains(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationDomainsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationDomains>>>
+export type ListOrganizationDomainsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s domains
+ */
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationDomainsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartOrganizationDomainUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * Emails a 6-digit code to an address on the domain and keeps a pending claim; `POST …/{domainId}/verify` with the code verifies it. Sent again for a pending claim it emails a new code and may change the `mode`. A verified domain makes a user who signs up with a **verified** address on exactly that domain (a subdomain is another domain) a member with the environment’s default role (`auto_join`), or is offered the organization (`suggest`). Refused: a public mail domain (`organization.domain_public`, 422), an address that is not on the domain (`organization.domain_address_mismatch`, 422), a domain verified for an organization already (`organization.domain_taken`, 409) and an organization with ten domains (`organization.domain_limit`, 409). Sends are limited per organization, per environment and per address (429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Claim a domain for an organization
+ */
+export const startOrganizationDomain = async (id: string,
+    startOrganizationDomainRequest: StartOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getStartOrganizationDomainUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getStartOrganizationDomainMutationKey = () => ['startOrganizationDomain'] as const;
+
+export const getStartOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getStartOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startOrganizationDomain>>, StartOrganizationDomainMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startOrganizationDomain(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof startOrganizationDomain>>>
+    export type StartOrganizationDomainMutationBody = StartOrganizationDomainRequest
+    export type StartOrganizationDomainMutationError = ErrorEnvelope
+    export type StartOrganizationDomainMutationVariables = {id: string;data: StartOrganizationDomainRequest}
+
+    /**
+ * @summary Claim a domain for an organization
+ */
+export const useStartOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startOrganizationDomain>>,
+        TError,
+        StartOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getVerifyOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}/verify`
+}
+
+/**
+ * Verifies the claim with the code emailed to an address on the domain. A wrong code is `verification.invalid_code` (422) and counts against five guesses per code and against a back-off that grows with every further wrong code (429); a code that expired or was replaced is `verification.expired` (410). A domain another organization verified first is `organization.domain_taken` (409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Verify a claimed domain
+ */
+export const verifyOrganizationDomain = async (id: string,
+    domainId: string,
+    verifyOrganizationDomainRequest: VerifyOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getVerifyOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getVerifyOrganizationDomainMutationKey = () => ['verifyOrganizationDomain'] as const;
+
+export const getVerifyOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getVerifyOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyOrganizationDomain>>, VerifyOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  verifyOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof verifyOrganizationDomain>>>
+    export type VerifyOrganizationDomainMutationBody = VerifyOrganizationDomainRequest
+    export type VerifyOrganizationDomainMutationError = ErrorEnvelope
+    export type VerifyOrganizationDomainMutationVariables = {id: string;domainId: string;data: VerifyOrganizationDomainRequest}
+
+    /**
+ * @summary Verify a claimed domain
+ */
+export const useVerifyOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof verifyOrganizationDomain>>,
+        TError,
+        VerifyOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getVerifyOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Sets the domain’s `mode`: `suggest` or `auto_join`. Moving to `auto_join` is a weakening, recorded as such. It applies to sign-ups from then on; nobody is joined retroactively. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change what a domain does
+ */
+export const updateOrganizationDomain = async (id: string,
+    domainId: string,
+    updateOrganizationDomainRequest: UpdateOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getUpdateOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationDomainMutationKey = () => ['updateOrganizationDomain'] as const;
+
+export const getUpdateOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationDomain>>, UpdateOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  updateOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationDomain>>>
+    export type UpdateOrganizationDomainMutationBody = UpdateOrganizationDomainRequest
+    export type UpdateOrganizationDomainMutationError = ErrorEnvelope
+    export type UpdateOrganizationDomainMutationVariables = {id: string;domainId: string;data: UpdateOrganizationDomainRequest}
+
+    /**
+ * @summary Change what a domain does
+ */
+export const useUpdateOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationDomain>>,
+        TError,
+        UpdateOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Removes a claim, verified or not. Future sign-ups no longer join or are offered the organization because of it; members who joined stay members. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a domain
+ */
+export const removeOrganizationDomain = async (id: string,
+    domainId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationDomainMutationKey = () => ['removeOrganizationDomain'] as const;
+
+export const getRemoveOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationDomain>>, RemoveOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId} = props ?? {};
+
+          return  removeOrganizationDomain(id,domainId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationDomain>>>
+
+    export type RemoveOrganizationDomainMutationError = ErrorEnvelope
+    export type RemoveOrganizationDomainMutationVariables = {id: string;domainId: string}
+
+    /**
+ * @summary Remove a domain
+ */
+export const useRemoveOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationDomain>>,
+        TError,
+        RemoveOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationInvitationsUrl = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/invitations?${stringifiedParams}` : `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * The organization’s invitations in one state (`status`, `pending` unless another is asked for; `expired` is a pending invitation past its expiry), newest first, one page at a time. The token of an invitation is never returned. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s invitations
+ */
+export const listOrganizationInvitations = async (id: string,
+    params?: ListOrganizationInvitationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitationList> => {
+
+  return dashboardFetch<OrganizationInvitationList>(getListOrganizationInvitationsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationInvitationsQueryKey = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/invitations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationInvitationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationInvitationsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationInvitations>>> = ({ signal }) => listOrganizationInvitations(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationInvitationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationInvitations>>>
+export type ListOrganizationInvitationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationInvitationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s invitations
+ */
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationInvitationsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInviteToOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * Emails the address a link that leads to `redirectUrl` (one of the environment’s allowed redirect URLs, matched exactly; a custom scheme is refused) with the invitation’s token in the URL fragment (`#tula_invitation=…`). The invitation lasts 7 days and can be accepted only by a signed-in user whose **verified** email is the invited address. The role must exist (`organization.role_unknown`, 422); an address that is a member already answers `organization.member_exists` and one with a pending invitation `organization.invitation_exists` (409). Limited per organization per hour and per environment per day (`rate_limited`, 429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Invite an address to an organization
+ */
+export const inviteToOrganization = async (id: string,
+    createOrganizationInvitationRequest: CreateOrganizationInvitationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitation> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationInvitation>(getInviteToOrganizationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationInvitationRequest)
+  }
+);}
+
+
+
+
+
+export const getInviteToOrganizationMutationKey = () => ['inviteToOrganization'] as const;
+
+export const getInviteToOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getInviteToOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteToOrganization>>, InviteToOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  inviteToOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteToOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof inviteToOrganization>>>
+    export type InviteToOrganizationMutationBody = CreateOrganizationInvitationRequest
+    export type InviteToOrganizationMutationError = ErrorEnvelope
+    export type InviteToOrganizationMutationVariables = {id: string;data: CreateOrganizationInvitationRequest}
+
+    /**
+ * @summary Invite an address to an organization
+ */
+export const useInviteToOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof inviteToOrganization>>,
+        TError,
+        InviteToOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getInviteToOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getRevokeOrganizationInvitationUrl = (id: string,
+    invitationId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations/${invitationId}`
+}
+
+/**
+ * Withdraws a pending invitation: its link stops working. An invitation that was accepted or declined answers `organization.invitation_used`, a withdrawn one `organization.invitation_revoked` and an expired one `organization.invitation_expired` (410). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Revoke an invitation
+ */
+export const revokeOrganizationInvitation = async (id: string,
+    invitationId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeOrganizationInvitationUrl(id,invitationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeOrganizationInvitationMutationKey = () => ['revokeOrganizationInvitation'] as const;
+
+export const getRevokeOrganizationInvitationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext> => {
+
+const mutationKey = getRevokeOrganizationInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, RevokeOrganizationInvitationMutationVariables> = (props) => {
+          const {id,invitationId} = props ?? {};
+
+          return  revokeOrganizationInvitation(id,invitationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeOrganizationInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof revokeOrganizationInvitation>>>
+
+    export type RevokeOrganizationInvitationMutationError = ErrorEnvelope
+    export type RevokeOrganizationInvitationMutationVariables = {id: string;invitationId: string}
+
+    /**
+ * @summary Revoke an invitation
+ */
+export const useRevokeOrganizationInvitation = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeOrganizationInvitation>>,
+        TError,
+        RevokeOrganizationInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeOrganizationInvitationMutationOptions(options), queryClient);
+    }
+
+export const getListUserOrganizationsUrl = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/users/${userId}/organizations?${stringifiedParams}` : `/v1/admin/users/${userId}/organizations`
+}
+
+/**
+ * The user’s memberships, the one they joined first at the top, one page at a time: each organization’s id, name and slug and the key of the user’s role in it. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List the organizations a user belongs to
+ */
+export const listUserOrganizations = async (userId: string,
+    params?: ListUserOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<UserMembershipList> => {
+
+  return dashboardFetch<UserMembershipList>(getListUserOrganizationsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUserOrganizationsQueryKey = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+    return [
+    `/v1/admin/users/${userId}/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListUserOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUserOrganizationsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUserOrganizations>>> = ({ signal }) => listUserOrganizations(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUserOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listUserOrganizations>>>
+export type ListUserOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params: undefined |  ListUserOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the organizations a user belongs to
+ */
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListUserOrganizationsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListNativeAppsUrl = () => {
 
 
@@ -9741,6 +14876,1502 @@ export const useDeleteNativeApp = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getListSsoConnectionsUrl = (params?: ListSsoConnectionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/sso-connections?${stringifiedParams}` : `/v1/admin/sso-connections`
+}
+
+/**
+ * The single sign-on connections of one organization, or of the whole environment when `organizationId` is left out, oldest first.
+ * @summary List an organization’s SSO connections
+ */
+export const listSsoConnections = async (params?: ListSsoConnectionsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnectionList> => {
+
+  return dashboardFetch<SsoConnectionList>(getListSsoConnectionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSsoConnectionsQueryKey = (params?: ListSsoConnectionsParams,) => {
+    return [
+    `/v1/admin/sso-connections`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSsoConnectionsQueryOptions = <TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSsoConnectionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSsoConnections>>> = ({ signal }) => listSsoConnections(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSsoConnectionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSsoConnections>>>
+export type ListSsoConnectionsQueryError = ErrorEnvelope
+
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params: undefined |  ListSsoConnectionsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSsoConnections>>,
+          TError,
+          Awaited<ReturnType<typeof listSsoConnections>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO connections
+ */
+
+export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSsoConnectionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSsoConnectionUrl = () => {
+
+
+
+
+  return `/v1/admin/sso-connections`
+}
+
+/**
+ * Creates an OIDC connection for an organization as a draft, bound to some of its verified domains. The issuer is checked against the outbound rules. A draft signs nobody in; activate it with an update. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Create an SSO connection
+ */
+export const createSsoConnection = async (createSsoConnectionRequest: CreateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getCreateSsoConnectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSsoConnectionMutationKey = () => ['createSsoConnection'] as const;
+
+export const getCreateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getCreateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSsoConnection>>, CreateSsoConnectionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSsoConnection(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof createSsoConnection>>>
+    export type CreateSsoConnectionMutationBody = CreateSsoConnectionRequest
+    export type CreateSsoConnectionMutationError = ErrorEnvelope
+    export type CreateSsoConnectionMutationVariables = {data: CreateSsoConnectionRequest}
+
+    /**
+ * @summary Create an SSO connection
+ */
+export const useCreateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSsoConnection>>, TError,CreateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSsoConnection>>,
+        TError,
+        CreateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * One connection of the environment, without its secret.
+ * @summary Get an SSO connection
+ */
+export const getSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getGetSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnection>>> = ({ signal }) => getSsoConnection(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnection>>>
+export type GetSsoConnectionQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnection>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnection>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an SSO connection
+ */
+
+export function useGetSsoConnection<TData = Awaited<ReturnType<typeof getSsoConnection>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnection>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Changes the fields sent and keeps the rest. A status moves draft to active to disabled, never back to a draft; a domain belongs to at most one active connection (`sso.domain_taken`, 409). Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Change an SSO connection
+ */
+export const updateSsoConnection = async (id: string,
+    updateSsoConnectionRequest: UpdateSsoConnectionRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoConnection>(getUpdateSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateSsoConnectionRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateSsoConnectionMutationKey = () => ['updateSsoConnection'] as const;
+
+export const getUpdateSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getUpdateSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSsoConnection>>, UpdateSsoConnectionMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSsoConnection(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof updateSsoConnection>>>
+    export type UpdateSsoConnectionMutationBody = UpdateSsoConnectionRequest
+    export type UpdateSsoConnectionMutationError = ErrorEnvelope
+    export type UpdateSsoConnectionMutationVariables = {id: string;data: UpdateSsoConnectionRequest}
+
+    /**
+ * @summary Change an SSO connection
+ */
+export const useUpdateSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSsoConnection>>, TError,UpdateSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateSsoConnection>>,
+        TError,
+        UpdateSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getDeleteSsoConnectionUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}`
+}
+
+/**
+ * Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.
+ * @summary Delete an SSO connection
+ */
+export const deleteSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteSsoConnectionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSsoConnectionMutationKey = () => ['deleteSsoConnection'] as const;
+
+export const getDeleteSsoConnectionMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext> => {
+
+const mutationKey = getDeleteSsoConnectionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSsoConnection>>, DeleteSsoConnectionMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSsoConnection(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSsoConnectionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSsoConnection>>>
+
+    export type DeleteSsoConnectionMutationError = ErrorEnvelope
+    export type DeleteSsoConnectionMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an SSO connection
+ */
+export const useDeleteSsoConnection = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSsoConnection>>, TError,DeleteSsoConnectionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSsoConnection>>,
+        TError,
+        DeleteSsoConnectionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * The mapping of the connection's organization, in precedence order: the first of a user's groups in this list decides their role. SCIM Groups use the same mapping.
+ * @summary Get an organization's IdP group to role mapping
+ */
+export const getSsoGroupRoles = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+  return dashboardFetch<SsoGroupRoles>(getGetSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoGroupRolesQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/group-roles`
+    ] as const;
+    }
+
+
+export const getGetSsoGroupRolesQueryOptions = <TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoGroupRolesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoGroupRoles>>> = ({ signal }) => getSsoGroupRoles(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoGroupRolesQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoGroupRoles>>>
+export type GetSsoGroupRolesQueryError = ErrorEnvelope
+
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization's IdP group to role mapping
+ */
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoGroupRolesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * Replaces the whole mapping. A role that does not exist is refused (`organization.role_unknown`); a group named twice is `request.malformed`. At each single sign-on the member's role is set from it, and a user in no mapped group gets the connection's `defaultRole`. The audit entry says only that the mapping changed.
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const replaceSsoGroupRoles = async (id: string,
+    ssoGroupRoles: SsoGroupRoles, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoGroupRoles>(getReplaceSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ssoGroupRoles)
+  }
+);}
+
+
+
+
+
+export const getReplaceSsoGroupRolesMutationKey = () => ['replaceSsoGroupRoles'] as const;
+
+export const getReplaceSsoGroupRolesMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext> => {
+
+const mutationKey = getReplaceSsoGroupRolesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, ReplaceSsoGroupRolesMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  replaceSsoGroupRoles(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceSsoGroupRolesMutationResult = NonNullable<Awaited<ReturnType<typeof replaceSsoGroupRoles>>>
+    export type ReplaceSsoGroupRolesMutationBody = SsoGroupRoles
+    export type ReplaceSsoGroupRolesMutationError = ErrorEnvelope
+    export type ReplaceSsoGroupRolesMutationVariables = {id: string;data: SsoGroupRoles}
+
+    /**
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const useReplaceSsoGroupRoles = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceSsoGroupRoles>>,
+        TError,
+        ReplaceSsoGroupRolesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceSsoGroupRolesMutationOptions(options), queryClient);
+    }
+
+export const getRefreshSsoConnectionMetadataUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/refresh-metadata`
+}
+
+/**
+ * Fetches the identity provider’s metadata from the address the connection was given (through the outbound guard: a private address is refused) and takes its entity id, SSO URL and signing certificates. `sso.saml_invalid` when the connection was not given an address. Limited to 10 such requests a minute per environment. Activating a connection, and changing the issuer, client, secret, role or domains of an active one, widens who can sign in: the audit entry carries `weakened: true`. The client secret is sealed and never returned.
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const refreshSsoConnectionMetadata = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnection> => {
+
+  return dashboardFetch<SsoConnection>(getRefreshSsoConnectionMetadataUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRefreshSsoConnectionMetadataMutationKey = () => ['refreshSsoConnectionMetadata'] as const;
+
+export const getRefreshSsoConnectionMetadataMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext> => {
+
+const mutationKey = getRefreshSsoConnectionMetadataMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, RefreshSsoConnectionMetadataMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  refreshSsoConnectionMetadata(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshSsoConnectionMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>>
+
+    export type RefreshSsoConnectionMetadataMutationError = ErrorEnvelope
+    export type RefreshSsoConnectionMetadataMutationVariables = {id: string}
+
+    /**
+ * @summary Read a SAML connection’s metadata address again
+ */
+export const useRefreshSsoConnectionMetadata = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>, TError,RefreshSsoConnectionMetadataMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof refreshSsoConnectionMetadata>>,
+        TError,
+        RefreshSsoConnectionMetadataMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRefreshSsoConnectionMetadataMutationOptions(options), queryClient);
+    }
+
+export const getStartSsoConnectionTestUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests`
+}
+
+/**
+ * Starts the whole sign-in round through the identity provider without creating a session, user, identity or membership. Send the browser to `authorizationUrl`; it returns to `redirectUrl` (an address the environment allows; left out, the server’s own setup page) with `#tula_test=<testId>`, and the result is read with `GET /:id/tests/:testId`. A passing test of the connection’s current settings is required to activate it.
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const startSsoConnectionTest = async (id: string,
+    adminSsoTestStartRequest: AdminSsoTestStartRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestStart> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoTestStart>(getStartSsoConnectionTestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(adminSsoTestStartRequest)
+  }
+);}
+
+
+
+
+
+export const getStartSsoConnectionTestMutationKey = () => ['startSsoConnectionTest'] as const;
+
+export const getStartSsoConnectionTestMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext> => {
+
+const mutationKey = getStartSsoConnectionTestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startSsoConnectionTest>>, StartSsoConnectionTestMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startSsoConnectionTest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartSsoConnectionTestMutationResult = NonNullable<Awaited<ReturnType<typeof startSsoConnectionTest>>>
+    export type StartSsoConnectionTestMutationBody = AdminSsoTestStartRequest
+    export type StartSsoConnectionTestMutationError = ErrorEnvelope
+    export type StartSsoConnectionTestMutationVariables = {id: string;data: AdminSsoTestStartRequest}
+
+    /**
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const useStartSsoConnectionTest = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startSsoConnectionTest>>,
+        TError,
+        StartSsoConnectionTestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartSsoConnectionTestMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionTestUrl = (id: string,
+    testId: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests/${testId}`
+}
+
+/**
+ * The attributes and groups that arrived, how they mapped, or the reason the test failed with a sentence for it. `pending` until the browser has come back. It holds no assertion and no token. This is the one place a refusal’s reason is shown.
+ * @summary Read the result of a test sign-in
+ */
+export const getSsoConnectionTest = async (id: string,
+    testId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestResult> => {
+
+  return dashboardFetch<SsoTestResult>(getGetSsoConnectionTestUrl(id,testId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionTestQueryKey = (id: string,
+    testId: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/tests/${testId}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionTestQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionTestQueryKey(id,testId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnectionTest>>> = ({ signal }) => getSsoConnectionTest(id,testId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && testId !== null && testId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionTestQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnectionTest>>>
+export type GetSsoConnectionTestQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the result of a test sign-in
+ */
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionTestQueryOptions(id,testId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListScimTokensUrl = (params: ListScimTokensParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens?${stringifiedParams}` : `/v1/admin/scim-tokens`
+}
+
+/**
+ * The tokens of one organization, revoked ones included, newest first. No secrets.
+ * @summary List an organization’s SCIM tokens
+ */
+export const listScimTokens = async (params: ListScimTokensParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<ScimTokenList> => {
+
+  return dashboardFetch<ScimTokenList>(getListScimTokensUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListScimTokensQueryKey = (params?: ListScimTokensParams,) => {
+    return [
+    `/v1/admin/scim-tokens`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListScimTokensQueryOptions = <TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListScimTokensQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScimTokens>>> = ({ signal }) => listScimTokens(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListScimTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listScimTokens>>>
+export type ListScimTokensQueryError = ErrorEnvelope
+
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScimTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listScimTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SCIM tokens
+ */
+
+export function useListScimTokens<TData = Awaited<ReturnType<typeof listScimTokens>>, TError = ErrorEnvelope>(
+ params: ListScimTokensParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScimTokens>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListScimTokensQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateScimTokenUrl = () => {
+
+
+
+
+  return `/v1/admin/scim-tokens`
+}
+
+/**
+ * Creates the bearer token an organization’s identity provider presents to `/v1/scim/v2`. The token is in this answer and nowhere else: only its hash is stored. An organization holds at most ten live tokens (`resource.conflict`, 409).
+ * @summary Create a SCIM token
+ */
+export const createScimToken = async (createScimTokenRequest: CreateScimTokenRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedScimToken> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedScimToken>(getCreateScimTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createScimTokenRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateScimTokenMutationKey = () => ['createScimToken'] as const;
+
+export const getCreateScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getCreateScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScimToken>>, CreateScimTokenMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScimToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createScimToken>>>
+    export type CreateScimTokenMutationBody = CreateScimTokenRequest
+    export type CreateScimTokenMutationError = ErrorEnvelope
+    export type CreateScimTokenMutationVariables = {data: CreateScimTokenRequest}
+
+    /**
+ * @summary Create a SCIM token
+ */
+export const useCreateScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScimToken>>, TError,CreateScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScimToken>>,
+        TError,
+        CreateScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getRevokeScimTokenUrl = (id: string,
+    params: RevokeScimTokenParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/scim-tokens/${id}?${stringifiedParams}` : `/v1/admin/scim-tokens/${id}`
+}
+
+/**
+ * Revokes a token that is not revoked yet. The identity provider holding it is refused from its next request; users it provisioned keep their accounts.
+ * @summary Revoke a SCIM token
+ */
+export const revokeScimToken = async (id: string,
+    params: RevokeScimTokenParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeScimTokenUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeScimTokenMutationKey = () => ['revokeScimToken'] as const;
+
+export const getRevokeScimTokenMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext> => {
+
+const mutationKey = getRevokeScimTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeScimToken>>, RevokeScimTokenMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeScimToken(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeScimTokenMutationResult = NonNullable<Awaited<ReturnType<typeof revokeScimToken>>>
+
+    export type RevokeScimTokenMutationError = ErrorEnvelope
+    export type RevokeScimTokenMutationVariables = {id: string;params: RevokeScimTokenParams}
+
+    /**
+ * @summary Revoke a SCIM token
+ */
+export const useRevokeScimToken = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeScimToken>>, TError,RevokeScimTokenMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeScimToken>>,
+        TError,
+        RevokeScimTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getListSetupLinksUrl = (params: ListSetupLinksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links?${stringifiedParams}` : `/v1/admin/setup-links`
+}
+
+/**
+ * The links of one organization, revoked and expired ones included, newest first. No tokens.
+ * @summary List an organization’s SSO setup links
+ */
+export const listSetupLinks = async (params: ListSetupLinksParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SetupLinkList> => {
+
+  return dashboardFetch<SetupLinkList>(getListSetupLinksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSetupLinksQueryKey = (params?: ListSetupLinksParams,) => {
+    return [
+    `/v1/admin/setup-links`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSetupLinksQueryOptions = <TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSetupLinksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSetupLinks>>> = ({ signal }) => listSetupLinks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSetupLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listSetupLinks>>>
+export type ListSetupLinksQueryError = ErrorEnvelope
+
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO setup links
+ */
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSetupLinksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSetupLinkUrl = () => {
+
+
+
+
+  return `/v1/admin/setup-links`
+}
+
+/**
+ * Creates a link that lets an organization’s IT administrator set up single sign-on at `/dashboard/setup` without an account. It lives 7 days unless `expiresInDays` (1 to 30) says otherwise and can be revoked. The token and the address, built from `PUBLIC_URL` with the token in its fragment, are in this answer and nowhere else: only the token’s hash is stored. An organization holds at most ten live links (`resource.conflict`, 409).
+ * @summary Create an SSO setup link
+ */
+export const createSetupLink = async (createSetupLinkRequest: CreateSetupLinkRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedSetupLink> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedSetupLink>(getCreateSetupLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSetupLinkRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSetupLinkMutationKey = () => ['createSetupLink'] as const;
+
+export const getCreateSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getCreateSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSetupLink>>, CreateSetupLinkMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSetupLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createSetupLink>>>
+    export type CreateSetupLinkMutationBody = CreateSetupLinkRequest
+    export type CreateSetupLinkMutationError = ErrorEnvelope
+    export type CreateSetupLinkMutationVariables = {data: CreateSetupLinkRequest}
+
+    /**
+ * @summary Create an SSO setup link
+ */
+export const useCreateSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSetupLink>>,
+        TError,
+        CreateSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSetupLinkMutationOptions(options), queryClient);
+    }
+
+export const getRevokeSetupLinkUrl = (id: string,
+    params: RevokeSetupLinkParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links/${id}?${stringifiedParams}` : `/v1/admin/setup-links/${id}`
+}
+
+/**
+ * Revokes a link that is not revoked yet. Whoever holds it is refused from the next request; connections made through it stay.
+ * @summary Revoke an SSO setup link
+ */
+export const revokeSetupLink = async (id: string,
+    params: RevokeSetupLinkParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeSetupLinkUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeSetupLinkMutationKey = () => ['revokeSetupLink'] as const;
+
+export const getRevokeSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getRevokeSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeSetupLink>>, RevokeSetupLinkMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeSetupLink(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof revokeSetupLink>>>
+
+    export type RevokeSetupLinkMutationError = ErrorEnvelope
+    export type RevokeSetupLinkMutationVariables = {id: string;params: RevokeSetupLinkParams}
+
+    /**
+ * @summary Revoke an SSO setup link
+ */
+export const useRevokeSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeSetupLink>>,
+        TError,
+        RevokeSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeSetupLinkMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {
@@ -10233,6 +16864,81 @@ export const useApproveProposal = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getApproveProposalMutationOptions(options), queryClient);
+    }
+
+export const getRejectProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}/reject`
+}
+
+/**
+ * Reject a pending proposal: nothing is carried out and the proposal is decided for good (`rejected`). It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`). It takes no body. Refused with `resource.conflict` and a fixed `params.reason`: `already_decided` (approved or rejected before) or `expired`. Nothing is changed by a refused rejection. A rejection and an approval at the same moment: one succeeds.
+ * @summary Reject a proposal
+ */
+export const rejectProposal = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+  return dashboardFetch<Proposal>(getRejectProposalUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRejectProposalMutationKey = () => ['rejectProposal'] as const;
+
+export const getRejectProposalMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext> => {
+
+const mutationKey = getRejectProposalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectProposal>>, RejectProposalMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  rejectProposal(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectProposal>>>
+
+    export type RejectProposalMutationError = ErrorEnvelope
+    export type RejectProposalMutationVariables = {id: string}
+
+    /**
+ * @summary Reject a proposal
+ */
+export const useRejectProposal = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectProposal>>, TError,RejectProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof rejectProposal>>,
+        TError,
+        RejectProposalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRejectProposalMutationOptions(options), queryClient);
     }
 
 export const getRunSignInTestAsAdminUrl = () => {

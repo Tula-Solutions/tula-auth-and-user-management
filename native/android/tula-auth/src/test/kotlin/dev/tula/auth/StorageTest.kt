@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
@@ -419,6 +420,91 @@ class StorageTest {
     }
 
     @Test
+    fun `the default engine sends a PATCH with its body and reads the answer, a 403 included`() {
+        // HttpURLConnection on a desktop JVM refuses PATCH; renaming an organization, a
+        // member's role and a domain's mode are PATCH routes (TULA-130).
+        var seen = ""
+        serve({ exchange ->
+            seen = listOf(
+                exchange.requestMethod,
+                exchange.requestURI.path,
+                exchange.requestHeaders.getFirst("authorization"),
+                exchange.requestBody.readBytes().toString(Charsets.UTF_8),
+            ).joinToString(" | ")
+            if (exchange.requestURI.path == "/refused") {
+                exchange.reply(403, """{"code":"organization.permission_required"}""", mapOf("Retry-After" to "3"))
+            } else {
+                exchange.reply(200, """{"ok":true}""")
+            }
+        }) { base ->
+            val engine = UrlConnectionEngine()
+            val headers = mapOf("authorization" to "Bearer t", "content-type" to "application/json")
+            val response = engine.send(HttpRequest("PATCH", "$base/org", headers, """{"name":"Zoë"}""", 5_000))
+            assertEquals("""PATCH | /org | Bearer t | {"name":"Zoë"}""", seen)
+            assertEquals(200, response.status)
+            assertEquals("""{"ok":true}""", response.body)
+
+            val refused = engine.send(HttpRequest("PATCH", "$base/refused", headers, "{}", 5_000))
+            assertEquals(403, refused.status)
+            assertEquals("""{"code":"organization.permission_required"}""", refused.body)
+            assertEquals("3", refused.headers["retry-after"])
+        }
+    }
+
+    @Test
+    fun `a PATCH answer is held to the same rules, not followed, capped and given up when the caller is cancelled`() {
+        val released = CountDownLatch(1)
+        serve({ exchange ->
+            exchange.requestBody.readBytes()
+            when (exchange.requestURI.path) {
+                "/moved" -> exchange.reply(302, "", mapOf("Location" to "/elsewhere"))
+                "/huge" -> exchange.reply(200, "x".repeat(1024 * 1024 + 1))
+                else -> {
+                    // The headers arrive; the body never does while the test runs.
+                    exchange.sendResponseHeaders(200, 0)
+                    exchange.responseBody.flush()
+                    released.await()
+                }
+            }
+        }) { base ->
+            val engine = UrlConnectionEngine()
+            fun patch(path: String, timeout: Long = 5_000) = HttpRequest("PATCH", base + path, emptyMap(), "{}", timeout)
+            val moved = engine.send(patch("/moved"))
+            assertEquals(302, moved.status)
+            assertEquals("/elsewhere", moved.headers["location"])
+            assertTrue(runCatching { engine.send(patch("/huge")) }.exceptionOrNull() is IOException)
+
+            val asking = async { engine.send(patch("/stalled", 60_000)) }
+            delay(300)
+            withTimeout(5_000) {
+                asking.cancel()
+                asking.join()
+            }
+            assertTrue(asking.isCancelled)
+            released.countDown()
+        }
+    }
+
+    @Test
+    fun `a PATCH falls back to the connection when the JDK engine cannot be made, as on Android`() {
+        // Constructor.newInstance wraps what a constructor throws, and a missing java.net.http
+        // class is such an error: it must reach the fallback, not escape as a reflective one.
+        serve({ exchange ->
+            exchange.requestBody.readBytes()
+            exchange.reply(200, "{}")
+        }) { base ->
+            for (engine in listOf(UrlConnectionEngine(BrokenPatching::class.java.name), UrlConnectionEngine("dev.tula.auth.Nothing"))) {
+                val failure = runCatching {
+                    engine.send(HttpRequest("PATCH", "$base/x", emptyMap(), "{}", 5_000))
+                }.exceptionOrNull()
+                // The JVM's HttpURLConnection refuses PATCH; what matters is that it was asked.
+                assertTrue(failure is IOException, failure.toString())
+            }
+            assertEquals(200, UrlConnectionEngine().send(HttpRequest("PATCH", "$base/x", emptyMap(), "{}", 5_000)).status)
+        }
+    }
+
+    @Test
     fun `the default engine hands back an error answer, an empty one and a redirect as they are`() {
         serve({ exchange ->
             when (exchange.requestURI.path) {
@@ -509,4 +595,13 @@ class StorageTest {
             bench.close()
         }
     }
+}
+
+/** An engine whose construction fails the way a missing `java.net.http` class does on Android. */
+class BrokenPatching : HttpEngine {
+    init {
+        throw NoClassDefFoundError("java/net/http/HttpClient")
+    }
+
+    override suspend fun send(request: HttpRequest): HttpResponse = error("never made")
 }

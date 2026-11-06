@@ -6,12 +6,11 @@ The Swift package in [`native/swift`](../native/swift/README.md) has two librari
 an emailed code, a passkey, a provider's ID token or a provider's page in a browser
 session, takes the second step and a step-up, resets a password, and keeps the session: the
 access token in memory, the refresh token in the Keychain, refreshed when it is about to
-expire, and bound to a device key where you ask for that. The decisions are in
-[ADR 0051](adr/0051-swift-client.md).
+expire, and bound to a device key where you ask for that.
 
 `TulaAuthUI` is SwiftUI screens on that client, for a sign-in with a password or an emailed
 code, a sign-up, the emailed code that proves an address and a password reset
-(["Screens"](#screens), [ADR 0057](adr/0057-swiftui-screens.md)). For everything else you
+(["Screens"](#screens)). For everything else you
 draw the screens, from the step the server returns.
 
 **What has been run.** The package is built and tested with `swift test` on a Mac, where its
@@ -22,11 +21,7 @@ and no test looked at the Keychain item. **Nothing was run on a device, and Voic
 never turned on.** No test has asked a Secure Enclave, **no passkey sheet, no Sign in with
 Apple sheet and no browser session has been shown by this package**, and no real provider
 was asked: the tests put a software authenticator, a software key and the API's mock
-provider in their place. What is unverified is listed for
-[the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
-for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051)
-and for the screens, [the first ones](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)
-and [the second step and the account](plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
+provider in their place.
 Nothing is published: there is no tag and no registry entry, and the package is used from a
 checkout.
 
@@ -129,7 +124,9 @@ do {
 
 **A failed sign-out is not a sign-out.** When the server could not be told, `signOut()`
 throws. The client is signed out all the same, and calling `signOut()` again tells the
-server. Do not show "signed out everywhere" for a call that threw.
+server, but only while the app keeps running: the undelivered token is held in memory,
+not stored, so a restart loses it and the session lives until it expires. Do not show
+"signed out everywhere" for a call that threw.
 
 `signOut()` removes the stored token also when it could not read it. Two cases end in
 `storage.failed` and are not put right by a second call: a stored token that could not be
@@ -167,6 +164,11 @@ implementation for tests and previews. An implementation of your own must keep t
 the device and must throw, never return `nil`, when it could not read.
 
 ### A session bound to a device key
+
+**The key identifies the device, not the person.** Signing out does not
+delete it, on purpose: on a shared device the users who sign in one after another are bound
+to the same key. An app that must not carry a key over calls `client.removeDeviceKey()` when
+its user signs out.
 
 <!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#client-device-key -->
 ```swift
@@ -726,8 +728,7 @@ hold their contrast in both schemes.
 
 **What was checked and what was not.** The system's accessibility audit ran on every screen
 in a simulator, in the light scheme and, for the screens one test reaches, the dark one,
-with the keyboard put away first and one finding excluded
-([the list](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
+with the keyboard put away first and one finding excluded.
 Where the focus is asked to go, and what is announced, is tested on the model. **VoiceOver
 itself was never turned on**, and no device, no iPad, no right-to-left language and none of
 the largest text sizes was tried.
@@ -741,8 +742,7 @@ what the UI tests drive.
 ## An email address for an account without one
 
 An account made by signing in with X or Facebook has no email address (`user.email` is
-`nil`). Its user adds one and proves it with an emailed code
-([ADR 0059](adr/0059-email-for-accounts-without-one.md)):
+`nil`). Its user adds one and proves it with an emailed code:
 
 <!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#email-address -->
 ```swift
@@ -758,6 +758,125 @@ nothing to step up with, so more than ten minutes after its sign-in they throw
 provider again. An address another account holds is answered like a free one and no code
 confirms it (`verification.invalid_code`). An account that has an address, verified or
 not, is `email.already_set`: nothing here changes one.
+
+## Organizations
+
+An environment with organizations switched on lets a user belong to several, and a session
+works in one of them at a time: the **active organization**.
+`tula.organizations` lists the user's
+organizations, creates one where the environment lets users, and sets or clears the active
+one. Setting it asks the server for a new access token that carries the organization's
+claims (`org_id`, `org_role`, `org_perms`); the refresh token does not change.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organizations -->
+```swift
+let page = try await tula.organizations.list()  // each with the user's role and its permissions
+if page.data.isEmpty {
+    let acme = try await tula.organizations.create(name: "Acme", slug: "acme")
+    try await tula.organizations.setActive(acme.id)  // the next access token carries the claims
+}
+if let organization = try await tula.organizations.active() {
+    // Read from the access token, to decide what to draw: your server checks the same keys.
+    if organization.has(permission: "org:billing:read") {
+        // show the billing tab
+    }
+    if organization.has(role: "admin") {
+        // show the admin tab
+    }
+}
+try await tula.organizations.clearActive()  // back to the personal account
+```
+<!-- /snippet -->
+
+`active()` reads the claims from the access token the client holds, without checking its
+signature: that is for drawing the right screen, never for deciding what a user may do.
+Your server verifies the token and checks the same permission. The claims are all three or
+none: a token whose organization claims do not satisfy the contract's grammar has no active
+organization here, as in `@tula-tech/core`.
+
+An invitation arrives as an emailed link whose address carries the token in its
+**fragment** (`#tula_invitation=…`), which no server sees. Open it in the app (a universal
+link) and read it with `TulaInvitationLink`. Previewing needs no session; accepting and
+declining need one, and accepting needs the address the invitation was sent to, verified.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#invitation -->
+```swift
+// The app was opened by the link in the emailed invitation (a universal link, say).
+guard let link = TulaInvitationLink.read(url) else { return }
+// The token is a secret. It was in the address's fragment, which no server saw.
+let preview = try await tula.organizations.invitations.preview(token: link.token)
+// preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+// Once the user is signed in as preview.email, with its address verified:
+let joined = try await tula.organizations.invitations.accept(token: link.token)
+try await tula.organizations.setActive(joined.id)
+// or: try await tula.organizations.invitations.decline(token: link.token)
+```
+<!-- /snippet -->
+
+The token is a credential: the client never logs it, prints it or puts it in an error, and
+`TulaInvitationLink` and the types that hold one print as their name only. Keep
+`link.cleanURL`, not the address the token came in.
+
+When an environment verifies an organization's domain, a user whose verified address is on
+it is offered that organization, and joins it with the environment's default role:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-suggestions -->
+```swift
+// Organizations whose verified domain is the one of the user's verified address:
+let offered = try await tula.organizations.suggestions()
+if let first = offered.data.first {
+    _ = try await tula.organizations.join(first.id)  // with the environment's default role
+}
+```
+<!-- /snippet -->
+
+A member manages an organization with the role they hold: the server decides, from the
+membership it reads on every call, and answers `organization.permission_required` (or
+`auth.forbidden` for the domain routes) for what the role may not do. A role you changed is
+carried by the member's sessions from their next refresh.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-members -->
+```swift
+// The server decides from the role the user holds now, on every call.
+let members = try await tula.organizations.members.list(organizationId: organizationId)
+let roles = try await tula.organizations.roles(organizationId: organizationId)  // the roles the user may give
+if let member = members.data.first, roles.data.contains(where: { $0.key == "admin" }) {
+    try await tula.organizations.members.changeRole(
+        organizationId: organizationId, userId: member.userId, role: "admin")
+}
+try await tula.organizations.update(organizationId: organizationId, name: "Acme Inc")
+try await tula.organizations.leave(organizationId: organizationId)  // refused for the last manager
+try await tula.organizations.remove(organizationId: organizationId)  // deletes it for good
+```
+<!-- /snippet -->
+
+`members.list` is the first page only. `leave` is refused with `organization.last_manager`
+for the one member who can manage members, and the same code refuses demoting or removing
+that member. Deleting an organization removes its memberships, invitations and domains; a
+session that had it active keeps working and reads the personal account (or the next
+organization you choose) from its next refresh.
+
+An administrator claims a domain by a code emailed to an address on it; a verified domain
+suggests the organization to people whose verified address is on it, or joins them
+(`mode`). A row's `status` is `pending`, `verified` or `needsReverification`; a verified
+claim must be proved again after `expiresAt`:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-domains -->
+```swift
+// Claim a domain: a code is emailed to an address on it.
+let claim = try await tula.organizations.domains.start(
+    organizationId: organizationId, domain: "acme.com", email: "ada@acme.com", mode: .suggest)
+let proved = try await tula.organizations.domains.verify(
+    organizationId: organizationId, domainId: claim.id, code: typed)
+// proved.status is .verified until proved.expiresAt; later .needsReverification.
+_ = try await tula.organizations.domains.update(
+    organizationId: organizationId, domainId: proved.id, mode: .autoJoin)
+try await tula.organizations.domains.remove(organizationId: organizationId, domainId: proved.id)
+```
+<!-- /snippet -->
+
+`tula.organizations.invitations` also has `list`, `invite` and `revoke` for a signed-in
+member whose role may do it; the server decides.
 
 ## Errors
 
@@ -818,7 +937,7 @@ Coverage has a threshold (90% of lines, 85% of functions) that each library meet
 `TulaAuth` over its hand-written sources, and `TulaAuthUI` over the files directly in
 `Sources/TulaAuthUI`. The views (`Sources/TulaAuthUI/Views`) are not counted: a SwiftUI
 `body` runs when something draws it, and `swift test` draws nothing. They hold no decision
-for that reason ([ADR 0057](adr/0057-swiftui-screens.md)).
+for that reason.
 
 ```bash
 swift test --package-path native/swift --enable-code-coverage

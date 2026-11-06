@@ -30,6 +30,25 @@ describe('rateLimit', () => {
     expect((await app.request('/test')).status).toBe(200)
   })
 
+  test('a request with no resolvable address is refused outside the local tiers, not pooled', async () => {
+    const mk = (tier: 'local' | 'dev' | 'staging' | 'prod') => {
+      const app = createApp(createTestDeps({ config: { ...TEST_CONFIG, tier, trustProxy: true } }))
+      app.get('/test', rateLimit({ name: 't', limit: 5, window: '1m', key: byIp }), (c) =>
+        c.text('ok')
+      )
+      return app
+    }
+    // Trusted proxy, but no X-Forwarded-For: the proxy is not setting it.
+    for (const tier of ['staging', 'prod'] as const) {
+      const res = await mk(tier).request('/test')
+      expect(res.status).toBe(503)
+      expect(((await res.json()) as { code: string }).code).toBe('service.unavailable')
+    }
+    for (const tier of ['local', 'dev'] as const) {
+      expect((await mk(tier).request('/test')).status).toBe(200)
+    }
+  })
+
   test('buckets by the trusted proxy IP so clients do not share a limit', async () => {
     const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
     const app = createApp(deps)
@@ -60,7 +79,7 @@ describe('rateLimit', () => {
     expect((await from('203.0.113.7')).status).toBe(429)
   })
 
-  test('buckets by environment after key resolution and skips when there is none', async () => {
+  test('buckets by environment after key resolution and fails a route that mounts it before one', async () => {
     const deps = createTestDeps()
     const key = 'tula_pk_dev_publishable0000000000000000000'
     await seedApiKey(deps, key)
@@ -71,8 +90,10 @@ describe('rateLimit', () => {
     const keyed = () => app.request('/test/keyed', { headers: { [PUBLISHABLE_KEY_HEADER]: key } })
     expect((await keyed()).status).toBe(200)
     expect((await keyed()).status).toBe(429)
-    expect((await app.request('/test/open')).status).toBe(200)
-    expect((await app.request('/test/open')).status).toBe(200)
+    // Placed before the key middleware it would count nothing, for ever: that is a bug in the
+    // route, so it fails the request instead of silently skipping the limit.
+    expect((await app.request('/test/open')).status).toBe(500)
+    expect((await app.request('/test/open')).status).toBe(500)
   })
 })
 

@@ -28,6 +28,7 @@ import { cleanOrigin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import { isEcP256PrivateKey } from '~/lib/pkcs8'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
@@ -36,6 +37,7 @@ import {
   isSignInMethod,
   unusableField,
 } from '~/modules/oauth/provider-record'
+import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
@@ -68,7 +70,7 @@ type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
  * ```
  */
 export function callbackUrl(config: Pick<AppConfig, 'publicUrl'>, provider: OAuthProvider): string {
-  return `${config.publicUrl.replace(/\/+$/, '')}/v1/oauth/callback/${provider}`
+  return `${publicBase(config)}/v1/oauth/callback/${provider}`
 }
 
 /**
@@ -1134,15 +1136,17 @@ export function canStillSignIn(
  * @param userId - The signed-in user.
  * @param identityId - The identity to remove.
  * @param actor - The user with the request's origin.
+ * @param currentSessionId - The session that asked; the user's other sessions end, this one stays.
  * @throws NotFoundError when the user has no such identity.
  * @throws AuthError `identity.last_sign_in_method` when nothing else would let them in.
  */
 export async function unlink(
-  deps: AccountDeps & Pick<Deps, 'oauthProviders'>,
+  deps: AccountDeps & Pick<Deps, 'oauthProviders' | 'sessions' | 'revokedSessions'>,
   tenant: Scope,
   userId: string,
   identityId: string,
-  actor: Actor
+  actor: Actor,
+  currentSessionId: string
 ): Promise<void> {
   const identity = (await deps.users.listIdentities(tenant.environmentId, userId)).find(
     (candidate) => candidate.id === identityId
@@ -1170,6 +1174,14 @@ export async function unlink(
   if (outcome === 'last_method') {
     throw new AuthError('identity.last_sign_in_method')
   }
+  // A stolen session must not outlive the removal of a credential (H-093); the one that asked
+  // stays.
+  await Sessions.revokeOthers(deps, tenant, {
+    userId,
+    currentSessionId,
+    reason: 'mfa_changed',
+    actor,
+  })
   const user = await deps.users.findById(tenant.environmentId, userId)
   if (user) {
     Notices.identityChanged(deps, tenant, user, {

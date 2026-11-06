@@ -51,8 +51,14 @@ describe('the table of kinds', () => {
     }
   })
 
-  test('the four code messages need the code, and sign-in the link too', () => {
-    expect(CODES).toEqual(['email_verification', 'password_reset', 'sign_in', 'step_up'])
+  test('the five code messages need the code, and sign-in the link too', () => {
+    expect(CODES).toEqual([
+      'email_verification',
+      'password_reset',
+      'sign_in',
+      'step_up',
+      'organization_domain_verification',
+    ])
     for (const kind of CODES) {
       expect(EMAIL_TEMPLATE_RULES[kind].required).toContain('code')
     }
@@ -72,11 +78,24 @@ describe('the table of kinds', () => {
       'code',
       'link',
       'expiresInMinutes',
+      'expiresInDays',
       'device',
       'time',
       'provider',
       'backupCodesLeft',
     ])
+  })
+
+  test('an invitation needs the link, has no code and is held to the notice rules for a subject', () => {
+    expect(EMAIL_TEMPLATE_RULES.organization_invitation).toEqual({
+      category: 'invitation',
+      required: ['link'],
+      optional: ['appName', 'expiresInDays'],
+    })
+    // The organization's name is user text: no placeholder for it, and none for the address.
+    expect(
+      EMAIL_TEMPLATE_PLACEHOLDERS.some((name) => /organi[sz]ation|email|address/i.test(name))
+    ).toBe(false)
   })
 
   test('isEmailTemplateKind knows the list and nothing inherited', () => {
@@ -315,6 +334,7 @@ describe('emailTemplateProblems', () => {
     expect([...EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS].sort()).toEqual([
       'backupCodesLeft',
       'code',
+      'expiresInDays',
       'expiresInMinutes',
       'time',
     ])
@@ -709,5 +729,39 @@ describe('reading stored templates over the cap', () => {
     expect(read.dropped.filter((kind) => kind === first)).toEqual([first])
     expect(read.dropped).toEqual(NOTICES.slice(0, 8))
     expect(new Set(read.dropped).size).toBe(read.dropped.length)
+  })
+})
+
+describe('an organization invitation’s template', () => {
+  const kind = 'organization_invitation'
+
+  test('a body with the link passes, and the days and the app may be named', () => {
+    expect(
+      codes(kind, {
+        subject: 'Join {{appName}}',
+        body: 'You are invited to {{appName}}. It works for {{expiresInDays}} days.\n\n{{link}}',
+      })
+    ).toEqual([])
+  })
+
+  test.each<[string, { subject?: string; body?: string }, string[]]>([
+    ['a body without the link', { body: 'Join us.' }, ['body:missing_placeholder']],
+    ['a link in the subject', { subject: 'Join {{link}}' }, ['subject:unknown_placeholder']],
+    ['a code', { body: '{{link}}\n\n{{code}}' }, ['body:unknown_placeholder']],
+    [
+      'the organization',
+      { body: '{{link}}\n\n{{organizationName}}' },
+      ['body:unknown_placeholder'],
+    ],
+    ['an address', { body: '{{link}}\n\n{{email}}' }, ['body:unknown_placeholder']],
+    ['a digit first', { subject: '7 days to join' }, ['subject:leading_digit']],
+    ['the days first', { subject: '{{expiresInDays}} days to join' }, ['subject:leading_digit']],
+    [
+      'a link of its own',
+      { body: '{{link}}\n\nSee https://evil.example/' },
+      ['body:reads_as_link'],
+    ],
+  ])('%s is refused', (_, template, expected) => {
+    expect(codes(kind, template)).toEqual(expected)
   })
 })

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "user_2aaa",
+    "first_name": "Maya",
+    "last_name": "Chen",
+    "username": "maya",
+    "primary_email_address_id": "idn_1",
+    "email_addresses": [
+      {
+        "id": "idn_1",
+        "email_address": "maya@northline.app",
+        "verification": { "status": "verified" }
+      }
+    ],
+    "public_metadata": { "plan": "team" },
+    "password_digest": "$2b$10$NDhuqUZcBQ/LFla5qSAXXezYn7yAR/RITInkyddwtdh1ANBpFw7hS",
+    "password_hasher": "bcrypt"
+  },
+  {
+    "id": "user_2bbb",
+    "first_name": "Jon",
+    "last_name": "Okafor",
+    "primary_email_address_id": "idn_2",
+    "email_addresses": [
+      {
+        "id": "idn_2",
+        "email_address": "jon@northline.app",
+        "verification": { "status": "unverified" }
+      }
+    ],
+    "banned": false
+  },
+  {
+    "id": "user_2ccc",
+    "first_name": "Banned",
+    "last_name": "User",
+    "primary_email_address_id": "idn_3",
+    "email_addresses": [
+      {
+        "id": "idn_3",
+        "email_address": "banned@northline.app",
+        "verification": { "status": "verified" }
+      }
+    ],
+    "banned": true
+  }
+]

@@ -130,7 +130,7 @@ has no way to call a client route.
   (given back by its `error`), so every confirmation has it; a form in a `Modal` keeps its
   own. The tests named "a confirmed change is sent once" hold the list back and confirm
   twice: `src/webhooks.test.tsx`, `src/hooks.test.tsx`, `src/native-apps.test.tsx`,
-  `src/proposals.test.tsx` and, for the API keys, the user screen and the control plane's
+  `src/organizations.test.tsx` (members, roles and domains), `src/proposals.test.tsx` and, for the API keys, the user screen and the control plane's
   dialogs, `src/sent-once.test.tsx`.
 - **Server text that names something is shown so that it can be checked.** A webhook
   endpoint's address goes through `printable()` (`src/lib/printable.ts`: every character

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { OAUTH_PROVIDERS } from './oauth'
 
-// A proposal (ADR 0053): a change an AI agent has asked for and that has not happened. It
+// A proposal: a change an AI agent has asked for and that has not happened. It
 // happens only when a human approves it, with a credential the agent never holds.
 
 /**
@@ -65,6 +65,8 @@ export const PROPOSAL_OPERATION_TARGETS = {
  * - `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
  * - `expired`: it can no longer be approved, and nothing happened: nobody approved it in
  *   time, or the agent key that asked was revoked (`expiryReason` says which);
+ * - `rejected`: a human turned it down: nothing was carried out, and the decision is final;
+ *   it can no longer be approved;
  * - `approved`: a human approved it and the operation was started. A proposal stays here
  *   only when the server could not record how the operation ended; it is never run again;
  * - `executed`: approved, and the operation was carried out;
@@ -79,7 +81,14 @@ export const PROPOSAL_OPERATION_TARGETS = {
  * }
  * ```
  */
-export const PROPOSAL_STATUSES = ['pending', 'expired', 'approved', 'executed', 'failed'] as const
+export const PROPOSAL_STATUSES = [
+  'pending',
+  'expired',
+  'approved',
+  'executed',
+  'failed',
+  'rejected',
+] as const
 
 /**
  * Why an approved proposal's operation did not end as carried out, in one of the server's

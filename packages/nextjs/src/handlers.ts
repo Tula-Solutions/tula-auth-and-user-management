@@ -5,7 +5,14 @@ import {
   SESSION_PROFILE_HEADER,
 } from '@tula-tech/contract/headers'
 import { appOrigin, resolveConfig, type TulaConfig, type TulaServerOptions } from './config'
-import { clearCookieLine, isCookieValue, readUpstreamCookie, setCookieLine } from './cookies'
+import {
+  accessCookieChanges,
+  clearCookieLine,
+  isAccessToken,
+  MAX_ACCESS_TOKEN_LENGTH,
+  readUpstreamCookie,
+  setCookieLine,
+} from './cookies'
 import {
   apiHeaders,
   callApi,
@@ -216,6 +223,45 @@ function explainRefusal(request: Request, config: TulaConfig): void {
   )
 }
 
+/**
+ * Say once that an access token was too long to keep in cookies. Fixed text: no token, size
+ * or cookie in it. The session still works through its refresh cookie, one refresh per
+ * request, which is slower and rotates the token every time.
+ */
+function warnTokenTooLarge(config: TulaConfig): void {
+  config.warn(
+    'access-token-size',
+    'an access token was longer than this package keeps in cookies, so it was not stored and ' +
+      'every request refreshes the session instead. A Tula server never issues one this large ' +
+      "with its documented limits (a role's permissions and the custom claims of the JWT " +
+      'template): check that the issuer and the environment are the ones this app is set up for.'
+  )
+}
+
+/**
+ * The session id (`sid`) of the access token a request holds, read without verifying it:
+ * only to tell whether an answer replaces that session, never to trust it.
+ *
+ * @param request - The request (its bearer token wins over the cookie, as for the API).
+ * @param cookieToken - The access token of the request's cookies.
+ * @returns The `sid`, or `undefined` when there is no readable token.
+ */
+function heldSessionId(request: Request, cookieToken: string | undefined): string | undefined {
+  const bearer = request.headers.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1]
+  const payload = (bearer ?? cookieToken)?.split('.')[1]
+  if (!payload) {
+    return undefined
+  }
+  try {
+    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+      sid?: unknown
+    }
+    return typeof claims.sid === 'string' ? claims.sid : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function forward(request: Request, config: TulaConfig): Promise<Response> {
   const url = new URL(request.url)
   const path = clientPath(url, config.path)
@@ -328,11 +374,26 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
       } catch {
         session = null
       }
-      if (session?.accessToken && isCookieValue(session.accessToken)) {
+      // A new session id with no refresh cookie of its own (the answer set none): the refresh
+      // cookie the request carried belongs to the session being replaced, and left in place
+      // it would refresh that one's tokens into the new user's browser.
+      if (
+        session &&
+        cookies.refresh &&
+        !changes.has(names.refresh) &&
+        session.sessionId !== heldSessionId(request, cookies.access)
+      ) {
+        changes.set(names.refresh, null)
+      }
+      if (session?.accessToken && isAccessToken(session.accessToken)) {
         changes.set(names.access, {
           value: session.accessToken,
           maxAge: session.accessTokenMaxAge,
         })
+      } else if (session?.accessToken && session.accessToken.length > MAX_ACCESS_TOKEN_LENGTH) {
+        warnTokenTooLarge(config)
+        // Not stored, and the earlier token must not go on answering for the new session.
+        changes.set(names.access, null)
       }
     }
     // A browser holds one session. The middleware and `auth()` read the access token before
@@ -345,7 +406,23 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
       changes.set(names.session, null)
     }
   }
+  // The access token may be spread over two cookies (accessCookieChanges): its entry is
+  // expanded to one line per cookie, and a part of an earlier, longer token goes.
+  const lines = new Map<string, { value: string; maxAge: number | undefined } | null>()
   for (const [name, change] of changes) {
+    if (name !== names.access) {
+      lines.set(name, change)
+      continue
+    }
+    for (const [part, value] of accessCookieChanges(
+      names.access,
+      change?.value ?? null,
+      cookies.all.keys()
+    )) {
+      lines.set(part, value === null ? null : { value, maxAge: change?.maxAge })
+    }
+  }
+  for (const [name, change] of lines) {
     out.append(
       'set-cookie',
       change === null

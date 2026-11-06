@@ -1,0 +1,421 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "sso connections: create, read, update, delete",
+  "description": "An administrator manages an organization's OIDC connection through the admin API (ADR 0067): created as a draft bound to a verified domain, read back and listed without its client secret, activated, refused a domain the organization has not verified, disabled and deleted.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SSO Org",
+          "slug": "sso-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims its domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "learn the mock identity provider's issuer",
+      "sso": {
+        "captureIssuer": "issuer"
+      }
+    },
+    {
+      "name": "an administrator creates an OIDC connection, as a draft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Mock IdP",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecret": "conformance-sso-secret",
+          "domains": ["s{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "protocol": "oidc",
+          "name": "Mock IdP",
+          "status": "draft",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecretSet": true,
+          "defaultRole": "member",
+          "domains": ["s{{suffix}}.example"],
+          "createdAt": "$any",
+          "updatedAt": "$any"
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
+      "name": "it is read back without its secret",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{connectionId}}",
+          "status": "draft",
+          "clientSecretSet": true
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      }
+    },
+    {
+      "name": "and listed for its organization",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections?organizationId={{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "connections": [
+            {
+              "id": "{{connectionId}}",
+              "name": "Mock IdP"
+            }
+          ]
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      }
+    },
+    {
+      "name": "a domain the organization has not verified is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "domains": ["other-{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "sso.domain_not_verified"
+        }
+      }
+    },
+    {
+      "name": "an administrator starts a test sign-in of the connection",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests",
+        "auth": "secret",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "testId": "$any",
+          "authorizationUrl": "$any"
+        }
+      },
+      "capture": {
+        "testId": "testId",
+        "testUrl": "authorizationUrl"
+      }
+    },
+    {
+      "name": "the administrator signs in at the identity provider as someone on the domain",
+      "sso": {
+        "authorizationUrl": "{{testUrl}}",
+        "email": "tester-{{suffix}}@s{{suffix}}.example",
+        "captureTest": "returnedTest"
+      }
+    },
+    {
+      "name": "the test passed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests/{{testId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "testId": "{{testId}}",
+          "status": "passed",
+          "reason": null,
+          "message": null,
+          "attributes": "$any",
+          "groups": "$any",
+          "mapped": {
+            "email": "tester-{{suffix}}@s{{suffix}}.example",
+            "givenName": null,
+            "familyName": null,
+            "emailOnVerifiedDomain": true
+          }
+        }
+      }
+    },
+    {
+      "name": "it is renamed and activated",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "name": "Okta",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "name": "Okta",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "name": "and disabled",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "status": "disabled"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "disabled"
+        }
+      }
+    },
+    {
+      "name": "a connection nobody signed in through is deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "sso.connection_not_found"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

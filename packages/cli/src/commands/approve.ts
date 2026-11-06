@@ -97,6 +97,7 @@ function failureWords(proposal: Proposal): string {
 const STATUS_WORDS: Readonly<Record<string, string>> = {
   pending: 'waiting for approval',
   expired: 'expired',
+  rejected: 'rejected by a person',
   approved: 'approved, its operation not finished',
   executed: 'approved and carried out',
   failed: 'approved, and its operation did not end as carried out',
@@ -328,7 +329,7 @@ function render(line: (text: string) => void, proposal: Proposal, about: string,
   line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
   line(`  Operation      ${printable(proposal.operation, 40)}`)
   line(`  About          ${about}`)
-  line(`  What it does   ${printable(proposal.summary, 400)}`)
+  line(`  Agent says     ${printable(proposal.summary, 400)}`)
   line(`  Status         ${statusWords(proposal)}`)
   if (status === 'pending') {
     line(
@@ -450,7 +451,7 @@ async function run(context: CommandContext): Promise<number> {
   // Always asked: nothing in this command skips it. The question names the operation and
   // the target it would be carried out on, both made printable, and the word is typed out.
   const answer = await ask(
-    `${asked} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
+    `${asked} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl} (${target.keyLabel})? Type yes to continue: `
   )
   if (answer.trim().toLowerCase() !== 'yes') {
     output.error('Cancelled. Nothing was changed.')

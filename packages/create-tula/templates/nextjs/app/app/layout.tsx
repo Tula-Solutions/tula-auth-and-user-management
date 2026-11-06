@@ -14,13 +14,13 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // What the server knows about the session goes to the provider, so the first paint (on the
   // server and after hydration) already shows the right header.
-  const { sessionId } = await auth()
+  const { sessionId, orgId } = await auth()
   return (
     <html lang='en'>
       <body>
         <TulaProvider
           publishableKey={process.env.NEXT_PUBLIC_TULA_PUBLISHABLE_KEY ?? ''}
-          initialState={sessionId ? { sessionId } : null}
+          initialState={sessionId ? { sessionId, organizationId: orgId } : null}
           signInUrl='/sign-in'
           signUpUrl='/sign-up'
           afterSignInUrl='/dashboard'

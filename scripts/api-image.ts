@@ -28,6 +28,28 @@ export interface ImagePlan {
   channel: string
   /** Whether to build and push: `false` when the registry already has `version`. */
   publish: boolean
+  /**
+   * Whether the channel tag follows this build: `false` when the registry holds a higher
+   * version of the same channel, so that rebuilding an older release cannot move `latest` back.
+   */
+  moveChannel: boolean
+}
+
+/** The three numbers and the pre-release counter of a release's version, for ordering. */
+function order(version: string): number[] {
+  const [core = '', pre] = version.split('-')
+  return [...core.split('.').map(Number), Number(pre?.split('.')[1] ?? 0)]
+}
+
+/** Whether `a` is a higher version than `b`, both of one channel. */
+function above(a: string, b: string): boolean {
+  const [x, y] = [order(a), order(b)]
+  for (const [i, n] of x.entries()) {
+    if (n !== (y[i] ?? 0)) {
+      return n > (y[i] ?? 0)
+    }
+  }
+  return false
 }
 
 /**
@@ -87,7 +109,14 @@ export function registryTags(result: {
  * @throws Error for a version that may not become a tag ({@link imageChannel}).
  */
 export function planImage(version: string, tags: readonly string[]): ImagePlan {
-  return { version, channel: imageChannel(version), publish: !tags.includes(version) }
+  const channel = imageChannel(version)
+  const newer = tags.some(
+    (tag) =>
+      VERSION.exec(tag)?.[1] === VERSION.exec(version)?.[1] &&
+      VERSION.test(tag) &&
+      above(tag, version)
+  )
+  return { version, channel, publish: !tags.includes(version), moveChannel: !newer }
 }
 
 /**
@@ -128,6 +157,7 @@ async function main(): Promise<void> {
     `version=${plan.version}`,
     `channel=${plan.channel}`,
     `publish=${plan.publish}`,
+    `move_channel=${plan.moveChannel}`,
   ].join('\n')
   const verdict = plan.publish
     ? 'is not on the registry: it will be built and pushed.'

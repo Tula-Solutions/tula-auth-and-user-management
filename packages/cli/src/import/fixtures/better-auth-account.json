@@ -1,0 +1,30 @@
+[
+  {
+    "id": "acc_1",
+    "accountId": "ba_user_1",
+    "providerId": "credential",
+    "userId": "ba_user_1",
+    "password": "9b8ff7c2a1d44e0f8c3b5a6d7e8f9012:4f2a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a4f2a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a"
+  },
+  {
+    "id": "acc_2",
+    "accountId": "g-2",
+    "providerId": "google",
+    "userId": "ba_user_3",
+    "password": null
+  },
+  {
+    "id": "acc_3",
+    "accountId": "ba_user_4",
+    "providerId": "credential",
+    "userId": "ba_user_4",
+    "password": "$2b$10$l30gcf50Ot55i0XDX0sXC.FFC7BkQM14q7ts8VmHMeSn4JgfZ1jEu"
+  },
+  {
+    "id": "acc_4",
+    "accountId": "ba_user_2",
+    "providerId": "credential",
+    "userId": "ba_user_2",
+    "password": "$argon2id$v=19$m=19456,t=2,p=1$iI8Ban7fgchVjZM1+J9xhQbqmkz4L5QxGH/j3AU4W7E$Q8fKmap7lTXp0XXYOFWSchrvG18e7+vYI3aUAVL3zaQ"
+  }
+]

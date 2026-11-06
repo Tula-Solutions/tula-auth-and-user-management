@@ -52,7 +52,7 @@ describe('what counts as a change to a published package', () => {
     ['a package that is not published', 'packages/ui/src/items/button.tsx', false],
     ['the API', 'apps/api/src/index.ts', false],
     ['an example app', 'examples/react-vite/src/main.tsx', false],
-    ['docs', 'docs/releasing.md', false],
+    ['docs', 'docs/internal/releasing.md', false],
     ['a workflow', '.github/workflows/ci.yml', false],
     ['a name that only starts like a package', 'packages/core-extras/src/a.ts', false],
   ])('%s: %s -> %p', (_name, path, expected) => {
@@ -92,7 +92,7 @@ describe('the decision', () => {
   test('a change that ships nothing passes without a changeset', () => {
     const verdict = decide({
       ...base,
-      changed: [modified('packages/core/src/a.test.ts'), modified('docs/releasing.md')],
+      changed: [modified('packages/core/src/a.test.ts'), modified('docs/internal/releasing.md')],
     })
     expect(verdict.ok).toBe(true)
     expect(verdict.needing).toEqual([])

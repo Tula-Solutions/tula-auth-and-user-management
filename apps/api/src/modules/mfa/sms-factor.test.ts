@@ -1113,6 +1113,29 @@ describe('a stronger factor that arrives while a texted code is being confirmed'
     }
   )
 
+  // H-094: a session that never proved the factor must not survive it being on (ADR 0016).
+  test('a sweep that fails after the factor is on turns it off again and answers 503', async () => {
+    const userId = await seedUser()
+    const session = await sessionFor(userId)
+    await post('/me/factors/sms', {}, { token: session.accessToken })
+    const code = textedCode()
+    const sweep = Sessions.revokeOthers
+    let calls = 0
+    spies.push(
+      spyOn(Sessions, 'revokeOthers').mockImplementation(async (...args) => {
+        calls += 1
+        if (calls > 1) {
+          throw new Error('store down')
+        }
+        return sweep(...args)
+      })
+    )
+    const res = await post('/me/factors/sms/confirm', { code }, { token: session.accessToken })
+    expect(res.status).toBe(503)
+    const user = await deps.users.findById(SCOPE.environmentId, userId)
+    expect(user?.smsFactorEnabledAt).toBeNull()
+  })
+
   test('a passkey the environment has switched off still does not stand in the way of the write', async () => {
     const userId = await seedUser()
     const session = await sessionFor(userId)

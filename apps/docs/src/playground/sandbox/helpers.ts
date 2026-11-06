@@ -159,6 +159,8 @@ export function accessTokenFor(world: World, session: SandboxSession): string {
       iat,
       exp: iat + Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
       amr: session.amr,
+      // The organization the session acts in, as the real token's `org_id` claim.
+      ...(session.organizationId !== null && { org_id: session.organizationId }),
     }),
     'sandbox',
   ].join('.')

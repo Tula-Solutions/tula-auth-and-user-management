@@ -20,7 +20,7 @@ const environment = fakeEnvironment(
     'docs/a.md': new Set(['intro', 'second-part']),
     'docs/b.md': new Set(['target']),
     'docs/assets/shot.png': null,
-    'docs/adr/1.md': new Set(['why']),
+    'examples/x.md': new Set(['why']),
   },
   [],
   { 'docs/a.md': '/a/', 'docs/b.md': '/b/' }
@@ -127,9 +127,9 @@ describe('renderMarkdown', () => {
   })
 
   test('a link to a file outside the site goes to GitHub, and an external one opens safely', () => {
-    const { html } = render('# T\n\n[adr](adr/1.md#why) [out](https://example.com)\n')
+    const { html } = render('# T\n\n[ex](../examples/x.md#why) [out](https://example.com)\n')
     expect(html).toContain(
-      'href="https://github.com/Tula-Solutions/tula-auth-and-user-management/blob/develop/docs/adr/1.md#why"'
+      'href="https://github.com/Tula-Solutions/tula-auth-and-user-management/blob/develop/examples/x.md#why"'
     )
     expect(html).toContain('rel="noopener"')
   })

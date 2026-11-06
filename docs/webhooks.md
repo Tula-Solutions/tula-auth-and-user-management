@@ -3,8 +3,7 @@
 A webhook is a signed notice, sent to your backend, of something that has already happened in
 an environment: a user was created, a session was revoked, a setting changed. Its answer
 changes nothing in Tula. You register an address, pick the event types, and the server posts
-each such event to it. The design and its reasons are in
-[ADR 0034](adr/0034-webhooks.md).
+each such event to it.
 
 A delivery your backend does not take is **tried again**: eight requests over a day and a few
 hours, on a [fixed schedule](#retries). After that the server gives the delivery up, and an
@@ -12,8 +11,7 @@ endpoint that takes nothing for five days is [switched off](#when-an-endpoint-is
 Every delivery and every request made for it can be [read](#the-delivery-log), a
 [test event](#send-a-test-event) can be sent at any time, and a past delivery can be
 [sent again](#send-a-delivery-again) by hand. An endpoint's signing secret can be
-[replaced](#rotate-a-secret) without losing a delivery. What is still missing is listed
-[at the end](#not-built-yet).
+[replaced](#rotate-a-secret) without losing a delivery.
 
 ## Register an endpoint
 
@@ -75,7 +73,7 @@ await admin.call('deleteWebhookEndpoint', { params: { id: endpoint.id } })
 | `GET /v1/admin/webhook-endpoints` | List, oldest first. |
 | `GET /v1/admin/webhook-endpoints/:id` | Read one. |
 | `PATCH /v1/admin/webhook-endpoints/:id` | Change `url`, `eventTypes` or `enabled`. |
-| `DELETE /v1/admin/webhook-endpoints/:id` | Remove it, with its delivery log. |
+| `DELETE /v1/admin/webhook-endpoints/:id` | Remove it, with its delivery log. Deliveries still queued are removed too and are never sent. |
 | `GET /v1/admin/webhook-endpoints/:id/deliveries` | [Its deliveries](#the-delivery-log), newest first. |
 | `GET /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId` | One delivery with every request made for it. |
 | `POST /v1/admin/webhook-endpoints/:id/test` | [Send a test event](#send-a-test-event). |
@@ -701,8 +699,7 @@ For the operator of the server:
   not by the worker, and wait for the receiver for up to five seconds. That is why a
   deployment whose worker is separate refuses both: its API instances make no request to an
   endpoint.
-- The retention job deletes settled events after 30 days and ended deliveries after 90
-  ([ADR 0017](adr/0017-retention.md)). Its log line counts them (`events`,
+- The retention job deletes settled events after 30 days and ended deliveries after 90. Its log line counts them (`events`,
   `webhookDeliveries`).
 - The first start of a version with webhooks settles the whole outbox, which has recorded
   every event since the deployment began: nothing of it is sent (no endpoint existed), the
@@ -752,13 +749,12 @@ calls the routes this page describes and adds nothing of its own:
 What the dashboard cannot show is what the server does not keep: no header and no body of a
 receiver's answer ([What the server keeps](#what-the-server-keeps)).
 
-## Not built yet
+## Limits
 
 - **Settings for the schedule**: the waits, the number of requests and the periods are fixed.
 - **Sending again in bulk**: one delivery per call.
 - **A test event or a delivery sent again where the worker is a service of its own**: both
   are refused there, not handed to the worker.
 
-What of these steps was not verified against the real thing (a public `https` receiver, a
-verifier in another language) is in
-[plans/phase-2-unverified.md](plans/phase-2-unverified.md).
+These steps have not been verified against a public `https` receiver or a verifier in another
+language.

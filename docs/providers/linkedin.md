@@ -7,7 +7,7 @@
 > from LinkedIn's documentation and have not been clicked through. **Try a sign-up with a real
 > LinkedIn account before you offer the button** ([Limits](#limits) says what was never seen).
 
-What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)).
+What an operator does once per environment.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
    exactly `PUBLIC_URL/v1/oauth/callback/linkedin`.

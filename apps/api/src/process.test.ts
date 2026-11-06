@@ -9,7 +9,7 @@ describe('planProcess', () => {
     expect(planProcess('api', 'api')).toEqual({
       role: 'api',
       serves: 'api',
-      jobs: ['retention', 'webhook_delivery'],
+      jobs: ['retention', 'domain_reminders', 'webhook_delivery'],
       deliversWebhooks: true,
     })
   })
@@ -18,8 +18,9 @@ describe('planProcess', () => {
     expect(planProcess('api', 'separate')).toEqual({
       role: 'api',
       serves: 'api',
-      // Retention makes no request to anyone's address and stays where the API is.
-      jobs: ['retention'],
+      // Retention makes no request to anyone's address and stays where the API is; so does
+      // the domain reminder job, which sends mail through the API's mailer.
+      jobs: ['retention', 'domain_reminders'],
       deliversWebhooks: false,
     })
   })
@@ -54,6 +55,7 @@ describe('planProcess', () => {
       }
       // Retention runs in exactly one kind of process too.
       expect(deployment.filter((plan) => plan.jobs.includes('retention'))).toHaveLength(1)
+      expect(deployment.filter((plan) => plan.jobs.includes('domain_reminders'))).toHaveLength(1)
     }
   })
 })

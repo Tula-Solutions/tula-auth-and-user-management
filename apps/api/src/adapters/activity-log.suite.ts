@@ -375,8 +375,8 @@ export function describeActivityLog(
           userId,
           activity(ctx.a, 'user.deleted', { type: 'user', id: userId })
         )
-      expect(await remove()).toBe(true)
-      expect(await remove()).toBe(false)
+      expect(await remove()).toMatchObject({ outcome: 'deleted' })
+      expect(await remove()).toEqual({ outcome: 'not_found' })
       expect(await ctx.users.findById(ctx.a.environmentId, userId)).toBeNull()
       expect(await recorded(ctx.a, userId)).toEqual(['user.deleted'])
     })
@@ -555,6 +555,76 @@ export function describeActivityLog(
         expect(fromB).toEqual({ entries: [], totalCount: 0 })
         const all = await ctx.log.listAudit(ctx.b.environmentId, { page: 1, size: 100 })
         expect(all.entries.some((entry) => ids.includes(entry.id))).toBe(false)
+      })
+    })
+
+    describe('listAuditAfter and append', () => {
+      const ORG = '00000000-0000-7000-8000-00000000a0b1'
+      const target = { type: 'environment', id: '00000000-0000-7000-8000-0000000000e1' } as const
+
+      async function appendAt(tenant: ActivitySuiteTenant, at: Date, data = {}) {
+        const entry = activity(tenant, 'audit.exported', target, { occurredAt: at, data })
+        await ctx.log.append(entry)
+        return entry
+      }
+
+      test('reads oldest first, ties by id, and pages by keyset with no gap or repeat', async () => {
+        const mine = await ctx.freshTenant()
+        const made = [
+          await appendAt(mine, later(2000)),
+          await appendAt(mine, later(1000)),
+          await appendAt(mine, later(1000)),
+          await appendAt(mine, later(3000)),
+        ]
+        const expected = [...made]
+          .sort((x, y) => x.occurredAt.getTime() - y.occurredAt.getTime() || (x.id < y.id ? -1 : 1))
+          .map((entry) => entry.id)
+        const seen: string[] = []
+        let after: { occurredAt: Date; id: string } | null = null
+        for (;;) {
+          const page = await ctx.log.listAuditAfter(mine.environmentId, {}, after, 3)
+          seen.push(...page.map((entry) => entry.id))
+          const last = page.at(-1)
+          if (!last || page.length < 3) {
+            break
+          }
+          after = { occurredAt: last.occurredAt, id: last.id }
+        }
+        expect(seen).toEqual(expected)
+      })
+
+      test('never reads another environment', async () => {
+        const mine = await ctx.freshTenant()
+        const other = await ctx.freshTenant()
+        await appendAt(other, later(1000))
+        expect(await ctx.log.listAuditAfter(mine.environmentId, {}, null, 10)).toEqual([])
+      })
+
+      test('filters by organization (the target, or the detail that names it) and by time', async () => {
+        const mine = await ctx.freshTenant()
+        const named = await appendAt(mine, later(1000), { organizationId: ORG })
+        await appendAt(mine, later(2000))
+        const own = activity(
+          mine,
+          'organization.created',
+          { type: 'organization', id: ORG },
+          { occurredAt: later(3000) }
+        )
+        await ctx.log.append(own)
+        const byOrg = await ctx.log.listAuditAfter(
+          mine.environmentId,
+          { organizationId: ORG },
+          null,
+          10
+        )
+        expect(byOrg.map((entry) => entry.id)).toEqual([named.id, own.id])
+        const byTime = await ctx.log.listAuditAfter(
+          mine.environmentId,
+          { from: later(2000), to: later(3000) },
+          null,
+          10
+        )
+        expect(byTime).toHaveLength(1)
       })
     })
 

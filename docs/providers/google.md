@@ -6,7 +6,7 @@
 > provider's documentation and have not been clicked through.
 
 What an operator does once per environment. Tula never ships shared credentials: each
-environment uses its own ([ADR 0026](../adr/0026-oauth.md)).
+environment uses its own.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`. It is
    exactly `PUBLIC_URL/v1/oauth/callback/google`, for example
@@ -35,8 +35,7 @@ environment uses its own ([ADR 0026](../adr/0026-oauth.md)).
 
 > **Not verified against Google.** No test makes a request to Google, and no Android or
 > iOS app has been run against this. What follows is what the server checks, and what
-> Google's documentation says the platforms send; [ADR 0045](../adr/0045-native-id-token-exchange.md)
-> lists what is unconfirmed.
+> Google's documentation says the platforms send.
 
 An Android or iOS app can sign in with Google's own account sheet (Credential Manager,
 Google Sign-In for iOS) instead of a browser tab. Google's SDK hands the app an **ID

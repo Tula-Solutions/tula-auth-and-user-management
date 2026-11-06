@@ -56,8 +56,8 @@ export interface TulaExpoClientOptions
   /**
    * The device's key store: `hardwareDeviceKeys` of `@tula-tech/expo/device-key`, or an app's
    * own. With one, every sign-in this client starts carries a proof by a key that cannot
-   * leave the device, the session is bound to it, and every refresh carries a proof
-   * (ADR 0043, ADR 0052). Left out, sessions are not bound.
+   * leave the device, the session is bound to it, and every refresh carries a proof.
+   * Left out, sessions are not bound.
    *
    * Give one only where the session profile of the app's sign-ins allows a key
    * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
@@ -68,8 +68,9 @@ export interface TulaExpoClientOptions
    * The app link an emailed sign-in link leads to: an `https` URL on a domain associated
    * with the app, exactly as the environment lists it among its redirect URLs
    * (`https://app.example.com/auth/link`), with no query, fragment, user name, backslash
-   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask for an emailed link
-   * and the app can open one (`useSignIn().openEmailLink`, ADR 0055): a link is asked for
+   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask
+   * for an emailed link
+   * and the app can open one (`useSignIn().openEmailLink`): a link is asked for
    * with this URL only, and only this URL, character for character, is ever read. Left out,
    * asking for an emailed link is refused before any request and the code in the same
    * email is the way.

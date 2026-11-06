@@ -13,7 +13,7 @@ import {
 // `@tula-tech/expo-screens`: the one module that imports `expo`, and that loads this
 // package's own native module (`TulaScreens`: `ios/` and `android/` of the package). An
 // app that draws its own screens on the headless client (`@tula-tech/expo`) never installs this
-// package, so Expo never links the native module into it (ADR 0063).
+// package, so Expo never links the native module into it.
 
 export type { ThemeOverrides } from '@tula-tech/contract/theme'
 export {
@@ -42,7 +42,7 @@ const accountView = requireNativeView<Record<string, unknown>>(
 
 /**
  * Set up Tula's native screens for an Expo app: the SwiftUI screens on the Swift client on
- * iOS, the Compose screens on the Kotlin client on Android (ADR 0063).
+ * iOS, the Compose screens on the Kotlin client on Android.
  *
  * The native client owns the session: the refresh token is in the Keychain (iOS) or
  * sealed by a Keystore key (Android) and never crosses to JavaScript; what this returns

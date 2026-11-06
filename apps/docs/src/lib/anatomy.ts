@@ -81,8 +81,8 @@ export function neighbours(
 }
 
 /**
- * A page's breadcrumb, from the sidebar's tree: the tab (a link), the group (text: a group is
- * not a page), the pages it hangs under, and the page itself (the last step, not a link).
+ * A page's breadcrumb, from the sidebar's tree: the tab (a link), the group (a link to its first page: a
+ * group is not a page itself), the pages it hangs under, and the page itself (the last step, not a link).
  *
  * @param sections - From `buildSections`.
  * @param route - The page's route.
@@ -98,7 +98,7 @@ export function breadcrumb(sections: readonly Section[], route: string): Crumb[]
         }
         found = [
           { label: section.label, route: sectionHome(section) },
-          { label: group.title },
+          { label: group.title, route: group.items[0]?.route },
           ...parents.map((parent) => ({ label: parent.label, route: parent.route })),
           { label: item.label },
         ]

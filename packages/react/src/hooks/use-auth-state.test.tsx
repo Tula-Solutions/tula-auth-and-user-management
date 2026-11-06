@@ -18,14 +18,19 @@ function Status({ client }: { client: TulaClient }) {
 
 describe('useAuthState during server rendering', () => {
   test('a client with no server state renders as loading, whatever it already knows', () => {
-    const client = fakeClient({ status: 'signed-in', sessionId: 's1', user: null })
+    const client = fakeClient({
+      status: 'signed-in',
+      sessionId: 's1',
+      user: null,
+      organizationId: null,
+    })
     expect(renderToString(<Status client={client} />)).toContain('loading')
   })
 
   test('a client that carries the server’s state renders it', () => {
     const client = fakeClient(
       { status: 'loading' },
-      { status: 'signed-in', sessionId: 's1', user: null }
+      { status: 'signed-in', sessionId: 's1', user: null, organizationId: null }
     )
     expect(renderToString(<Status client={client} />)).toContain('signed-in:s1')
   })

@@ -180,7 +180,7 @@ The changes every new method needs, made once.
   (`0.1.0-alpha`).
 - **Nothing is published in Phase 1** until the licence and the npm scope are settled (see
   Decisions); the release workflow is built and exercised with a dry run only.
-  *As built ([ADR 0020](../adr/0020-packaging-and-release.md), [releasing](../releasing.md)):*
+  *As built ([ADR 0020](../adr/0020-packaging-and-release.md), [releasing](../internal/releasing.md)):*
   packages resolve from source inside the repository (`exports` → `src`) and from `dist` when
   published (`publishConfig.exports`, applied by `scripts/packages.ts`, which stages, packs and
   runs publint and arethetypeswrong on the tarball; `bun run packages:check` is in `verify`).
@@ -727,7 +727,7 @@ Settled on 2026-10-03, when the plan was approved to start.
 | # | Decision | Outcome |
 | --- | --- | --- |
 | 1 | Licence | **Deferred.** Step 1.4 builds and checks the packages but publishes nothing. |
-| 2 | The `@tula` npm scope | **Deferred** with the licence; the packages kept the `@tula/*` names inside the workspace. *Decided since: the scope is `@tula-tech`, the owner's npm organisation, and every workspace package was renamed to it ([releasing](../releasing.md)).* |
+| 2 | The `@tula` npm scope | **Deferred** with the licence; the packages kept the `@tula/*` names inside the workspace. *Decided since: the scope is `@tula-tech`, the owner's npm organisation, and every workspace package was renamed to it ([releasing](../internal/releasing.md)).* |
 | 3 | Dashboard sign-in and instance-level authority | An instance admin token from the server's environment (`TULA_ADMIN_TOKEN`), exchanged for a short dashboard session. Operator accounts wait for the V2 control plane. |
 | 4 | OAuth library | `arctic` for the protocol and `jose` for ID tokens. |
 | 5 | Build order | The SDK slice comes before the new methods, so each method is proven through a real client. |

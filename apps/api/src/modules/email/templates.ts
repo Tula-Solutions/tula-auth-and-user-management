@@ -2,6 +2,7 @@ import {
   DEFAULT_APP_NAME,
   EMAIL_TEMPLATE_RULES,
   type EmailTemplate,
+  type EmailTemplateCategory,
   type EmailTemplateKind,
   type EmailTemplatePlaceholder,
   type EmailTemplateToken,
@@ -25,12 +26,55 @@ export interface EmailBrand {
 
 /** An emailed 6-digit code, and optionally a link that does the same. */
 export interface CodeMessage {
-  type: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up'
+  type:
+    | 'email_verification'
+    | 'password_reset'
+    | 'sign_in'
+    | 'step_up'
+    | 'organization_domain_verification'
   code: string
   /** Minutes until the code and link expire. */
   ttlMinutes: number
   /** Magic link, when the flow offers one. */
   linkUrl?: string
+}
+
+/**
+ * An invitation to join an organization (ADR 0065, Orgs 04): the server's own link and no code.
+ * Sent to the invited address only, by the invitation service.
+ */
+export interface OrganizationInvitationMessage {
+  type: 'organization_invitation'
+  /**
+   * The organization's name: text a user typed, so it is untrusted. It reaches the email only
+   * through {@link displayName} and {@link escapeHtml}, and only the server's own wording
+   * names it (no template placeholder holds it). Nothing the inviter typed besides it does.
+   */
+  organizationName: string
+  /** The link: the redirect URL the inviter chose followed by `#tula_invitation=<token>`. */
+  linkUrl: string
+  /** Days until the link stops working. */
+  ttlDays: number
+}
+
+/**
+ * Tells an organization's managers that a verified domain will stop matching in `daysLeft`
+ * days unless it is verified again (ADR 0065, "Lapse"). No code and no link: they open their
+ * organization's domain settings themselves. Sent by the reminder job only.
+ */
+export interface OrganizationDomainExpiringMessage {
+  type: 'organization_domain_expiring'
+  /** The organization's name: user text, escaped and cleaned like an invitation's. */
+  organizationName: string
+  /**
+   * How many of the organization's domains this reminder is about. The domains are not named:
+   * a name such as `acme.com` reads as a link, and no email carries one (the link rule of
+   * `.claude/rules/message-wording.md`). The manager sees them, with their dates, in the
+   * organization's domain settings.
+   */
+  domains: number
+  /** Whole days until the verification lapses (the reminder's threshold). */
+  daysLeft: number
 }
 
 /** A notice that stands in for a code, so sign-up and reset answer alike for every address. */
@@ -140,7 +184,12 @@ export type SecurityNoticeMessage =
   | EmailAddedMessage
 
 /** Every email Tula sends. Adding a message means adding its copy to this module, nowhere else. */
-export type EmailMessage = CodeMessage | NoticeMessage | SecurityNoticeMessage
+export type EmailMessage =
+  | CodeMessage
+  | NoticeMessage
+  | SecurityNoticeMessage
+  | OrganizationInvitationMessage
+  | OrganizationDomainExpiringMessage
 
 /** What a message says, before the layout is applied. `{app}` is replaced by the app's name. */
 interface Copy {
@@ -194,6 +243,15 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
       "If you didn't ask for this, someone may be signed in to your account: open {app}, sign out of the devices you do not recognise and do not share this code.",
     ],
   },
+  organization_domain_verification: {
+    subject: 'is your {app} domain verification code',
+    lead: [
+      'Someone asked to verify the domain of this email address for an organization in {app}. Enter this code to show that you control it:',
+    ],
+    closing: [
+      "If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.",
+    ],
+  },
   account_exists: {
     subject: 'Your {app} account already exists',
     lead: [
@@ -226,6 +284,49 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
     ],
     closing: ["If it wasn't you, you can safely ignore this email. Your account has not changed."],
   },
+}
+
+/**
+ * The copy of an invitation. `{organization}` stands for the organization's cleaned name, put
+ * in by {@link fillCopy} in the same pass as `{app}`, so that a name holding `{app}` is not
+ * expanded.
+ */
+function invitationCopy(message: OrganizationInvitationMessage): Copy {
+  const days = message.ttlDays === 1 ? '1 day' : `${message.ttlDays} days`
+  return {
+    subject: "You're invited to join {organization} on {app}",
+    lead: [
+      'You have been invited to join {organization} on {app}.',
+      `The invitation works for ${days}. Open the link to accept it or decline it.`,
+    ],
+    action: 'View the invitation',
+    linkLead: 'Open this link to accept or decline',
+    closing: [
+      "If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.",
+    ],
+  }
+}
+
+/**
+ * The copy of the reminder that verified domains are about to lapse. `{organization}` stands
+ * for the organization's cleaned name, as in an invitation. No domain is named (see
+ * {@link OrganizationDomainExpiringMessage.domains}), and there is no link.
+ */
+function domainExpiringCopy(message: OrganizationDomainExpiringMessage): Copy {
+  const days = message.daysLeft === 1 ? '1 day' : `${message.daysLeft} days`
+  const which =
+    message.domains === 1 ? 'A verified domain of' : `${message.domains} verified domains of`
+  return {
+    subject: 'Domain verification for {organization} on {app} ends soon',
+    lead: [
+      `${which} {organization} on {app} will stop being trusted within ${days}.`,
+      'After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.',
+      "To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.",
+    ],
+    closing: [
+      "If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.",
+    ],
+  }
 }
 
 const SIGNED_OUT = 'Every device that was signed in has been signed out.'
@@ -463,12 +564,16 @@ const UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]+/gu
  *   name when nothing printable is left.
  */
 export function displayName(name: string): string {
-  const cleaned = withoutHiddenCharacters(name)
+  return cleanedName(name) || DEFAULT_APP_NAME
+}
+
+/** A name on one line without the characters that draw nothing, or `''` when none is left. */
+function cleanedName(name: string): string {
+  return withoutHiddenCharacters(name)
     .replace(UNPRINTABLE, ' ')
     .trim()
     .slice(0, MAX_APP_NAME_LENGTH)
     .trim()
-  return cleaned || DEFAULT_APP_NAME
 }
 
 /**
@@ -515,12 +620,15 @@ export function templateKind(message: EmailMessage): EmailTemplateKind {
     case 'password_reset':
     case 'sign_in':
     case 'step_up':
+    case 'organization_domain_verification':
     case 'account_exists':
     case 'no_account':
     case 'no_account_sign_in':
     case 'email_in_use':
     case 'email_added':
     case 'new_sign_in':
+    case 'organization_invitation':
+    case 'organization_domain_expiring':
       return message.type
     case 'password_changed':
       if (message.by === 'verification') {
@@ -558,6 +666,10 @@ const MFA_KINDS: Record<MfaChangedMessage['change'], EmailTemplateKind> = {
 interface Parts {
   /** The cleaned app name. */
   app: string
+  /** The cleaned organization name of an invitation, else `null`. */
+  organization: string | null
+  /** The message's link: a code message's magic link, or an invitation's. */
+  linkUrl: string | null
   /** Whether the message is a security notice. */
   notice: boolean
   copy: Copy
@@ -572,13 +684,25 @@ interface Parts {
 }
 
 function partsOf(brand: EmailBrand, message: EmailMessage): Parts {
+  const code = 'code' in message ? message : null
   const notice = isSecurityNotice(message)
-  const copy = notice ? securityCopy(message) : COPY[message.type]
+  const copy = notice
+    ? securityCopy(message)
+    : message.type === 'organization_invitation'
+      ? invitationCopy(message)
+      : message.type === 'organization_domain_expiring'
+        ? domainExpiringCopy(message)
+        : COPY[message.type]
   return {
     app: displayName(brand.name),
+    organization:
+      message.type === 'organization_invitation' || message.type === 'organization_domain_expiring'
+        ? cleanedName(message.organizationName) || 'an organization'
+        : null,
+    linkUrl: message.type === 'organization_invitation' ? message.linkUrl : (code?.linkUrl ?? null),
     notice,
     copy,
-    code: 'code' in message ? message : null,
+    code,
     support: brand.supportEmail ? `Need help? Contact ${brand.supportEmail}` : null,
     details: (copy.details ?? []).map(detailLine),
     supportLine:
@@ -586,6 +710,18 @@ function partsOf(brand: EmailBrand, message: EmailMessage): Parts {
         ? `If you cannot get back in to your account, contact ${brand.supportEmail}.`
         : null,
   }
+}
+
+/**
+ * Put the names into a piece of the built-in copy: `{app}` is the app's, `{organization}` an
+ * invitation's organization's. One pass over the copy, with the names as replacement
+ * functions' results: a name that itself holds `{app}` or `$&` is put in once and never read
+ * again, and operator or user text is never a replacement pattern.
+ */
+function fillCopy(parts: Pick<Parts, 'app' | 'organization'>, text: string): string {
+  return text.replace(/\{(app|organization)\}/g, (_, which: string) =>
+    which === 'app' ? parts.app : (parts.organization ?? '')
+  )
 }
 
 /** The one layout: the paragraphs of a message between the document's frame and its footer. */
@@ -625,10 +761,8 @@ function layout(parts: Parts, text: string[], html: string[]): Pick<MailMessage,
  */
 export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessage, 'to'> {
   const parts = partsOf(brand, message)
-  const { app, copy, code, details } = parts
-  // A function, not a string: `$&` and friends in a replacement string are patterns, and the
-  // name is operator input.
-  const named = (text: string) => text.replaceAll('{app}', () => app)
+  const { copy, code, details, linkUrl } = parts
+  const named = (text: string) => fillCopy(parts, text)
   const lead = copy.lead.map(named)
   const closing = [
     ...(code ? [`This code expires in ${code.ttlMinutes} minutes.`] : []),
@@ -645,17 +779,17 @@ export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessa
         ...lead,
         ...(details.length > 0 ? [details.join('\n')] : []),
         ...(code ? [code.code] : []),
-        ...(code?.linkUrl ? [`${copy.linkLead ?? 'Or open this link'}: ${code.linkUrl}`] : []),
+        ...(linkUrl ? [`${copy.linkLead ?? 'Or open this link'}: ${linkUrl}`] : []),
         ...closing,
       ],
       [
         ...lead.map(paragraph),
         ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
         ...(code ? [`<p style="${CODE_STYLE}">${escapeHtml(code.code)}</p>`] : []),
-        ...(code?.linkUrl
+        ...(linkUrl
           ? [
               ...(copy.linkLead ? [paragraph(`${copy.linkLead}:`)] : []),
-              `<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(named(copy.action ?? 'Open'))}</a></p>`,
+              `<p><a href="${escapeHtml(linkUrl)}">${escapeHtml(named(copy.action ?? 'Open'))}</a></p>`,
             ]
           : []),
         ...closing.map(paragraph),
@@ -716,6 +850,13 @@ function valuesOf(app: string, message: EmailMessage): Values {
       values.link = message.linkUrl
     }
   }
+  if (message.type === 'organization_invitation') {
+    values.link = message.linkUrl
+    values.expiresInDays = String(message.ttlDays)
+  }
+  if (message.type === 'organization_domain_expiring') {
+    values.expiresInDays = String(message.daysLeft)
+  }
   if ('at' in message) {
     values.time = utc(message.at)
   }
@@ -760,7 +901,7 @@ function tokensOf(text: string): EmailTemplateToken[] {
  * `{{code}}` stays those characters. The result is cleaned like the app name before it
  * reaches a header (a control character or a line break becomes a space).
  */
-function subjectOf(subject: string, values: Values, category: 'code' | 'notice'): string {
+function subjectOf(subject: string, values: Values, category: EmailTemplateCategory): string {
   const rendered = tokensOf(subject)
     .map((token) => ('text' in token ? token.text : valueFor(values, token.placeholder)))
     .join('')
@@ -775,7 +916,7 @@ function subjectOf(subject: string, values: Values, category: 'code' | 'notice')
     throw new Unusable('too_long')
   }
   // The text was checked when it was saved; the app name is a value and may start with one.
-  if (category === 'notice' && /^\p{Nd}/u.test(seen)) {
+  if (category !== 'code' && /^\p{Nd}/u.test(seen)) {
     throw new Unusable('leading_digit')
   }
   return rendered
@@ -908,7 +1049,7 @@ export function renderTemplate(
     writtenSubject === undefined
       ? null
       : attempt('subject', unused, () => subjectOf(writtenSubject, values, category))
-  const label = (parts.copy.action ?? 'Open').replaceAll('{app}', () => parts.app)
+  const label = fillCopy(parts, parts.copy.action ?? 'Open')
   const body =
     writtenBody === undefined
       ? null
@@ -918,8 +1059,8 @@ export function renderTemplate(
   // The sentence that says what to do when the reader did not do this: the last paragraph
   // of the built-in closing of every kind of the notice category. The server's, like the
   // facts, so that no wording of a notice can leave it out.
-  const lastWord = category === 'notice' ? parts.copy.closing.at(-1) : undefined
-  const ownSentence = lastWord === undefined ? [] : [lastWord.replaceAll('{app}', () => parts.app)]
+  const lastWord = category !== 'code' ? parts.copy.closing.at(-1) : undefined
+  const ownSentence = lastWord === undefined ? [] : [fillCopy(parts, lastWord)]
   return {
     message: {
       subject: subject ?? builtIn.subject,

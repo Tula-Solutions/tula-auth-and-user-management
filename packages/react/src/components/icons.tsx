@@ -42,6 +42,15 @@ export function CheckIcon() {
   )
 }
 
+/** A chevron pointing down: a control that opens a panel. */
+export function ChevronIcon() {
+  return (
+    <Icon>
+      <path d='M5 8l5 5 5-5' />
+    </Icon>
+  )
+}
+
 /** An empty circle: an unmet rule. */
 export function CircleIcon() {
   return (

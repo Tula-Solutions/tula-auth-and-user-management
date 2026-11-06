@@ -1,6 +1,7 @@
 package dev.tula.auth
 
 import dev.tula.auth.generated.OAuthProvider
+import dev.tula.auth.generated.OrganizationDomainMode
 
 // The Kotlin samples of the documentation (docs/kotlin.md, docs/methods/*.md). Each
 // `// #region name` … `// #endregion` block is copied into the pages by
@@ -171,6 +172,77 @@ internal object DocsSnippets {
             is ProviderOutcome.Refused -> App.explain(outcome.refusal) // why nothing was exchanged
             is ProviderOutcome.Linked -> Unit // only from tula.identities.link
         }
+        // #endregion
+    }
+
+    suspend fun organizations(tula: TulaClient) {
+        // #region organizations
+        val page = tula.organizations.list() // each with the user's role and its permissions
+        if (page.data.isEmpty()) {
+            val acme = tula.organizations.create(name = "Acme", slug = "acme")
+            tula.organizations.setActive(acme.id) // the next access token carries the claims
+        }
+        tula.organizations.active()?.let { organization ->
+            // Read from the access token, to decide what to draw: your server checks the same keys.
+            if (organization.hasPermission("org:billing:read")) {
+                // show the billing tab
+            }
+            if (organization.hasRole("admin")) {
+                // show the admin tab
+            }
+        }
+        tula.organizations.clearActive() // back to the personal account
+        // #endregion
+    }
+
+    suspend fun invitation(tula: TulaClient, openedWith: String) {
+        // #region invitation
+        // The app was opened by the link in the emailed invitation (an app link, say).
+        val link = TulaInvitationLink.read(openedWith) ?: return
+        // The token is a secret. It was in the address's fragment, which no server saw.
+        val preview = tula.organizations.invitations.preview(link.token)
+        // preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+        // Once the user is signed in as preview.email, with its address verified:
+        val joined = tula.organizations.invitations.accept(link.token)
+        tula.organizations.setActive(joined.id)
+        // or: tula.organizations.invitations.decline(link.token)
+        // #endregion
+        check(preview.email.isNotEmpty())
+    }
+
+    suspend fun suggestions(tula: TulaClient) {
+        // #region organization-suggestions
+        // Organizations whose verified domain is the one of the user's verified address:
+        val offered = tula.organizations.suggestions()
+        offered.data.firstOrNull()?.let { first ->
+            tula.organizations.join(first.id) // with the environment's default role
+        }
+        // #endregion
+    }
+
+    suspend fun organizationMembers(tula: TulaClient, organizationId: String) {
+        // #region organization-members
+        // The server decides from the role the user holds now, on every call.
+        val members = tula.organizations.members.list(organizationId)
+        val roles = tula.organizations.roles(organizationId) // the roles the user may give
+        val first = members.data.firstOrNull()
+        if (first != null && roles.data.any { it.key == "admin" }) {
+            tula.organizations.members.changeRole(organizationId, first.userId, "admin")
+        }
+        tula.organizations.update(organizationId, name = "Acme Inc")
+        tula.organizations.leave(organizationId) // refused for the last manager
+        tula.organizations.remove(organizationId) // deletes it for good
+        // #endregion
+    }
+
+    suspend fun organizationDomains(tula: TulaClient, organizationId: String, typed: String) {
+        // #region organization-domains
+        // Claim a domain: a code is emailed to an address on it.
+        val claim = tula.organizations.domains.start(organizationId, "acme.com", "ada@acme.com", OrganizationDomainMode.Suggest)
+        val proved = tula.organizations.domains.verify(organizationId, claim.id, typed)
+        // proved.status is Verified until proved.expiresAt; later NeedsReverification.
+        tula.organizations.domains.update(organizationId, proved.id, OrganizationDomainMode.AutoJoin)
+        tula.organizations.domains.remove(organizationId, proved.id)
         // #endregion
     }
 }

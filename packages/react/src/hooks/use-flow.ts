@@ -149,6 +149,9 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
         const created = await begin()
         if (generation.current === started) {
           flow.current = created
+        } else {
+          // reset() ran while this began: nobody holds the flow, so drop what it kept.
+          created.discard?.()
         }
         return created.step
       }),

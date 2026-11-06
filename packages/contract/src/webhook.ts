@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ACTIVITY_TYPES } from './event-types'
 import { PaginationMetaSchema } from './user'
 
-// The admin API's view of a webhook endpoint (ADR 0034): where an environment's events are
+// The admin API's view of a webhook endpoint: where an environment's events are
 // delivered, signed. How a delivery is signed is in the Zod-free `./webhook-signature`.
 
 /**
@@ -131,7 +131,8 @@ export const RotatedWebhookSecretSchema = WebhookEndpointSchema.extend({
  *
  * @example
  * ```ts
- * if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress') {
+ * if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress')
+ * {
  *   // wait for the overlap to end, or revoke the previous secret first
  * }
  * ```

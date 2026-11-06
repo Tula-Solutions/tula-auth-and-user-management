@@ -1,5 +1,14 @@
 # create-tula
 
+## 0.3.0
+
+### Patch Changes
+
+- a3a5f60: The scaffolded Compose example builds its release variant minified, with the SDK's R8 consumer rules.
+- 3e5e07c: Fuller npm READMEs and package author metadata.
+- 0f5e915: The Compose example sets `allowInsecureHttp` for the emulator's plain-http address to the host.
+- b559f5d: The scaffolded Compose file pins newer images: `postgres:18-alpine` and `axllent/mailpit` v1.32.0.
+
 ## 0.2.0
 
 ### Patch Changes

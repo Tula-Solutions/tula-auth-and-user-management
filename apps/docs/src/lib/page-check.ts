@@ -1,4 +1,5 @@
 import type { Element, Root } from 'hast'
+import { toString as hastText } from 'hast-util-to-string'
 import rehypeParse from 'rehype-parse'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
@@ -109,6 +110,9 @@ export function checkPage(label: string, html: string, base = '/', siblingBase?:
       }
       level = next
     }
+    if (node.tagName === 'nav' && classesOf(node).includes('breadcrumb')) {
+      checkBreadcrumb(label, node)
+    }
     const versionLink = node.properties?.dataDocsVersion !== undefined
     if (versionLink && siblingBase === undefined) {
       throw new RenderError(label, 'has a version link on a site that has only one version')
@@ -152,6 +156,29 @@ export function checkPage(label: string, html: string, base = '/', siblingBase?:
       throw new RenderError(label, `has a ${tag} whose ${attribute} "${id}" matches no element`)
     }
   }
+}
+
+function classesOf(node: Element): string[] {
+  return listOf(node.properties?.className)
+}
+
+/** A breadcrumb step that looks like a path segment is a link, the current page excepted. */
+function checkBreadcrumb(label: string, nav: Element): void {
+  visit(nav, 'element', (item: Element) => {
+    if (item.tagName !== 'li') {
+      return
+    }
+    const hasLink = item.children.some((child) => child.type === 'element' && child.tagName === 'a')
+    const current = item.children.some(
+      (child) => child.type === 'element' && child.properties?.ariaCurrent === 'page'
+    )
+    if (!hasLink && !current) {
+      throw new RenderError(
+        label,
+        `has a breadcrumb step "${hastText(item).trim()}" that is not a link`
+      )
+    }
+  })
 }
 
 /** A section may pass the cap only as one top-level element (`wrapSections` cuts the rest). */

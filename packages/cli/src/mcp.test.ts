@@ -49,6 +49,9 @@ const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.en
 let deps: TestDeps
 let app: ReturnType<typeof createApp>
 let dir: string
+/** The organization `seed()` makes, for the organization tools' arguments. */
+let seededOrganizationId = ''
+let seededSsoConnectionId = ''
 const closers: (() => Promise<void>)[] = []
 
 beforeEach(async () => {
@@ -238,15 +241,60 @@ async function seed() {
   expect(provider.status).toBe(200)
   const current = (await (await admin('GET', '/v1/admin/settings')).json()) as {
     revision: number
-    settings: { app: { name: string } }
+    settings: { app: { name: string }; organizations: object }
   }
   const saved = await admin(
     'PUT',
     '/v1/admin/settings',
-    { ...current.settings, app: { ...current.settings.app, name: 'Northline' } },
+    {
+      ...current.settings,
+      app: { ...current.settings.app, name: 'Northline' },
+      organizations: { ...current.settings.organizations, enabled: true },
+      sso: { enabled: true },
+    },
     { 'if-match': `"${current.revision}"` }
   )
   expect(saved.status).toBe(200)
+  const organization = await admin('POST', '/v1/admin/organizations', {
+    name: 'Acme Inc',
+    slug: 'acme',
+  })
+  expect(organization.status).toBe(201)
+  seededOrganizationId = ((await organization.json()) as { id: string }).id
+  seededSsoConnectionId = deps.ids.next()
+  await deps.ssoConnections.insert(
+    {
+      id: seededSsoConnectionId,
+      ...tenant,
+      organizationId: seededOrganizationId,
+      protocol: 'oidc',
+      name: 'Acme SSO',
+      status: 'active',
+      issuer: 'https://idp.example.test',
+      clientId: 'CANARY-sso-client-id',
+      clientSecretSealed: 'CANARY-sealed-secret',
+      saml: null,
+      defaultRole: 'member',
+      enforced: false,
+      breakGlassRole: null,
+      trustIdpMfa: false,
+      attributeMapping: null,
+      testedFingerprint: null,
+      domains: [],
+      createdAt: deps.clock.now(),
+      updatedAt: deps.clock.now(),
+    },
+    Audit.none('fixture')
+  )
+  const membership = await admin(
+    'POST',
+    `/v1/admin/organizations/${seededOrganizationId}/memberships`,
+    {
+      userId: user.id,
+      role: 'admin',
+    }
+  )
+  expect(membership.status).toBe(201)
   const secrets = [
     SECRET_KEY,
     TEST_ADMIN_TOKEN,
@@ -260,6 +308,8 @@ async function seed() {
     CREDENTIAL_ID,
     PUBLIC_KEY,
     'CANARY-user-handle',
+    'CANARY-sso-client-id',
+    'CANARY-sealed-secret',
     GOOGLE_SECRET,
     session.accessToken,
     session.refreshToken,
@@ -287,6 +337,11 @@ const args = (
   list_audit_entries: { size: 100 },
   get_settings: {},
   list_oauth_providers: {},
+  list_organizations: {},
+  list_organization_members: { organizationId: seededOrganizationId },
+  list_organization_roles: {},
+  list_sso_connections: {},
+  get_sso_connection: { connectionId: seededSsoConnectionId },
   run_doctor: {},
   propose_ban_user: { userId },
   propose_unban_user: { userId },
@@ -374,7 +429,9 @@ describe('tula mcp against the real API', () => {
     const updated = (audit.structured.data as { action: string; metadata: object }[]).find(
       (entry) => entry.action === 'environment.settings_updated'
     )
-    expect(updated?.metadata).toMatchObject({ changed: ['app.name'] })
+    expect(updated?.metadata).toMatchObject({
+      changed: ['app.name', 'organizations.enabled', 'sso.enabled'],
+    })
     const filtered = await call(client, 'list_audit_entries', { action: 'session.created' })
     expect((filtered.structured.data as unknown[]).length).toBe(1)
 
@@ -398,6 +455,43 @@ describe('tula mcp against the real API', () => {
       callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
       updatedAt: expect.any(String),
     })
+
+    const organizations = await call(client, 'list_organizations')
+    expect(organizations.structured.data).toEqual([
+      {
+        id: seededOrganizationId,
+        name: 'Acme Inc',
+        slug: 'acme',
+        createdBy: null,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      },
+    ])
+    const members = await call(client, 'list_organization_members', {
+      organizationId: seededOrganizationId,
+    })
+    expect(members.structured.data).toEqual([
+      {
+        id: expect.any(String),
+        organizationId: seededOrganizationId,
+        userId: user.id,
+        role: 'admin',
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      },
+    ])
+    // The member is named by id: the address is get_user's to give, not this tool's.
+    expect(members.raw).not.toContain('maya@')
+    const roles = await call(client, 'list_organization_roles')
+    expect(
+      (roles.structured.data as { key: string; builtIn: boolean }[]).map((role) => [
+        role.key,
+        role.builtIn,
+      ])
+    ).toEqual([
+      ['admin', true],
+      ['member', true],
+    ])
 
     const doctor = await call(client, 'run_doctor')
     expect(doctor.isError).toBe(false)
@@ -445,7 +539,7 @@ describe('tula mcp against the real API', () => {
     )
     for (const request of w.requests.filter((one) => one.startsWith('GET '))) {
       expect(request).toMatch(
-        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers)|instance\/diagnostics|status)$/
+        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers|organizations(\/[^/]+\/memberships)?|organization-roles|sso-connections(\/[^/]+)?)|instance\/diagnostics|status)$/
       )
     }
   })
@@ -972,6 +1066,31 @@ describe('tula mcp with an agent key', () => {
     expect(w.stderr()).not.toContain(SECRET_KEY)
   })
 
+  test('an agent key ignores an admin token from the environment, so the doctor is off', async () => {
+    const w = world({
+      TULA_SECRET_KEY: undefined,
+      TULA_AGENT_KEY: AGENT_KEY,
+      TULA_ADMIN_TOKEN: TEST_ADMIN_TOKEN,
+    })
+    const inner = w.io.fetch as AdminFetch
+    const seen: (string | null)[] = []
+    const io: CliIo = {
+      ...w.io,
+      fetch: (url, init) => {
+        seen.push(new Headers(init?.headers).get('authorization'))
+        return inner(url, init)
+      },
+    }
+    const client = await connect({ ...w, io })
+    expect(w.stderr()).toContain('Doctor: configured')
+    expect(w.stderr()).toContain('admin token was ignored')
+    expect(w.stderr()).not.toContain(TEST_ADMIN_TOKEN)
+    await call(client, 'run_doctor')
+    // The stderr line is not proof: the doctor itself must not have sent the token.
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen).not.toContain(`Bearer ${TEST_ADMIN_TOKEN}`)
+  })
+
   test('an agent key that is not one is refused without being repeated, and the secret key does not stand in', async () => {
     const w = world({ TULA_AGENT_KEY: 'tula_sk_dev_notanagentkey00000000000000000000' })
     const client = await connect(w)
@@ -1115,7 +1234,7 @@ describe('tula mcp: the wire', () => {
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
     expect(w.stderr()).toContain(
-      'tula mcp: 17 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
+      'tula mcp: 22 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
     )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)

@@ -4,16 +4,14 @@ Tula's API is one container image, a PostgreSQL database and, for more than one 
 Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
 deployment.
 
-Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook, passkeys,
+This covers passwords, emailed codes and links, Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook, passkeys,
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
 [config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **The image is published
-with each release** as `ghcr.io/tula-solutions/tula-api:<version>`, for amd64 and arm64
-([releasing.md](releasing.md#the-api-image)); the steps below build it from this repository
-instead, which is how the Compose file here runs it. What has only been tested against a
-stand-in (real providers, a physical passkey authenticator, and more) is listed in
-[plans/phase-1-unverified.md](plans/phase-1-unverified.md).
+with each release** as `ghcr.io/tula-solutions/tula-api:<version>`, for amd64 and arm64; the steps below build it from this repository
+instead, which is how the Compose file here runs it. Real providers and a
+physical passkey authenticator have only been tested against stand-ins.
 
 Contents: [try it locally](#try-it-locally) · [the server's settings](#settings) ·
 [an environment's settings](#settings-of-an-environment) ·
@@ -139,7 +137,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API: a scheme, a host and at most a port and a path. It is part of every access token's issuer, and the address the server requests to check itself (`tula doctor`). A user name, a password (any `@` before the host), a query or a fragment in it stops the boot. |
 | `PORT` | | `3003` | |
-| `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
+| `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. In `staging` and `prod` a plain `smtp://` relay must offer STARTTLS, or no mail is sent; use `smtps://` for a relay that speaks TLS from the start. |
 | `MAIL_FROM` | | `Tula Auth <no-reply@localhost>` | Sender of verification emails. |
 | `BREACH_CHECK` | | `offline` | `hibp` checks new passwords against Have I Been Pwned (only a 5-character hash prefix leaves the server). |
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
@@ -148,7 +146,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
 | `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log has its own period, the `audit.retentionDays` setting. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
-| `SMS_PROVIDER` | | `none` | How text messages are sent ([ADR 0037](adr/0037-phone-numbers-and-sms.md)). `none`: there is no sender, and a request that would send a message is answered `sms.unavailable` (503). `dev`: **development and tests only.** Nothing is sent; the newest 50 messages are kept in the server's memory and read at `GET /v1/dev/sms/messages` (`?to=` narrows to one number), codes included. The server refuses to start with `dev` unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address, and logs a warning at every start while it is on. Each instance has its own inbox. `twilio`: messages are really sent, through Twilio, with the `TWILIO_*` variables below; allowed in every tier ([Text messages with Twilio](#text-messages-with-twilio)). Whether an environment sends text messages, and to which countries, is its [`sms` setting](phone-numbers.md), off by default. |
+| `SMS_PROVIDER` | | `none` | How text messages are sent. `none`: there is no sender, and a request that would send a message is answered `sms.unavailable` (503). `dev`: **development and tests only.** Nothing is sent; the newest 50 messages are kept in the server's memory and read at `GET /v1/dev/sms/messages` (`?to=` narrows to one number), codes included. The server refuses to start with `dev` unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address, and logs a warning at every start while it is on. Each instance has its own inbox. `twilio`: messages are really sent, through Twilio, with the `TWILIO_*` variables below; allowed in every tier ([Text messages with Twilio](#text-messages-with-twilio)). Whether an environment sends text messages, and to which countries, is its [`sms` setting](phone-numbers.md), off by default. |
 | `TWILIO_ACCOUNT_SID` | with `SMS_PROVIDER=twilio` | none | The Twilio account messages are sent from: `AC` and 32 hexadecimal characters. **Every `TWILIO_*` variable is read only when `SMS_PROVIDER` is `twilio`, and ignored otherwise**, whatever it holds. With `twilio` the server refuses to start unless there is an account, exactly one way to authenticate and exactly one sender, each of the shape Twilio shows it in; the refusal names the variable and never repeats a value. |
 | `TWILIO_API_KEY_SID` | one way to authenticate | none | An API key of that account (`SK` and 32 hexadecimal characters), with its secret in `TWILIO_API_KEY_SECRET`. **Preferred**: a key can be revoked by itself and is not the account's master credential. |
 | `TWILIO_API_KEY_SECRET` | with `TWILIO_API_KEY_SID` | none | That key's secret. A secret: Twilio shows it once. Never logged, returned or put in an error. |
@@ -201,6 +199,11 @@ saved. Send the list yourself in the same request, `"urls": { "allowedOrigins": 
 or correct `CORS_ORIGINS` and restart. Until an environment saves settings, `CORS_ORIGINS`
 keeps applying to it exactly as written.
 
+A browser's preflight request names no environment, so the API answers it for an origin that
+**any** environment of the deployment allows. That only lets the browser send the real
+request: each environment still checks the origin against its own list, and a cookie is
+honoured only for an origin that environment allows.
+
 If the API logs `stored environment settings held list entries that are not valid; they were
 ignored`, a stored origin or redirect URL is one this version does not accept. The environment
 keeps working without those entries; read the settings and `PUT` them back to clean the row.
@@ -223,7 +226,7 @@ notice off, moved the MFA policy towards `off`, let sessions live longer, or set
 the audit retention period.
 
 **Security notices.** The `notifications` switches control the emails that let a user
-notice a takeover ([ADR 0023](adr/0023-security-notices.md)). They are sent after the change,
+notice a takeover. They are sent after the change,
 in the background: a mail relay that is slow or down never fails or delays a sign-in or a
 password change, it only costs the notice, and the API logs `security notice not sent` with the
 error's name and SMTP status (never the address). A user is sent at most three of each kind an
@@ -236,7 +239,7 @@ does not replace the audit log. (A native app's session that is
 codes, and a backup code being used to sign in.
 
 **Two-step verification.** Users can protect their account with an authenticator app (TOTP)
-and ten single-use backup codes ([ADR 0025](adr/0025-mfa.md)). `"mfa": { "policy": … }` in the
+and ten single-use backup codes. `"mfa": { "policy": … }` in the
 settings document says who must:
 
 | `mfa.policy` | Meaning |
@@ -280,11 +283,9 @@ client API's responses, to use the refresh cookie, and to sign anyone in: a sign
 password reset started as a browser client is refused with `request.origin_not_allowed` (403)
 from any other origin, so that a foreign page cannot have a session cookie set. If your app
 gets that error, add its origin (scheme, host and port, exactly as the browser sends it).
-`/v1/admin/*` only ever allows the origins in `CORS_ORIGINS`. See
-[ADR 0018](adr/0018-environment-settings.md) and [ADR 0019](adr/0019-flow-engine-v2.md).
+`/v1/admin/*` only ever allows the origins in `CORS_ORIGINS`.
 
-**Signing in by email.** To let users sign in with an emailed code, and optionally a link
-([ADR 0024](adr/0024-email-sign-in.md)), send the methods in the settings document (with the
+**Signing in by email.** To let users sign in with an emailed code, and optionally a link, send the methods in the settings document (with the
 rest of it: a `PUT` replaces the whole document):
 
 ```json
@@ -327,8 +328,7 @@ needs from you is under [Upgrading](#upgrading).
 
 ## Signing in with a provider
 
-Each environment uses **its own** OAuth credentials; none ship with Tula
-([ADR 0026](adr/0026-oauth.md)). For each provider: register an app with the provider using the
+Each environment uses **its own** OAuth credentials; none ship with Tula. For each provider: register an app with the provider using the
 redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 (`PUBLIC_URL/v1/oauth/callback/<provider>`), store the credentials with
 `PUT /v1/admin/oauth-providers/<provider>`, and add your app's landing page to
@@ -347,8 +347,7 @@ connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVID
 A text message (the code that proves a [phone number](phone-numbers.md)) is sent only when
 the **deployment** has a sender and the **environment** has text messages switched on. The
 sender is `SMS_PROVIDER`: `none` (the default, nothing is sent), `dev` (a local inbox, refused
-outside `ENVIRONMENT=local`) or `twilio`, the one that really sends
-([ADR 0037](adr/0037-phone-numbers-and-sms.md)). The step-by-step is the
+outside `ENVIRONMENT=local`) or `twilio`, the one that really sends. The step-by-step is the
 [Twilio checklist](providers/twilio.md); in short:
 
 1. **Register your sender with Twilio first**: it takes days to weeks, and without it a
@@ -403,8 +402,7 @@ What to know before relying on it:
 
 ## Sessions
 
-How long a session lives, and how it is held, is set per environment in `sessions`
-([ADR 0028](adr/0028-session-profiles.md)). Left alone, every session is what it always was:
+How long a session lives, and how it is held, is set per environment in `sessions`. Left alone, every session is what it always was:
 60-second access tokens, a rotating refresh token, 7 days idle, 30 days in all.
 
 ```json
@@ -455,7 +453,7 @@ How long a session lives, and how it is held, is set per environment in `session
 ## Passkeys
 
 A passkey lets a user sign in with a fingerprint, face or screen lock, with no address typed and
-no second step ([ADR 0027](adr/0027-passkeys.md)). Passkeys are off until an environment
+no second step. Passkeys are off until an environment
 switches them on, and switching them on takes three settings in the same document:
 
 ```json
@@ -577,8 +575,6 @@ session cookie; the browser does not keep it.
 - The pages are served with a strict Content-Security-Policy (this origin only, no inline
   script, not frameable). A proxy must not weaken or replace it.
 
-See [ADR 0032](adr/0032-dashboard.md).
-
 ## Running it for real
 
 > [!WARNING]
@@ -597,14 +593,18 @@ earlier major version wrote: a database made with the 17 image is moved with `pg
 - a **runtime** login for the API (`DATABASE_URL`) that is a member of `tula_app` and owns
   nothing. Tenant isolation is enforced by row-level security, which PostgreSQL does not apply
   to table owners or superusers. An API connected as the owner has no isolation between
-  projects.
+  projects, so the API and the webhook worker refuse to start on a login that is a superuser,
+  has `BYPASSRLS` or owns a table, and log that in fixed words. A worker whose database is
+  not answering yet waits for it and starts no delivery until the login has been checked.
 
 ```sql
 CREATE ROLE tula_app NOLOGIN;
 CREATE ROLE tula_api LOGIN PASSWORD '<a strong password>' IN ROLE tula_app;
 ```
 
-The Compose file's passwords (`tula` / `tula_api`) are for local use only.
+The Compose file's passwords (`tula` / `tula_api`, also set in `docker/postgres/init.sql`) are
+public defaults for local use only. Never run them in production: create `tula_api` with your
+own strong password, as above, and put the same one in `DATABASE_URL`.
 
 **Migrations.** Run them before starting a new version, as the owner:
 
@@ -616,7 +616,10 @@ Migrations only move forward. Back up the database before upgrading.
 
 **First project and keys.** With your own database there is no Compose service to run the
 bootstrap scripts in; run them in the image with the runtime settings. The seed prints the
-environment ids, and each key is printed once:
+environment ids, and each key is printed once. The seed is a first-run bootstrap and nothing
+more: it makes a workspace named `Local`, a `Default project` and its development and
+production environments, and finds them again on a later run instead of making a second set.
+It reads nothing but `DATABASE_URL`, so run it against the database you mean:
 
 ```bash
 docker run --rm -e DATABASE_URL=postgres://tula_api:…@db:5432/tula tula-api bun run ../../packages/db/src/scripts/seed.ts
@@ -641,9 +644,15 @@ only reachable on a Docker network.
 > make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
 > proxy, clients can forge their address.
 
+> [!IMPORTANT]
+> **Keep setup links out of logs.** An SSO setup link carries its secret in the URL fragment
+> (`/dashboard/setup#token=…`) and the portal sends it in the `x-tula-setup-token` header. A
+> browser never sends a fragment, but a proxy, a log shipper or an analytics script that sees the
+> page's full address does: have your proxy and log pipeline redact the `x-tula-setup-token`
+> header and drop the `#token=` fragment, as you would an `Authorization` header.
+
 **A Next.js app in front (`@tula-tech/nextjs`).** With the Next.js SDK the browser talks to the
-app's own origin, and the app's server forwards to the API
-([ADR 0029](adr/0029-nextjs-sdk.md)). Two settings follow. Add the **app's** origin to the
+app's own origin, and the app's server forwards to the API. Two settings follow. Add the **app's** origin to the
 environment's `urls.allowedOrigins`: the browser's `Origin` is forwarded unchanged (and list
 the app's callback pages for emailed links and OAuth in `urls.allowedRedirectUrls`). And tell
 the API who the visitor is, which takes a setting on each side. On the Next.js server set
@@ -672,7 +681,6 @@ exception is a session bound to a device key ([device-binding.md](device-binding
 refresh has to remember the proof it was given, in Redis, and is answered 503 until Redis is
 back; the session is not ended and the same refresh token works afterwards. Redis needs
 no backup. If it loses its data, counters and lockouts start again and nothing else is lost.
-See [ADR 0016](adr/0016-redis-and-multiple-instances.md).
 
 Every instance needs the same `PUBLIC_URL`, `TULA_MASTER_KEY`, `TULA_ADMIN_TOKEN`,
 `DATABASE_URL` and `REDIS_URL`. The Compose file shows the arrangement with two instances (`api`
@@ -685,7 +693,12 @@ What the load balancer has to do:
 - **No stickiness is needed.** Any request may go to any instance: sessions and attempts are in
   the database, limits and revocations in Redis.
 - **Overwrite `X-Forwarded-For`** with the address it saw (or append to a header it has
-  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry. That holds
+  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry, so
+  `TRUST_PROXY` assumes **exactly one** trusted proxy hop: with none a client writes its own
+  address, with two every client shows the inner proxy's address and they share one rate-limit
+  bucket (the API logs a warning at boot when it is on outside `local`). With `TRUST_PROXY` on, a request whose
+  address cannot be resolved (the proxy sent none) is refused with `service.unavailable` in `staging` and
+  `prod` rather than counted in one shared bucket. That holds
   for the edge proxy, the one clients connect to: a proxy that itself sits behind another
   (a CDN, a cloud load balancer) sees only that one's address and scheme, so there use its
   real-IP handling (in nginx, `set_real_ip_from` with the outer proxy's address and
@@ -705,6 +718,15 @@ through Redis and are immediate.
 
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
+
+**How long a revoked or banned user's access token still works.** An access token is a
+signed JWT checked without a database lookup, so it is valid until it expires (60 seconds by
+default, at most 15 minutes by a profile's `accessTokenTtl`). Ending a session puts its id on
+the revoked-session list for that longest lifetime, and the API checks the list, so a revoked
+session is refused at once. A server that verifies tokens offline (`@tula-tech/nextjs`'s
+interceptor, or your own JWKS check) does not read the list: for it, a ban, a deletion or a
+revocation takes effect when the token expires. Use a stateful session profile where that
+window is too long.
 
 ### The webhook worker as its own service
 
@@ -839,8 +861,8 @@ days after the worker settled it, and the record of a delivery (with every reque
 it) 90 days after it was queued, once it has ended. An event that a delivery still pending is
 of is kept. See [webhooks.md](webhooks.md#what-the-server-keeps). The counts of text messages by destination
 ([phone-numbers.md](phone-numbers.md#what-was-sent-and-what-was-never-used)) go 90 days after their day. Each run logs one line, `retention run finished`, with
-counts only (at `debug` level when there was nothing to delete). The other periods are fixed
-for now. See [ADR 0017](adr/0017-retention.md).
+counts only (at `debug` level when there was nothing to delete). The other periods are fixed.
+
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
 database, and Redis when it is configured, and is what the image's health check and a load
@@ -872,6 +894,7 @@ reports whether the database is at the version the running image ships.
 | Migration | What it does | What you do |
 | --- | --- | --- |
 | `0006` API keys | Ties each API key's project to its environment with a foreign key. | Nothing. It fails only if a key row was written by hand with a project that is not its environment's. |
+| `0037` user import columns | Adds a check on the size of a user's metadata (`users_metadata_bounds`). | **Run the upgrade in a quiet window.** The migration checks every row of `users` under a lock on the table, so on a large table sign-ins pause for that time. |
 | `0007` environment settings | The table behind `GET`/`PUT /v1/admin/settings`. | Nothing. Every environment starts at revision 0 with the defaults, including your `PASSWORD_POLICY` and `CORS_ORIGINS`, until it saves a document. |
 | `0008` attempt secret | Every sign-up, sign-in and reset attempt now has a secret its client must present. | Nothing. Attempts in flight during the upgrade (they live ten minutes) cannot be continued: the user starts again. Clients must be on an SDK that sends `x-tula-attempt`. |
 | `0009` two-step verification | Tables for authenticator secrets and backup codes. | Decide the policy: `mfa.policy` is `optional` unless you set it, which lets users turn it on. From here on, **changing `TULA_MASTER_KEY` breaks every user's second factor**. |
@@ -894,7 +917,7 @@ reports whether the database is at the version the running image ships.
 | `0018` webhooks | Tables for webhook endpoints and the record of their deliveries; a unique key and a different index on `events`, the outbox. Starts the delivery worker ([webhooks.md](webhooks.md)). | **Apply it in a quiet window if the outbox is large.** The unique key and the index are each built under a lock that blocks inserts into `events`, and every sign-in, sign-out and admin change inserts an event: those requests wait until both are built (they are not built `CONCURRENTLY`; migrations run in a transaction). The first start of the new version then marks every event recorded so far as settled, in bulk (up to 100,000 per environment every five seconds), sending none of them: no endpoint existed when they happened. |
 | `0017` audit retention | Lets the API delete an environment's audit entries older than its `audit.retentionDays` setting, and adds a database rule that no entry of the last day can be deleted. Until this version the setting was stored and did nothing. | **Check the setting in every environment before you upgrade.** One that already holds a number starts deleting older entries, for good, with the first retention run of the new version (at start-up; a large backlog takes several runs). `null` (the default) keeps everything, as before. |
 
-Settings added since Phase 0 that a deployment behind a proxy or with several instances should
+Settings that a deployment behind a proxy or with several instances should
 look at: `REDIS_URL` (required in `staging` and `prod`), `TRUST_PROXY`, `TULA_ADMIN_TOKEN`,
 `API_DOCS` (off by default in `staging` and `prod`), and for a Next.js app in front,
 `TULA_TRUSTED_PROXY_HOPS` on the app's server.

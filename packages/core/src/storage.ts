@@ -4,8 +4,9 @@
  * The `web` client kind never uses it: there the refresh token lives in an httpOnly cookie that
  * JavaScript cannot read. For `ios`, `android` and `server` the token is a long-lived
  * credential, so back this with the platform's secure store (Keychain, Keystore, an encrypted
- * file), never with `localStorage` or a plain file. A React Native secure-store adapter ships in
- * Phase 2.
+ * file), never with `localStorage` or a plain file: script can read those, so any script on
+ * the page (an XSS, a compromised dependency) could take the refresh token. The default
+ * {@link memoryStorage} is not readable that way.
  *
  * @example
  * ```ts

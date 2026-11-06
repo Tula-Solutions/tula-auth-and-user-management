@@ -295,6 +295,18 @@ describe('prepare, against a throwaway repository', () => {
     expect(() => prepareCommand(dir, join(temp(), 'b.md'), steps('9.8.7'))).toThrow('not clean')
   }, 30_000)
 
+  test.each(['9.8.7\\nevil=1', '9.8.7-rc.1', 'x'])(
+    'refuses a version that is not plain before anything is committed or written: %j',
+    (next) => {
+      const { dir } = repo()
+      expect(() => prepareCommand(dir, join(temp(), 'b.md'), steps(next))).toThrow(
+        'not a plain version'
+      )
+      expect(vcs(dir, 'log', '--format=%s').trim()).toBe('base')
+    },
+    30_000
+  )
+
   test('refuses a run that did not move the version (the PR would propose what is released)', () => {
     const { dir, current } = repo()
     expect(() => prepareCommand(dir, join(temp(), 'b.md'), steps(current))).toThrow(
@@ -637,7 +649,7 @@ describe('the workflows', () => {
   })
 
   test('the docs say plainly that a merge to main publishes with no approval, and how to add a gate back', () => {
-    const doc = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const doc = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(doc).toContain('publishes to npm with no further approval')
     expect(doc).toContain('Adding a required reviewer')
     expect(doc).not.toMatch(/waits in the `npm-publish` environment for/)

@@ -2,7 +2,7 @@
 
 Tula Auth is a self-hosted authentication and user-management server with SDKs for the web.
 The web SDKs and the tooling are released to npm as early `0.x` versions, and the server's image to
-GitHub's container registry with them ([releasing](releasing.md)), so a web project is made
+GitHub's container registry with them, so a web project is made
 with `bunx create-tula@latest` and needs no checkout. The Expo and native SDKs are not
 published: those are still used from a checkout of the repository
 ([quickstart](quickstart.md)).
@@ -14,7 +14,6 @@ published: those are still used from a checkout of the repository
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
-| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 
 ## Sign-in methods
 
@@ -30,6 +29,10 @@ by error code. Their code samples are copied from files of this repository by
 | [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
 | [Texted code](methods/sms-code.md) | A 6-digit code by SMS, to a number the account has proven. Sign-in only; off by default. |
 | [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md), [Facebook](providers/facebook.md). |
+| [Enterprise single sign-on](methods/sso.md) | OIDC and SAML connections per organization, discovery by domain, the protocol checks and error codes. |
+| [Enterprise SSO: the guide](enterprise-sso.md) | Connections, verified domains, the test sign-in, enforcement and break-glass (password only), trusting the provider's MFA, the setup portal, organization admins managing their own SSO. |
+| [Identity provider pages](sso-providers/okta.md) | The exact values to paste, per provider: [Okta](sso-providers/okta.md), [Microsoft Entra ID](sso-providers/entra.md), [Google Workspace](sso-providers/google-workspace.md), [JumpCloud](sso-providers/jumpcloud.md), [OneLogin](sso-providers/onelogin.md), [Ping Identity](sso-providers/ping.md). |
+| [SCIM provisioning](scim.md) | Let an organization's identity provider create, update, deactivate and delete its users and push groups mapped to roles: SCIM tokens, attribute mapping, the supported routes and whose account SCIM may touch. |
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
@@ -38,7 +41,19 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and what is not built yet. |
+| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and its limits. |
+
+## Bringing users across
+
+| | |
+| --- | --- |
+| [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt, argon2, PBKDF2 or Firebase scrypt password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Exporting the audit log](audit-export.md) | `POST /v1/admin/audit-logs/export` and `tula audit export`: NDJSON or CSV, streamed, resumable, with the CSV formula escape and the `audit.exported` entry; and the single sign-on and provisioning events. |
+| [Migrating from Clerk](migrate-from-clerk.md) | `tula import --from clerk`: the dashboard's CSV or the Backend API's JSON with `password_digest`, and Clerk's organizations and memberships. |
+| [Migrating from Auth0](migrate-from-auth0.md) | `tula import --from auth0`: the bulk user export and the bcrypt hashes Auth0 support sends separately. |
+| [Migrating from Firebase](migrate-from-firebase.md) | `tula import --from firebase`: `firebase auth:export` and the project's scrypt parameters, kept out of the command line. |
+| [Migrating from Supabase](migrate-from-supabase.md) | `tula import --from supabase`: `auth.users` as CSV or JSON, with its bcrypt `encrypted_password`. |
+| [Migrating from better-auth](migrate-from-better-auth.md) | `tula import --from better-auth`: the `user` and `account` tables; why its default scrypt hashes are refused today. |
 
 ## What your users are sent
 
@@ -46,17 +61,29 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, what happens when a template cannot be used, and the preview. |
 
+## Organizations
+
+| | |
+| --- | --- |
+| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and where invitations and verified domains fit. |
+| [OrganizationSwitcher](organization-switcher.md) | The prebuilt control that shows the active organization and switches it: the user's organizations, the personal account, suggestions from their email domain, an invitation they opened, and the way to create or manage an organization. |
+| [CreateOrganization](create-organization.md) | The prebuilt form that makes an organization and makes it the active one, with every state it can be in. |
+| [OrganizationProfile](organization-profile.md) | The prebuilt page for one organization: General (rename, leave, delete), Members, Invitations and Domains, each drawn only where the user's role permits. |
+| [Invitations](invitations.md) | Inviting an address to an organization from the admin API or the client: the emailed link and its `#tula_invitation=` fragment, accepting and declining, the seven-day expiry, the error codes, the limits and what happens when the role was deleted. |
+| [Verified domains](verified-domains.md) | Claiming an email domain with an emailed code, `suggest` and `auto_join` (at sign-up only), the deny list of public mail domains, the one-year lifetime and its reminders, re-verifying, the error codes and the limits. |
+| [Roles and permissions](roles-and-permissions.md) | The built-in `admin` and `member`, custom roles, the `org:<feature>:<action>` grammar and the system permissions, why `has()` is exact, and what weakens security. |
+
 ## Claims for your backend
 
 | | |
 | --- | --- |
-| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`. |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`; the [organization claims](organizations.md#reading-the-organization-in-your-app) beside them. |
 
 ## Events for your backend
 
 | | |
 | --- | --- |
-| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula-tech/admin`, what is stored, and what is not built yet (retries among them). |
+| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula-tech/admin`, retries, the delivery log, what is stored, and its limits. |
 
 ## Questions for your backend
 
@@ -78,10 +105,10 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
+| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula import`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
-| [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
+| [MCP server](mcp.md) | Tools for an AI assistant: reads (users, sessions, audit entries, settings, organizations), drafts, proposals and a sign-in test. |
 | [Proposals](proposals.md) | Letting an AI agent ask for a change that a person approves: the agent key, what a proposal holds and how it is carried out. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 
@@ -104,11 +131,5 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 
 | | |
 | --- | --- |
-| [Codebase map](codebase-map/README.md) | An interactive graph of the files, functions and classes and how they relate, in 20 layers with a guided tour: where it is, how to open it, and what it leaves out. A generated snapshot, not kept up to date. |
-| [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
-| [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
-| [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
-| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
+| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop`; `bun run docs-site:dev` builds it and serves it on this machine. |
 | [Writing docs](writing-docs.md) | Every component the documentation site adds to Markdown (callouts, steps, tabs and code groups, code blocks, file trees, parameter tables), with its source and its result, and what the build refuses. |
-| [Releasing](releasing.md) | How the packages are built, packed and checked. |
-| [Business plan](business-plan.md) | Product context. |

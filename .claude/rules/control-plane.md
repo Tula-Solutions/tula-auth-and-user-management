@@ -83,7 +83,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   string that must not reach the response) and a row in ADR 0031's table. The only origin
   the server fetches is its own `PUBLIC_URL` (its `/v1/status`, and the association files of
   at most `NATIVE_APP_FILES_FETCHED` of its own environments, on a path built from an id the
-  server made), never an address from a request, a setting or a stored row. A check never claims more
+  server made), never an address from a request, a setting or a stored row. The one exception
+  is `sso_connections` (ADR 0067), which requests a connection's stored metadata address, only
+  through `Outbound.request`, at most `METADATA_FETCHES_PER_RUN` a run, keeping the status alone. A check never claims more
   than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share
@@ -116,3 +118,29 @@ rules themselves are above and are not repeated).
   (`e2e/tests/dashboard/api-docs.spec.ts`: no violation, no request to another host).
 - **Static files:** `..`, encoded separators, a backslash, an absolute path, a NUL, a dot
   file and a link that leaves the directory; and a missing asset is a 404, not the app.
+- Decision (TULA-157, H-197): sign-out with a disallowed `Origin` cannot clear the cookie.
+  `DELETE /v1/instance/session` reads the session through `readDashboardSession`, which runs
+  `requireDashboardOrigin` first, so a foreign origin gets 403 `request.origin_not_allowed`,
+  no `Set-Cookie` and no audit entry (pinned by `session.test.ts`, "a state-changing request
+  from a foreign origin is refused before anything happens"). Recommendation: keep it; a
+  cross-site page forcing a sign-out is itself a CSRF. Reason: the cookie is `SameSite=Strict`,
+  so a legitimate sign-out is always same-site. No change.
+- Decision (TULA-157, H-198): `API_DOCS=off` hides `/v1/docs` but `/v1/openapi.json` is still
+  served, as `docs/self-host.md` says. Recommendation: keep it public; the document holds
+  routes and schemas, no secret, and the SDK generators and `tula doctor` read it. If an
+  operator wants it hidden, block the path at the proxy, or add an `OPENAPI` switch with the
+  docs row and a test. Reason: hiding it changes a documented public contract. Recorded only.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-123): a dashboard session is a stateless signed cookie and cannot be
+  revoked before it expires. Recommendation: keep its lifetime short and, if early revocation
+  is needed, add a denylist of session ids checked in `dashboard-session` (as `sessionAuth`
+  does for user sessions). Reason: a store, a middleware change and a logout route are more
+  than this audit's scope. Recorded only.
+- Decision (TULA-157, H-132): the API reference's CSP keeps `style-src 'unsafe-inline'`
+  (`lib/api-docs.ts`). Scalar writes inline styles at run time, so a nonce or hash cannot
+  cover them; scripts, the dangerous part, stay `'self'` only. Recommendation: revisit when
+  the reference renderer supports a nonce. Recorded only.
+- Decision (TULA-157, H-134): the dashboard already drops a created key after its one-time
+  display (`gcTime: 0` and `create.reset()` in `features/keys/api-keys-screen.tsx`). No change.

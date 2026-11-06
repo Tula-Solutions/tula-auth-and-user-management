@@ -75,7 +75,7 @@ describe('Sign in with Apple’s sheet over expo-apple-authentication', () => {
       familyName: undefined,
     })
     const none = apple(async () => ({ identityToken: 'apple.id.token', fullName: null }))
-    expect((await none.sheet.signIn({ nonce: 'n' }))?.idToken).toBe('apple.id.token')
+    expect(await none.sheet.signIn({ nonce: 'n' })).toMatchObject({ idToken: 'apple.id.token' })
   })
 
   test('a dismissed sheet is null, never a failure', async () => {
@@ -205,7 +205,6 @@ describe('Google’s sheet over react-native-nitro-google-signin', () => {
 
   test.each([
     ['cancelled as an answer', async () => ({ type: 'cancelled', data: null })],
-    ['no saved credential', async () => ({ type: 'noSavedCredentialFound', data: null })],
     [
       'cancelled as a rejection',
       async () => {
@@ -214,6 +213,11 @@ describe('Google’s sheet over react-native-nitro-google-signin', () => {
     ],
   ])('%s is null, never a failure', async (_name, present) => {
     expect(await google(present).sheet.signIn({ nonce: 'n' })).toBeNull()
+  })
+
+  test('no saved credential is its own answer, not a dismissal', async () => {
+    const sheet = google(async () => ({ type: 'noSavedCredentialFound', data: null })).sheet
+    expect(await sheet.signIn({ nonce: 'n' })).toBe('no_account')
   })
 
   test.each([
@@ -453,6 +457,29 @@ describe('the device key store over @pagopa/io-react-native-crypto', () => {
     expect(await store.isAvailable()).toBe(false)
   })
 
+  test('a key that cannot be deleted still ends in the store’s failure', async () => {
+    const module = cryptoModule()
+    const rsa = { kty: 'RSA', e: 'AQAB', n: 'modulus' }
+    let made = false
+    module.getPublicKeyFixed = async () => {
+      if (!made) {
+        throw word('PUBLIC_KEY_NOT_FOUND')
+      }
+      return rsa
+    }
+    module.generate = async () => {
+      made = true
+      return rsa
+    }
+    module.deleteKey = async () => {
+      throw word(`DELETE_FAILED ${CANARY}`)
+    }
+    const store = deviceKeyStoreOver(module)
+    const error = await rejection(store.obtain(DEVICE_KEY_ALIAS))
+    expect(error.message).toBe('The device key store failed.')
+    expect(await store.isAvailable()).toBe(false)
+  })
+
   test.each([['WRONG_KEY_CONFIGURATION'], ['UNSUPPORTED_DEVICE'], ['API_LEVEL_NOT_SUPPORTED']])(
     'nothing under the tag and a key that cannot be made (%s): no key store from then on',
     async (message) => {
@@ -612,6 +639,14 @@ describe('the device key store over @pagopa/io-react-native-crypto', () => {
         Buffer.from([0x30, 0x08, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x00, 0x00]).toString(
           'base64'
         ),
+    ],
+    [
+      'a first element that is no integer',
+      async () => Buffer.from([0x30, 0x06, 0x03, 0x01, 0x01, 0x02, 0x01, 0x01]).toString('base64'),
+    ],
+    [
+      'an integer that runs past the end',
+      async () => Buffer.from([0x30, 0x06, 0x02, 0x09, 0x01, 0x02, 0x01, 0x01]).toString('base64'),
     ],
     ['no text at all', async () => 7 as never],
   ])('a signature that is %s is a failure with none of the module’s text', async (_name, sign) => {

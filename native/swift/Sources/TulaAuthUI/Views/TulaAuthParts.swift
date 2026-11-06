@@ -9,7 +9,7 @@ import AppKit
 #endif
 
 // The parts the screens are made of: the colours and type of a resolved theme, the field,
-// the buttons, and the four parts an app can replace (ADR 0057, "Slots").
+// the buttons, and the four parts an app can replace.
 
 // MARK: Theme
 
@@ -526,6 +526,7 @@ struct SetupView<Action: Hashable & Sendable>: View {
     let content: TulaSetupContent<Action>
     let run: (Action) -> Void
     @Environment(\.tulaAuthAppearance) private var appearance
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: appearance.theme.spacing) {
@@ -561,6 +562,10 @@ struct SetupView<Action: Hashable & Sendable>: View {
             }
             LinkButton(title: content.copy.title, identifier: content.copy.identifier) { run(content.copy.action) }
         }
+        .privacySensitive()
+        // The app switcher's snapshot is taken as the scene leaves `.active`: the key is
+        // not in it.
+        .redacted(reason: scenePhase == .active ? [] : .privacy)
     }
 }
 
@@ -569,6 +574,7 @@ struct CodesView<Action: Hashable & Sendable>: View {
     let content: TulaCodesContent<Action>
     let run: (Action) -> Void
     @Environment(\.tulaAuthAppearance) private var appearance
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: appearance.theme.spacing * 0.5) {
@@ -590,6 +596,8 @@ struct CodesView<Action: Hashable & Sendable>: View {
             .accessibilityIdentifier("tula.codes")
             LinkButton(title: content.copy.title, identifier: content.copy.identifier) { run(content.copy.action) }
         }
+        .privacySensitive()
+        .redacted(reason: scenePhase == .active ? [] : .privacy)
     }
 }
 
@@ -665,9 +673,19 @@ enum Pasteboard {
                 .expirationDate: TulaCopyRule.expiry(from: Date()),
             ])
         #elseif canImport(AppKit)
-        // AppKit has no expiry for a pasteboard's contents: only "this Mac" is asked for.
-        NSPasteboard.general.prepareForNewContents(with: TulaCopyRule.localOnly ? .currentHostOnly : [])
-        NSPasteboard.general.setString(text, forType: .string)
+        // AppKit has no expiry for a pasteboard's contents: only "this Mac" is asked for, and
+        // the copy is cleared after `TulaCopyRule.lifetime` unless something else was copied
+        // since (its change count moved), so a person's own later copy is never lost.
+        let board = NSPasteboard.general
+        board.prepareForNewContents(with: TulaCopyRule.localOnly ? .currentHostOnly : [])
+        board.setString(text, forType: .string)
+        let written = board.changeCount
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(TulaCopyRule.lifetime * 1_000_000_000))
+            if board.changeCount == written {
+                board.clearContents()
+            }
+        }
         #endif
     }
 }

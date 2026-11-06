@@ -1,0 +1,600 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "organization members and roles from the client",
+  "description": "A member of an organization reads its members and changes it with their own session, and the server decides from the role they hold now. A member with only the member role reads the list with addresses and role keys but cannot see the roles on offer, rename or delete the organization, change a role or remove someone. An admin sees the roles they may give, renames the organization, refuses a role that does not exist, and cannot leave or demote themselves while they are the only one who can manage members. Once a second member is promoted the first leaves, and is a non-member at once on the next call; the remaining admin deletes the organization, and nobody is a member of it any more. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "managerEmail": {
+      "generate": "email"
+    },
+    "memberEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    },
+    "missingId": {
+      "generate": "uuid"
+    }
+  },
+  "steps": [
+    {
+      "name": "the manager: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{managerEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "mSignUpId": "id",
+        "mSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the manager: read the emailed code",
+      "emailCode": {
+        "to": "{{managerEmail}}",
+        "capture": "mCode"
+      }
+    },
+    {
+      "name": "the manager: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{mSignUpId}}/verify-email",
+        "body": {
+          "code": "{{mCode}}"
+        },
+        "attempt": "{{mSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "managerId": "step.userId",
+        "managerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{memberEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "bSignUpId": "id",
+        "bSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the member: read the emailed code",
+      "emailCode": {
+        "to": "{{memberEmail}}",
+        "capture": "bCode"
+      }
+    },
+    {
+      "name": "the member: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{bSignUpId}}/verify-email",
+        "body": {
+          "code": "{{bCode}}"
+        },
+        "attempt": "{{bSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "memberId": "step.userId",
+        "memberToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations on, for administrators only",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Members Org",
+          "slug": "members-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "an administrator makes the manager a admin",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{managerId}}",
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "an administrator makes the member a member",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "an organization that does not exist is not_a_member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{missingId}}/members",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "a member reads the member list with addresses and role keys",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/members",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 2
+          },
+          "data": [
+            {
+              "userId": "{{managerId}}",
+              "email": "{{managerEmail}}",
+              "role": "admin"
+            },
+            {
+              "userId": "{{memberId}}",
+              "email": "{{memberEmail}}",
+              "role": "member"
+            }
+          ]
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "a member cannot see the roles on offer",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/roles",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "a member cannot rename the organization",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "name": "Mine now"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "a member cannot delete the organization",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "a member cannot change a role",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{managerId}}",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "a member cannot remove someone else",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{managerId}}",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "the manager sees the roles they may give",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/roles",
+        "accessToken": "{{managerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "key": "admin",
+              "name": "Admin"
+            },
+            {
+              "key": "member",
+              "name": "Member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the manager renames the organization",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}",
+        "accessToken": "{{managerToken}}",
+        "body": {
+          "name": "Members Org Renamed"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{orgId}}",
+          "name": "Members Org Renamed",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "a role that does not exist is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{memberId}}",
+        "accessToken": "{{managerToken}}",
+        "body": {
+          "role": "nobody"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "organization.role_unknown"
+        }
+      }
+    },
+    {
+      "name": "the only manager cannot leave",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{managerId}}",
+        "accessToken": "{{managerToken}}"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.last_manager"
+        }
+      }
+    },
+    {
+      "name": "the only manager cannot demote themselves",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{managerId}}",
+        "accessToken": "{{managerToken}}",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.last_manager"
+        }
+      }
+    },
+    {
+      "name": "the manager promotes the member",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{memberId}}",
+        "accessToken": "{{managerToken}}",
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "with a second manager the first may leave",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}/members/{{managerId}}",
+        "accessToken": "{{managerToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "someone who has left is not a member at once",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/members",
+        "accessToken": "{{managerToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "the remaining admin reads the list: one member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/members",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "the remaining admin deletes the organization",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/organizations/{{orgId}}",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the organization is gone for its members",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/members",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

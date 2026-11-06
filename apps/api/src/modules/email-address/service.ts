@@ -7,6 +7,7 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Email from '~/modules/email/service'
 import * as Notices from '~/modules/notice/service'
+import { requireNotManaged } from '~/modules/user/managed'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
@@ -33,6 +34,23 @@ export const EMAIL_ADDITION_EMAILS_PER_HOUR = 5
  * the address, so without it a handful of accounts could fill a stranger's inbox.
  */
 export const EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR = 5
+
+/**
+ * Emails of this kind one environment sends in an hour, whoever asks and to whom. The
+ * per-user and per-address limits do not bound many accounts each writing to many
+ * addresses, so this caps the mail (and the sender reputation) an environment can spend.
+ */
+export const EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR = 500
+
+/**
+ * The limiter key of the environment-wide cap. Ids only: limiter keys may live in Redis.
+ *
+ * @param environmentId - The environment.
+ * @returns The key for `deps.rateLimiter`.
+ */
+export function environmentLimitKey(environmentId: string): string {
+  return `email_addition_environment:${environmentId}`
+}
 
 /** Keyed-hash purpose of the per-address limiter key. */
 export const ADDRESS_LIMIT_HASH_PURPOSE = 'email-addition-limits'
@@ -74,7 +92,7 @@ function decoyBinding(userId: string, normalized: string): string {
 
 /** The signed-in user, when they may add an address at all. */
 async function requireAddressless(
-  deps: Pick<Deps, 'users'>,
+  deps: Pick<Deps, 'users' | 'ssoConnections' | 'scim'>,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<UserRecord> {
@@ -89,6 +107,8 @@ async function requireAddressless(
   if (user.email !== null) {
     throw new AuthError('email.already_set')
   }
+  // The identity provider owns a managed account's address (decision 11).
+  await requireNotManaged(deps, scope.environmentId, user)
   return user
 }
 
@@ -103,6 +123,8 @@ type RequestDeps = Pick<
   | 'environmentSettings'
   | 'config'
   | 'users'
+  | 'ssoConnections'
+  | 'scim'
 >
 
 /**
@@ -134,7 +156,8 @@ type RequestDeps = Pick<
  * @param input - The address as the user typed it.
  * @returns The masked address and when the code expires. Never the code.
  * @throws InvalidEmailError for what is not an address.
- * @throws AuthError `email.already_set` for an account that has an address, or
+ * @throws AuthError `email.already_set` for an account that has an address,
+ *   `user.managed` (403) for one an SSO connection or SCIM directory manages, or
  *   `auth.user_banned`.
  * @throws RateLimitError when a send limit is spent.
  * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
@@ -178,6 +201,14 @@ export async function request(
       if (!decision.allowed) {
         throw new RateLimitError(decision.retryAfterMs)
       }
+      const environment = await deps.rateLimiter.hit(
+        environmentLimitKey(scope.environmentId),
+        EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR,
+        3_600_000
+      )
+      if (!environment.allowed) {
+        throw new RateLimitError(environment.retryAfterMs)
+      }
     },
     deliver: ({ to, code, ttlMinutes }) =>
       taken
@@ -200,6 +231,8 @@ type VerifyDeps = Pick<
   | 'rateLimiter'
   | 'environmentSettings'
   | 'config'
+  | 'ssoConnections'
+  | 'scim'
 >
 
 /**

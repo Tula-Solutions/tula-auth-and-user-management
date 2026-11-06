@@ -60,6 +60,17 @@ export interface SessionRecord {
    * method of the store changes it, and the database refuses a statement that would.
    */
   deviceThumbprint: string | null
+  /**
+   * The organization the session acts in (ADR 0065), or `null` for the user's personal
+   * account. Only a statement of what the user chose: **not** proof they still belong to it.
+   * The service re-reads the membership each time it builds a token from it.
+   */
+  activeOrganizationId: string | null
+  /**
+   * The SSO connection the session was signed in through (ADR 0067), issued as `sso_conn`;
+   * `null` for any other sign-in. Fixed at creation.
+   */
+  ssoConnectionId: string | null
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -92,11 +103,19 @@ export type NewSession = Omit<
   | 'type'
   | 'hookClaims'
   | 'deviceThumbprint'
+  | 'activeOrganizationId'
+  | 'ssoConnectionId'
 > &
   Partial<
     Pick<
       SessionRecord,
-      'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims' | 'deviceThumbprint'
+      | 'factorVerifiedAt'
+      | 'authMethods'
+      | 'type'
+      | 'hookClaims'
+      | 'deviceThumbprint'
+      | 'activeOrganizationId'
+      | 'ssoConnectionId'
     >
   >
 
@@ -285,6 +304,8 @@ export function beganBefore(
 export interface RevokeByUserOptions {
   /** A session to leave signed in. */
   exceptSessionId?: string
+  /** Revoke only these sessions (a snapshot taken earlier), never one created since. */
+  onlyIds?: string[]
   /** Builds the activity for each revoked session; recorded in the same transaction. */
   activity: (sessionId: string) => Recorded
 }
@@ -466,6 +487,26 @@ export interface SessionStore {
    * @returns `false` when the session does not exist or has ended.
    */
   touch(environmentId: string, id: string, at: Date, idleExpiresAt: Date): Promise<boolean>
+
+  /**
+   * Set (or clear, with `null`) the organization a session acts in (ADR 0065). Guarded: only a
+   * session that is still active at `at` changes. **Not recorded** (ADR 0012): it chooses
+   * among memberships the user already holds and grants nothing, which the service has
+   * checked; a token built from it re-reads the membership.
+   *
+   * @param environmentId - The session's environment.
+   * @param id - Session id.
+   * @param organizationId - The organization, or `null` for the personal account.
+   * @param at - When it is set: the session's new `updatedAt`, and the moment "active" is judged.
+   * @returns The updated session, or `null` when it does not exist (in that environment) or
+   *   has ended.
+   */
+  setActiveOrganization(
+    environmentId: string,
+    id: string,
+    organizationId: string | null,
+    at: Date
+  ): Promise<SessionRecord | null>
 
   /**
    * Revoke every unrevoked session of a user, optionally keeping one.

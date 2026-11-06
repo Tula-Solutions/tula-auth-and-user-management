@@ -6,7 +6,7 @@ name: Release
 #
 # It UPLOADS only when the repository variable `NPM_PUBLISH` is `true`. Merging a change to
 # `main` therefore publishes nothing by itself: the variable is set by a person, once, after
-# the first release (docs/releasing.md, "First release").
+# the first release (docs/internal/releasing.md, "First release").
 #
 # Why the first release is not made here: this workflow has no token. It publishes through
 # npm trusted publishing (GitHub's OIDC identity, `id-token: write`), which npm lets you
@@ -23,7 +23,7 @@ name: Release
 #      OIDC identity npm accepts is therefore not "this file on any ref": a branch pushed
 #      with its own copy of this workflow gets an identity without the environment, which
 #      npm refuses. The environment's rules are set in the repository's settings, by a
-#      person (docs/releasing.md, "First release"); this file can only name it;
+#      person (docs/internal/releasing.md, "First release"); this file can only name it;
 #   4. `scripts/packages.ts` uploads only with the explicit `--publish`, only staged tarballs,
 #      only from a clean tree at the commit it built, and never version 0.0.0;
 #   5. the two held-back packages and every package that is not released are
@@ -47,21 +47,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-        with: { fetch-depth: 0 }
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version-file: package.json }
-      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --ignore-scripts
       - name: What the pending changesets would release
         run: bunx changeset status
       - name: Only the released packages may be publishable
         # Fails when a package outside `RELEASED_PACKAGES` (the two held-back ones included)
         # is not private, and when a released one is: scripts/publish-manifest.ts.
         run: bun run packages:states
+      - name: The create-tula templates match examples/*
+        # A template that drifted from its example would ship stale in the published scaffold.
+        run: bun run --filter create-tula generate:check
       - name: Build, pack and check every package; report what would be published
         run: bun run release:dry-run
       - name: Keep the tarballs for inspection
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: package-tarballs
           path: .release/*.tgz
@@ -87,16 +90,16 @@ jobs:
       # no npm token in this repository's secrets, and none may be added.
       id-token: write
     steps:
-      - uses: actions/checkout@v7
-        with: { fetch-depth: 0 }
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version-file: package.json }
-      # The one place the repository uses npm (docs/releasing.md, "Which CLI uploads"):
+      # The one place the repository uses npm (docs/internal/releasing.md, "Which CLI uploads"):
       # `bun publish` has no provenance and no trusted publishing. Node 24 ships npm 11; the
       # script refuses an npm older than 11.5.1, the first with trusted publishing.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: 24 }
-      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --ignore-scripts
       - name: Build, pack, check and publish what the registry does not have yet
         # Rebuilds from this commit, skips every version already on the registry, and
         # uploads the staged tarballs with `--access public --tag latest --provenance`.

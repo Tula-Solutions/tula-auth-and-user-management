@@ -9,6 +9,7 @@ import {
   identities,
   passkeys,
   passwordHistory,
+  sessions,
   userFactors,
   users,
   withTenant,
@@ -28,15 +29,19 @@ import {
   like,
   lt,
   ne,
+  notInArray,
   or,
   type SQL,
   sql,
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import { isUniqueViolation } from '~/adapters/postgres/errors'
+import { dataRefusal, isUniqueViolation } from '~/adapters/postgres/errors'
+import { findBlocked } from '~/adapters/postgres/manager-guard'
+import * as logger from '~/lib/logger'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
+  BanOrigin,
   DependentAccounts,
   IdentityRecord,
   LinkGuard,
@@ -46,6 +51,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -56,6 +62,7 @@ import type {
   UserRepository,
   UserWithPassword,
 } from '~/ports/user-repository'
+import { type DeleteUserOutcome, InvalidUserDataError } from '~/ports/user-repository'
 
 const columns = {
   id: users.id,
@@ -67,11 +74,14 @@ const columns = {
   firstName: users.firstName,
   lastName: users.lastName,
   bannedAt: users.bannedAt,
+  banOrigin: users.banOrigin,
   lastSignInAt: users.lastSignInAt,
   createdAt: users.createdAt,
   phoneNumber: users.phoneNumber,
   phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
   smsFactorEnabledAt: users.smsFactorEnabledAt,
+  managedByConnectionId: users.managedByConnectionId,
+  managedByDirectoryId: users.managedByDirectoryId,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */
@@ -116,6 +126,20 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const wanted = [...new Set(ids)]
+    if (wanted.length === 0) {
+      return []
+    }
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(inArray(users.id, wanted), eq(users.environmentId, environmentId)))
+    )
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx
@@ -150,6 +174,23 @@ export class PostgresUserRepository implements UserRepository {
             eq(credentials.type, 'password')
           )
         )
+        .where(
+          and(eq(users.emailNormalized, emailNormalized), eq(users.environmentId, environmentId))
+        )
+        .limit(1)
+    )
+    return row ?? null
+  }
+
+  /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ id: users.id, externalId: users.externalId })
+        .from(users)
         .where(
           and(eq(users.emailNormalized, emailNormalized), eq(users.environmentId, environmentId))
         )
@@ -207,6 +248,18 @@ export class PostgresUserRepository implements UserRepository {
       // identities_environment_provider_subject_key: the provider account is.
       if (isUniqueViolation(error)) {
         return false
+      }
+      // Only data that came with an import can be refused by a check of its own.
+      const refused =
+        user.metadata !== undefined || user.externalId !== undefined ? dataRefusal(error) : null
+      if (refused) {
+        // Only the SQLSTATE and the constraint's name: never the metadata or the address.
+        logger.warn('the database refused an imported user’s data', {
+          environmentId: user.environmentId,
+          sqlstate: refused.code,
+          constraint: refused.constraint,
+        })
+        throw new InvalidUserDataError()
       }
       throw error
     }
@@ -418,6 +471,9 @@ export class PostgresUserRepository implements UserRepository {
           )
         )
         .limit(1)
+        // A hash upgrade takes this row and not the user's: without the lock this read could
+        // see the hash an upgrade in flight is replacing, and keep that cheaper form (H-081).
+        .for('update')
       const current = stored?.secret ?? null
       if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
         return 'stale'
@@ -699,7 +755,8 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
-    recorded: Recorded
+    recorded: Recorded,
+    origin: BanOrigin = 'operator'
   ): Promise<UserRecord | null> {
     const activity = activityOf(recorded)
     const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
@@ -708,8 +765,53 @@ export class PostgresUserRepository implements UserRepository {
       // ban time, and neither a repeated ban nor a repeated unban is recorded twice.
       const [changed] = await tx
         .update(users)
-        .set({ bannedAt, updatedAt: at })
+        .set({ bannedAt, banOrigin: bannedAt === null ? null : origin, updatedAt: at })
         .where(and(isUser, bannedAt === null ? isNotNull(users.bannedAt) : isNull(users.bannedAt)))
+        .returning(columns)
+      if (changed) {
+        await recordActivity(tx, activity ? [activity] : [])
+        return changed
+      }
+      if (bannedAt !== null && origin === 'operator') {
+        // An operator's ban of a directory-banned user takes it over; nothing else changes.
+        const [taken] = await tx
+          .update(users)
+          .set({ banOrigin: 'operator' })
+          .where(and(isUser, eq(users.banOrigin, 'directory')))
+          .returning(columns)
+        if (taken) {
+          return taken
+        }
+      }
+      const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
+      return unchanged ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so only a real change writes and is recorded.
+      const [changed] = await tx
+        .update(users)
+        .set({ firstName: names.firstName, lastName: names.lastName, updatedAt: at })
+        .where(
+          and(
+            isUser,
+            or(
+              sql`${users.firstName} is distinct from ${names.firstName}`,
+              sql`${users.lastName} is distinct from ${names.lastName}`
+            )
+          )
+        )
         .returning(columns)
       if (changed) {
         await recordActivity(tx, activity ? [activity] : [])
@@ -718,6 +820,26 @@ export class PostgresUserRepository implements UserRepository {
       const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
       return unchanged ?? null
     })
+  }
+
+  /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({ managedByDirectoryId: null })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            eq(users.managedByDirectoryId, organizationId)
+          )
+        )
+    )
   }
 
   /** @inheritdoc */
@@ -981,6 +1103,50 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const [changed] = await tx
+          .update(users)
+          .set({
+            email: address.email,
+            emailNormalized: address.normalized,
+            emailVerifiedAt: address.verifiedAt,
+            updatedAt: at,
+          })
+          .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+          .returning(columns)
+        if (!changed) {
+          return 'not_found'
+        }
+        await tx
+          .update(identities)
+          .set({ providerSubject: address.normalized, updatedAt: at })
+          .where(
+            and(
+              eq(identities.userId, userId),
+              eq(identities.environmentId, environmentId),
+              eq(identities.provider, 'email')
+            )
+          )
+        await recordActivity(tx, recordedOf([recorded]))
+        return changed
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return 'taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
   async countDependentOn(
     environmentId: string,
     provider: OAuthProvider,
@@ -1057,17 +1223,56 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+  async delete(
+    environmentId: string,
+    userId: string,
+    recorded: Recorded
+  ): Promise<DeleteUserOutcome> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
-      const rows = await tx
+      // The organizations' locks come before the delete, whose cascade removes the memberships.
+      const blocked = (await findBlocked(tx, environmentId, [userId])).get(userId)
+      if (blocked) {
+        return { outcome: 'last_manager', organizationIds: blocked } as const
+      }
+      // The user's row is locked first: a session insert takes KEY SHARE on it for its foreign
+      // key, so a concurrent one either is committed and listed below or waits and then fails.
+      const [locked] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .for('update')
+      if (!locked) {
+        await recordActivity(tx, [])
+        return { outcome: 'not_found' } as const
+      }
+      // The delete cascades the sessions away; the active ones are named so the caller can
+      // denylist their access tokens (H-229).
+      const active = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.environmentId, environmentId),
+            isNull(sessions.revokedAt)
+          )
+        )
+      await tx
         .delete(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
-        .returning({ id: users.id })
-      const deleted = rows.length === 1
-      await recordActivity(tx, deleted && activity ? [activity] : [])
-      return deleted
+      await recordActivity(tx, activity ? [activity] : [])
+      return { outcome: 'deleted', endedSessionIds: active.map((row) => row.id) } as const
     })
+  }
+
+  /** @inheritdoc */
+  async soleManagerOf(environmentId: string, userId: string): Promise<string[]> {
+    return withTenant(
+      this.db,
+      environmentId,
+      async (tx) => (await findBlocked(tx, environmentId, [userId], false)).get(userId) ?? []
+    )
   }
 
   /** @inheritdoc */
@@ -1091,15 +1296,36 @@ export class PostgresUserRepository implements UserRepository {
     )
     return withTenant(this.db, environmentId, async (tx) => {
       // DELETE has no LIMIT in Postgres: the batch is picked first, oldest first, and a row
-      // a test's own deletion holds is passed over rather than waited for.
-      const batch = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(marked)
-        .orderBy(asc(users.createdAt), asc(users.id))
-        .limit(Math.max(0, limit))
-        .for('update', { skipLocked: true })
-      if (batch.length === 0) {
+      // a test's own deletion holds is passed over rather than waited for. A test user who is
+      // the only manager of an organization is left for a later round, as a user's deletion
+      // would refuse them (TULA-124); the pick goes on past such users, so that `limit` of them
+      // at the head of the order cannot keep the rest from ever being reached.
+      const seen: string[] = []
+      const deletable: Array<{ id: string }> = []
+      while (deletable.length < limit) {
+        const want = limit - deletable.length
+        const batch = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(seen.length > 0 ? and(marked, notInArray(users.id, seen)) : marked)
+          .orderBy(asc(users.createdAt), asc(users.id))
+          .limit(want)
+          .for('update', { skipLocked: true })
+        if (batch.length === 0) {
+          break
+        }
+        const blocked = await findBlocked(
+          tx,
+          environmentId,
+          batch.map((row) => row.id)
+        )
+        seen.push(...batch.map((row) => row.id))
+        deletable.push(...batch.filter((row) => !blocked.has(row.id)))
+        if (batch.length < want) {
+          break
+        }
+      }
+      if (deletable.length === 0) {
         return 0
       }
       const rows = await tx
@@ -1109,7 +1335,7 @@ export class PostgresUserRepository implements UserRepository {
             eq(users.environmentId, environmentId),
             inArray(
               users.id,
-              batch.map((row) => row.id)
+              deletable.map((row) => row.id)
             )
           )
         )

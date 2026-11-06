@@ -37,20 +37,36 @@ export interface RateLimitRule {
  *
  * @param c - The request context.
  * @returns `ip:<bucket>`.
+ * @throws ServiceUnavailableError (503) in `staging`/`prod` with `TRUST_PROXY` on when the proxy sent no address.
  */
 export function byIp(c: Context<AppEnv>): string {
-  return `ip:${ipBucket(clientIp(c, c.get('deps').config.trustProxy))}`
+  const { trustProxy, tier } = c.get('deps').config
+  const address = clientIp(c, trustProxy)
+  // Every unattributable request would share one `unknown` bucket: one caller could exhaust it
+  // for all, and an attacker's flood would lock out everyone. Refuse instead (a proxy that
+  // sends no X-Forwarded-For, or a runtime with no peer address, is a misconfiguration).
+  if (trustProxy && address === 'unknown' && (tier === 'staging' || tier === 'prod')) {
+    throw new ServiceUnavailableError({
+      internalMessage: 'client address unresolved; check TRUST_PROXY and the proxy in front',
+    })
+  }
+  return `ip:${ipBucket(address)}`
 }
 
 /**
  * Bucket by the resolved environment (mount after a key middleware).
  *
  * @param c - The request context.
- * @returns `env:<id>`, or `null` when no tenant is resolved.
+ * @returns `env:<id>`.
+ * @throws Error when no tenant is resolved: the limiter was mounted before the key middleware,
+ *   which would skip the count on every request. A bug in the route, so it fails loudly.
  */
-export function byEnvironment(c: Context<AppEnv>): string | null {
+export function byEnvironment(c: Context<AppEnv>): string {
   const { tenant } = c.var as Partial<TenantVariables>
-  return tenant ? `env:${tenant.environmentId}` : null
+  if (!tenant) {
+    throw new Error('byEnvironment used before a middleware that resolves the tenant')
+  }
+  return `env:${tenant.environmentId}`
 }
 
 /** Count the request; `null` when the limiter is unavailable and the rule lets requests through. */

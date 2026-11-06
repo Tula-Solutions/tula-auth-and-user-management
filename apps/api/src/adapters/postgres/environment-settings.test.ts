@@ -125,6 +125,24 @@ describe('PostgresEnvironmentSettingsStore', () => {
     expect(await store.get(tenant.environmentId)).toBeNull()
   })
 
+  test('a first save whose activity names another environment’s project is refused, writing nothing', async () => {
+    // The row's project_id comes from the caller's activity; only the composite foreign key
+    // (environment_id, project_id) ties the pair together (H-249).
+    const tenant = await freshTenant()
+    const other = await freshTenant()
+    const store = new PostgresEnvironmentSettingsStore(testDb.db)
+    const mismatched = { ...activity(tenant), projectId: other.projectId }
+    const attempt = store.replace(
+      tenant.environmentId,
+      0,
+      DEFAULT_ENVIRONMENT_SETTINGS,
+      now,
+      mismatched
+    )
+    await expect(attempt).rejects.toThrow()
+    expect(await store.get(tenant.environmentId)).toBeNull()
+  })
+
   test('the runtime role cannot delete settings', async () => {
     const tenant = await storeRaw({})
     const attempt = withTenant(testDb.db, tenant.environmentId, (tx) =>

@@ -99,9 +99,91 @@ import { join } from 'node:path'
  * what gzip already sees twice costs nothing to say twice; the phone call's own lines
  * repeated, 23) and the cheapest kept. No saving elsewhere was found that is not a worse
  * message or a renamed public operation. The budget moved by exactly those 57 bytes, to
- * 16,976: the room is the 4 bytes it was.
+ * 16,976: the room is the 4 bytes it was. The five codes of organizations (ADR 0065:
+ * `organization.disabled`, `.slug_taken`, `.member_exists`, `.last_manager`, `.role_unknown`)
+ * added 135 bytes, from 16,972 to 17,107, all of it their messages: the client calls no
+ * organization route yet. The budget moved by exactly those 135 bytes, to 17,111: the room
+ * is the 4 bytes it was.
+ * The four contract codes of a user import (ADR 0066: `import.unsupported_algorithm`,
+ * `import.hash_malformed`, `import.hash_parameters_too_weak`,
+ * `import.hash_parameters_too_costly`) added 88 bytes, from 17,107 to 17,195: the code
+ * names and their messages, which every client carries because the table of messages is
+ * the contract's. A fifth code, for metadata over its size, cost 19 more and was dropped for
+ * `validation.failed`, and the messages were cut to one short line each (the first wording
+ * cost 179 bytes for five codes, 107 after shortening them). The budget moved by exactly
+ * those 88 bytes, from 17,111 to 17,199: the room is the 4 bytes it was.
+ * The four contract codes of custom organization roles (ADR 0065: `organization.role_exists`,
+ * `organization.role_in_use`, `organization.role_built_in`, `organization.role_limit`) added
+ * 107 bytes, from 17,195 to 17,302, the names and messages again. The budget moved by exactly
+ * those 107 bytes, from 17,199 to 17,306: the room is the 4 bytes it was.
+ * The client side of organizations (ADR 0065, Orgs 02) added 462 bytes, from 17,302 to 17,764
+ * (measured on top of the custom role codes above): the four contract codes of the user's own
+ * organization routes and their messages, the three operation rows,
+ * `organizations.{list,create,setActive}`, the `org_id` read of the access token for
+ * `state.organizationId`, and `setActiveOrganization` with its stale-generation handling
+ * (shaped like `stepUp`, which it shares `send` and `commit` with). The budget moved by
+ * exactly those 462 bytes, from 17,306 to 17,768: the room is the 4 bytes it was.
+ * The contract code of deleting a user who alone manages an organization (ADR 0065, TULA-124:
+ * `user.last_organization_manager`) added 37 bytes, from 17,764 to 17,801, the name and its
+ * message. The budget moved by exactly those 37 bytes, from 17,768 to 17,805: the room is the
+ * 4 bytes it was.
+ * Invitations by email (ADR 0065, Orgs 04) added 393 bytes, from 17,801 to 18,194: the ten
+ * contract codes with their messages (cut to one short sentence each; the first wording cost
+ * 452 bytes for everything), six operation rows and `organizations.invitations`
+ * (`list`, `invite`, `revoke`, `preview`, `accept`, `decline`). `readInvitationLink` is not in
+ * the bundle of a client that does not import it. The budget moved by exactly those 393
+ * bytes, from 17,805 to 18,198: the room is the 4 bytes it was.
+ * Verified domains (ADR 0065, Orgs 05) added 239 bytes, from 18,194 to 18,433 (measured on top
+ * of the invitations above): the five contract codes (`organization.domain_public`,
+ * `.domain_taken`, `.domain_address_mismatch`, `.domain_limit`, `.suggestion_unavailable`)
+ * with their messages, the seven rows of the generated table of operations (the two the
+ * client calls, `organizations.suggestions()` and `.join()`, and the five a member who manages
+ * an organization's domains would call, which the client does not wrap yet but the table lists
+ * all the same), and the two methods. The budget moved by exactly those 239 bytes, from 18,198
+ * to 18,437: the room is the 4 bytes it was.
+ * Members, roles, rename, leave and delete (ADR 0065, Orgs 07) added 264 bytes, from 18,433 to
+ * 18,697: six rows of the table of operations (rename, delete, the member list, a member's role,
+ * a member's removal, the roles) and the methods over them and over the domain rows already
+ * listed (`.domains.*`). The budget
+ * moved by exactly those 264 bytes, from 18,437 to 18,701: the room is the 4 bytes it was.
+ * The invitee's own list (TULA-131: `invitations.mine`, `.acceptMine`, `.declineMine`) added
+ * 61 bytes, from 18,697 to 18,758: three rows of the table of operations and the three
+ * methods. The budget moved by exactly those 61 bytes, from 18,701 to 18,762: the room is the
+ * 4 bytes it was.
+ * The paging query of `organizations.list({ page, size })` (TULA-125) added 63 bytes, from 18,758
+ * to 18,821: the query's part of `CallInput` costs nothing, the rest is the transport writing
+ * a search string onto the address. The budget moved by exactly those 63 bytes, from 18,762 to
+ * 18,825: the room is the 4 bytes it was.
+ * Single sign-on (TULA-138) added its twelve error codes and the `sso` first factor: 264 bytes, from
+ * 18,821 to 19,085, and its start operation 13 more, to 19,098. The budget moved by exactly those,
+ * to 19,102: the room is the 4 bytes it was.
+ * `flow.startSso` (TULA-141: the start step, the kept binding and the redirect, on the OAuth
+ * round trip's own functions) added 105 bytes, from 19,098 to 19,203. The budget moved by
+ * exactly those 105 bytes, to 19,207: the room is the 4 bytes it was.
+ * SAML connections (TULA-139) added the `sso.saml_invalid` code: 31 bytes, to 19,234. The budget moved
+ * by exactly those, to 19,238: the room is the 4 bytes it was.
+ * The test sign-in (TULA-145) added the codes `sso.url_not_https`, `sso.test_required` and
+ * `sso.test_not_found`: 85 bytes, to 19,319. The budget moved by exactly those, to 19,323.
+ * Organization admins' SSO calls (TULA-148: ten client operations, `organizations.sso`) added 284
+ * bytes, to 19,603. The budget moved by exactly those, to 19,607: the room is the 4 bytes it was.
+ * Setup links (TULA-149: three client operations on `organizations.sso`'s neighbour, and their error
+ * codes) added 46 bytes, to 19,653. The budget moved by exactly those, to 19,657.
+ * The setup portal's refusal `sso.role_not_allowed` (Phase 4 review) added 41 bytes, to 19,694.
+ * The budget moved by exactly those, to 19,698.
+
+ * Managed accounts (DECISIONS 11: the `user.managed` code, and the longer `sso.connection_in_use`
+ * message) added 27 bytes on top of that, to 19,721. The budget moved by exactly those, to 19,725.
+ * The member setup-link client calls (`setupLinks`, `createSetupLink`, `revokeSetupLink`, Phase 4
+ * review) added 42 bytes, to 19,763. The budget moved by exactly those, to 19,767.
+ * Revoking every token a failed sign-out never delivered (TULA-157, H-315) added 57 bytes, to
+ * 19,820. The budget moved by exactly those, to 19,824.
+ * The refresh that waits out a sign-out (TULA-188, H-285) added 6 bytes, to 19,826; the budget
+ * moved by exactly those, to 19,830.
+ * One transport rule (TULA-187, H-313, H-314, H-296): plain http to another machine refused
+ * unless allowed, `redirect: 'manual'`, and a success body that is not an object refused,
+ * added 153 bytes, to 19,979; the budget moved by exactly those, to 19,983.
  */
-const GZIP_BUDGET_BYTES = 16_976
+const GZIP_BUDGET_BYTES = 19_983
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

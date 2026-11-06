@@ -1,9 +1,6 @@
 # The `tula` command line
 
-`tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
-in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
-Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`;
-[releasing.md](releasing.md)). **Run `bunx tula` only in a project that has the CLI
+`tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`). **Run `bunx tula` only in a project that has the CLI
 installed**: anywhere else the name resolves to an unrelated npm package called `tula`. Outside a
 project, name the package: `bunx --package @tula-tech/cli@latest tula <command>`. Inside this
 repository run `bun run tula -- <command>`, and see
@@ -17,6 +14,7 @@ repository run `bun run tula -- <command>`, and see
 | [`tula policy test`](#tula-policy-test) | Which password rules a password passes. |
 | [`tula mcp`](#tula-mcp) | The MCP server an AI assistant reads and proposes through. |
 | [`tula approve`](#tula-approve) | Approve a change an assistant proposed. |
+| [`tula import`](#tula-import) | Move users, with their password hashes, from Clerk, Auth0, Firebase, Supabase or better-auth. |
 | [`tula diff`, `tula apply`](config.md) | Settings as code. |
 
 ## Credentials are never arguments
@@ -122,11 +120,10 @@ A phone cannot reach `localhost`, and a passkey, an app link and a native sign-i
 on a name the phone trusts. `--tunnel` starts the same stack under a public https address
 that is the same on every run, through
 [Tailscale Funnel](https://tailscale.com/kb/1223/funnel): the machine's own name in your
-tailnet's `ts.net` domain ([ADR 0049](adr/0049-dev-tunnel.md) has why this service).
+tailnet's `ts.net` domain.
 
 **Nobody has run this against a phone, and no tunnel was opened while it was built**: the
-command is tested against a stand-in for Tailscale
-([what was not verified](plans/phase-2-unverified.md#step-212-tula-dev---tunnel-tula-21-adr-0049)).
+command is tested against a stand-in for Tailscale.
 
 Before the first run, once, with Tailscale's own tools (`tula` takes no credential of
 Tailscale's, reads none and stores none):
@@ -244,6 +241,7 @@ tula doctor --json             # for a pipeline
 | `native_app_identities` | server | Every native app registered (in the 200 oldest environments) is well formed: a bundle ID, a package name, a team ID, certificate fingerprints and link paths this version would accept, and an Android app with at least one fingerprint. A failure counts the apps that are not; the API's log names them by id. It does **not** show that an identifier is the one your app really has: a bundle ID with a typing mistake in it is still a bundle ID. `skipped` with no app registered ([native-apps.md](native-apps.md#checking-with-tula-doctor)). |
 | `native_app_files` | server | The two association files. What the server builds for each environment names exactly its registered apps (an app's link paths included: `applinks` and `handle_all_urls` are expected where an app has a path, and nowhere else), and for a sample (one file per platform) the server fetches its own copy at `PUBLIC_URL`: HTTP 200, `application/json`, no redirect, the body it built. A redirect, another status or an answer that is not JSON is a failure. A `401` or a `403` is a warning: an access wall or a firewall in front of the API's own host answered, which says nothing about what your apps' domain serves. A body that differs is a warning too (a cache may keep a copy for five minutes), and so is no answer. A loopback `PUBLIC_URL` is not fetched. It never requests **your** domain: `ok` is about the server's own copies, not about whether Apple or Android can reach them where your app looks. `skipped` with no app registered. |
 | `native_app_passkeys` | server | Where an environment has native apps and passkeys are on: the relying party (`passkeys.rpId`) is a domain a platform can associate with an app, so not `localhost` or a loopback name. Otherwise a warning, never a failure: the apps there cannot use passkeys. Passkeys switched off is `ok` and said with a count (the apps there use the association files for saved passwords only), so `--strict` does not fail it. With `ENVIRONMENT=local` a `localhost` or `*.localhost` relying party is `ok` too, with a note that no platform can associate an app with it; a relying party that is not set or is no domain name is a warning in every tier. It does not look at whether that domain serves the association files. `skipped` with no app registered. |
+| `sso_connections` | server | Active enterprise SSO connections of the 200 oldest environments. A signing certificate that has ended is a failure; one that ends within 30 days, a metadata address that does not answer 2xx, and a bound domain its organization no longer has verified are warnings. The server requests a connection's metadata address, if it has one, like any address an operator typed (public hosts only, no redirect followed; at most 10 a run, and a run that stopped there says so). It prints counts, never a connection's name, domain or address. `skipped` with no active connection. |
 | `server_checks` | here | Appears when the server's checks could not run, with why. |
 
 The server's checks need the instance admin token: set `TULA_ADMIN_TOKEN` in the API's
@@ -293,6 +291,9 @@ sign a throwaway user up and in and delete it, where the environment allows it
 proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
 tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 
+Started with only a secret key, the server holds the whole admin read client; an agent key is the safer
+credential for an assistant ([docs/mcp.md](mcp.md)).
+
 | Option | |
 | --- | --- |
 | `--env <name>` | Read `TULA_API_URL_<NAME>` and `TULA_SECRET_KEY_<NAME>` first. |
@@ -321,7 +322,7 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 ```
 
 A person's answer to a change an assistant proposed through `tula mcp`
-([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
+([proposals.md](proposals.md)). It reads the proposal,
 and what it is about, with **your secret key**: a user with their address and whether they
 are banned, a session with whose it is (the user's id, address and name), the kind of
 client, when it was signed in and whether it is live now or has already ended (live by
@@ -398,6 +399,90 @@ a secret key, and then nobody was asked.
 Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
 revoked, already approved, refused for a production environment, approved but not carried
 out or only half carried out, an error).
+
+## `tula import`
+
+```sh
+tula import --from supabase supabase-users.csv          # a report; nothing is sent
+tula import --from supabase supabase-users.csv --yes    # import; run it again after a stop
+```
+
+Moves users from another provider with the password hashes they have there, so that nobody
+resets a password ([Importing users](user-import.md) says what the server does with them). It
+reads the provider's own export on your machine and makes **no request to the old provider**.
+One guide per provider says what to export and what is and is not carried:
+[Clerk](migrate-from-clerk.md), [Auth0](migrate-from-auth0.md),
+[Firebase](migrate-from-firebase.md), [Supabase](migrate-from-supabase.md) and
+[better-auth](migrate-from-better-auth.md).
+
+| Option | |
+| --- | --- |
+| `--from <provider>` | `clerk`, `auth0`, `firebase`, `supabase` or `better-auth`. Required. |
+| `<export file>` | The provider's user export (JSON, NDJSON or CSV, by provider). |
+| `--yes` | Import. Without it only the report is printed, and no key is needed. |
+| `--no-trust-verified` | Import every address as unverified, whatever the export says. Use it for an export from a source you do not control or that anyone edited: a verified address lets its owner skip the emailed code. |
+| `--password-hashes <file>` | Auth0: the hash export that Auth0 support sends. |
+| `--accounts <file>` | better-auth: the `account` table. |
+| `--organizations <file>`, `--memberships <file>` | Clerk: its organizations and their members, imported through the organization admin routes. |
+| `--firebase-hash-config <file>`, `--firebase-rounds <n>`, `--firebase-mem-cost <n>` | Firebase: the project's scrypt parameters. The signer key is in the file or in `TULA_FIREBASE_SIGNER_KEY`, never an option. |
+| `--allow-passwordless` | A user whose hash the server cannot read is imported without a password, instead of the row being refused. |
+| `--progress-file <path>`, `--fresh` | Where the progress is kept (default `<export file>.tula-import-progress.json`); start over. |
+| `--batch-size <n>`, `--max-wait <seconds>` | Users per request (at most 500, the default); the longest a `Retry-After` is waited (default 120). |
+| `--env`, `--api-url`, `--insecure-http`, `--secret-key-file`, `--json` | As for the other commands. |
+
+- **The report comes first, always.** It counts the users to import by password algorithm and
+  lists every row it would refuse by **row number** (the Nth user of the file), a **code** and
+  an address **masked** to its first character and the last label of its domain
+  (`m***@***.app`). A refused row is one the file or the server cannot take: no usable address,
+  a disabled or banned user, a hash in a format the server does not read, parameters it limits.
+  An address that repeats an earlier row is counted, and the server skips it.
+- **It sends batches of up to 500 users and 4 MB** to `POST /v1/admin/users/import`, one after
+  another. A `429` is waited out as long as `Retry-After` says, up to `--max-wait`, and the same
+  batch is sent again; so is a request that got no answer or a `5xx`, six tries in all, because
+  every request is safe to repeat: a user whose address exists is **skipped**, never created twice.
+- **The progress file** is written after every answer and holds the number of the last row
+  sent, the batch count, the counts and the codes of the rows the server refused, and, for a
+  Clerk import with memberships, the provider's and Tula's ids of users and organizations. It
+  holds **no password hash, no signer key, no address and no name**, and its permissions are
+  `0600`. It is bound to the export, the provider, the server and the key: another one is
+  refused, and `--fresh` ignores it (everything that exists is then skipped).
+- **A run that stops** (a network failure, `Ctrl-C`, a server that stays down) keeps what it
+  did. Run the same command again, with the same options (another `--allow-passwordless` or other
+  Firebase parameters is another import: the progress file is refused, `--fresh` starts over). A
+  batch whose answer was lost is sent again, and the server reports the users its first attempt made
+  as duplicates, with their ids and whether their external id is the row's own: those are counted
+  as created, and a Clerk member is paired by that id, with no lookup by address. A duplicate
+  with another external id (or none) is a user who was there before and stays skipped. A server
+  older than this change sends no ids; the count is then low after a lost answer, and a Clerk
+  member is found by address.
+- **Nothing sensitive is printed.** No hash, token, signer key or whole address, in the report or
+  in an error; the secret key and the signer key are redacted from every line.
+
+Exit codes: 0 done and nothing refused (or a report with nothing to refuse), 2 something was
+refused (an answer, not a failure), 1 an error. The progress file keeps what was done.
+
+## `tula audit export`
+
+```sh
+tula audit export --from 2026-01-01 --to 2026-02-01 > january.ndjson
+tula audit export --format csv --resume "$CURSOR" >> january.csv
+```
+
+Streams the environment's audit log to standard output, oldest entry first
+([Exporting the audit log](audit-export.md) says what the server sends and records).
+
+| Option | |
+| --- | --- |
+| `--format <ndjson\|csv>` | The default is `ndjson`. |
+| `--from <date>`, `--to <date>` | Only entries at or after, and before, these times (ISO 8601). |
+| `--action <type>`, `--organization <id>` | Only one kind of entry; only an organization's. |
+| `--resume <cursor>` | Continue after the entry a stopped export last wrote. |
+| `--env`, `--api-url`, `--insecure-http`, `--secret-key-file` | As for the other commands. |
+
+- **The cursor is printed on standard error** when the export ends, so that a redirected
+  file holds only entries. Pass it to `--resume` and append to the same file; a CSV resumed
+  has its header row again, so skip it.
+- Exit codes: 0 done, 1 an error (the cursor of what was written is still printed).
 
 ## `tula diff` and `tula apply`
 

@@ -7,6 +7,17 @@ function page(body: string): string {
 }
 
 describe('checkPage', () => {
+  test('a breadcrumb step that is not the current page must be a link', () => {
+    const crumb = (middle: string) =>
+      page(
+        `<h1>A</h1><nav class="breadcrumb"><ol><li><a href="/a/">Tab</a></li><li>${middle}</li><li><span aria-current="page">P</span></li></ol></nav>`
+      )
+    expect(() => checkPage('/c/', crumb('<a href="/b/">Group</a>'))).not.toThrow()
+    expect(() => checkPage('/c/', crumb('<span>Group</span>'))).toThrow(
+      '/c/: has a breadcrumb step "Group" that is not a link'
+    )
+  })
+
   test('a well-formed page passes', () => {
     expect(() =>
       checkPage(

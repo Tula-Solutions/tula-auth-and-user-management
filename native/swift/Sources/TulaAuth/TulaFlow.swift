@@ -386,6 +386,8 @@ public class TulaFlow: @unchecked Sendable, TulaRedacted {
     public func startTotpEnrolment() async throws -> TotpEnrolment {
         let transport = attempt.context.transport
         let operation = operations.startEnrolment
+        // `exclusive` and not `accept`: the answer is a secret to show, not
+        // a new attempt state, so the flow's step and expiry stay as they were.
         return try await attempt.exclusive { bound in
             let enrolment = try await transport.call(
                 operation, params: bound.params, options: bound.options, as: TotpEnrolment.self)

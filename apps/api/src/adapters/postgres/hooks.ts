@@ -41,7 +41,9 @@ function stillExpected(environmentId: string, id: string, expected: HookExpectat
     eq(hooks.id, id),
     // The compare of the compare-and-set: in the statement itself, so it is judged against
     // the row as it is when the write takes its lock.
+    eq(hooks.url, expected.url),
     eq(hooks.enabled, expected.enabled),
+    eq(hooks.deadlineMs, expected.deadlineMs),
     eq(hooks.failureMode, expected.failureMode)
   )
 }

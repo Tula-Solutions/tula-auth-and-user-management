@@ -1,0 +1,462 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim users: ownership and the last manager",
+  "description": "A directory never takes access from someone it does not manage (ADR 0067): a user with another membership is not banned when deactivated and survives a delete, and the organization’s last manager cannot be deactivated or deleted (SCIM 409).",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims and verifies a domain, so the directory may create accounts on it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "a second organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Other",
+          "slug": "other-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "otherOrgId": "id"
+      }
+    },
+    {
+      "name": "the directory provisions a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "shared-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-shared-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "shared-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "who also joins the second organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{otherOrgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{userId}}",
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "deactivating removes only this membership",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "replace",
+              "path": "active",
+              "value": false
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "active": false
+        }
+      }
+    },
+    {
+      "name": "and does not ban the account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    },
+    {
+      "name": "deleting leaves the account",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "which still exists",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the directory provisions a manager",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "boss-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-boss-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "boss-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "bossId": "id"
+      }
+    },
+    {
+      "name": "and an administrator makes them the organization’s admin",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{bossId}}",
+        "auth": "secret",
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the last manager cannot be deactivated",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Users/{{bossId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "replace",
+              "path": "active",
+              "value": false
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "409"
+        }
+      }
+    },
+    {
+      "name": "nor deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/scim/v2/Users/{{bossId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "409"
+        }
+      }
+    },
+    {
+      "name": "and is not banned",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{bossId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

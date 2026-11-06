@@ -4,7 +4,7 @@ Open-source, self-hostable authentication and user management: Clerk-level devel
 and prebuilt UI, first-class native mobile, and data you own.
 
 > **Status: an early release (0.x).** The web SDKs and the tooling are released to npm, from
-> `0.1.1` under the `latest` dist-tag ([what is released and what is held back](docs/releasing.md)),
+> `0.1.1` under the `latest` dist-tag ([what is released and what is held back](docs/internal/releasing.md)),
 > and the API image to `ghcr.io/tula-solutions/tula-api` with them; what they expose may
 > still change from one release to the next. The Expo packages and the Swift and Kotlin
 > SDKs are not published. Sign-in with Google,
@@ -141,7 +141,7 @@ answers `flow.not_found`, so an attempt id seen in a URL or a log is useless on 
 
 ## Roadmap
 
-Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
+Phase 0, the core of V1 (see the [business plan](docs/internal/business-plan.md)):
 
 - [x] Monorepo, agent harness and quality gate
 - [x] Public contract (`@tula-tech/contract`)

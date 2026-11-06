@@ -379,6 +379,14 @@ describe('approving', () => {
   describe('when the agent key that asked is revoked', () => {
     const revoke = (id: string, key = SK) => call('DELETE', `/v1/admin/api-keys/${id}`, key)
 
+    test('its waiting proposal can still be rejected: turning it down is harmless', async () => {
+      const proposal = await propose((await createUser()).id)
+      expect((await revoke(agentKeyId)).status).toBe(200)
+      const res = await reject(proposal)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ status: 'rejected' })
+    })
+
     test('its waiting proposal cannot be approved: refused, the user untouched, nothing recorded', async () => {
       const maya = await createUser()
       const proposal = await propose(maya.id)
@@ -756,7 +764,7 @@ describe('approving', () => {
     const maya = await createUser()
     const proposal = await propose(maya.id)
     const error = spyOn(logger, 'error').mockImplementation(() => undefined)
-    const finish = spyOn(deps.proposals, 'finish').mockRejectedValueOnce(new Error('down'))
+    const finish = spyOn(deps.proposals, 'finish').mockRejectedValue(new Error('down'))
     try {
       const res = await approve(proposal)
       expect(res.status).toBe(200)
@@ -805,5 +813,77 @@ describe('reading', () => {
       expect(text).not.toContain('canary')
       expect(text).not.toContain('tula_')
     }
+  })
+})
+
+function reject(proposal: Pick<Proposal, 'id'>, key: string = SK) {
+  return call('POST', `/v1/admin/proposals/${proposal.id}/reject`, key)
+}
+
+describe('rejecting', () => {
+  test('a rejected proposal changes nothing, is rejected for good and is recorded', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    const before = types()
+    const res = await reject(proposal)
+    expect(res.status).toBe(200)
+    expect(await json<Proposal>(res)).toMatchObject({
+      id: proposal.id,
+      status: 'rejected',
+      approvedBy: null,
+      approvedAt: null,
+    })
+    expect((await user(maya.id)).bannedAt).toBeNull()
+    expect(recorded().slice(before.length)).toEqual([
+      {
+        type: 'proposal.rejected',
+        actor: { type: 'admin', id: secretKeyId },
+        target: { type: 'proposal', id: proposal.id },
+        data: {
+          operation: 'ban_user',
+          targetType: 'user',
+          targetId: maya.id,
+          proposedBy: agentKeyId,
+        },
+      },
+    ])
+    // The agent reads the same status through its own route.
+    const seen = await call('GET', `/v1/admin/proposals/${proposal.id}`, AK)
+    expect((await json<Proposal>(seen)).status).toBe('rejected')
+  })
+
+  test('an agent key cannot reject', async () => {
+    const proposal = await propose((await createUser()).id)
+    expect((await reject(proposal, AK)).status).toBe(401)
+    expect((await call('GET', `/v1/admin/proposals/${proposal.id}`, AK)).status).toBe(200)
+  })
+
+  test('a rejected proposal cannot be approved or rejected again', async () => {
+    const proposal = await propose((await createUser()).id)
+    expect((await reject(proposal)).status).toBe(200)
+    expect((await refusal(await approve(proposal))).params?.reason).toBe('already_decided')
+    const again = await reject(proposal)
+    expect(again.status).toBe(409)
+    expect((await refusal(again)).params?.reason).toBe('already_decided')
+  })
+
+  test('an approved proposal cannot be rejected', async () => {
+    const maya = await createUser()
+    const proposal = await propose(maya.id)
+    expect((await approve(proposal)).status).toBe(200)
+    const before = types()
+    const res = await reject(proposal)
+    expect(res.status).toBe(409)
+    expect((await refusal(res)).params?.reason).toBe('already_decided')
+    expect(types()).toEqual(before)
+  })
+
+  test('an expired proposal and an unknown one are refused as an approval is', async () => {
+    const proposal = await propose((await createUser()).id)
+    deps.clock.advance('11m')
+    const expired = await reject(proposal)
+    expect(expired.status).toBe(409)
+    expect((await refusal(expired)).params?.reason).toBe('expired')
+    expect((await reject({ id: UNKNOWN })).status).toBe(404)
   })
 })

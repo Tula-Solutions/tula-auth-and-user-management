@@ -2,8 +2,7 @@
 
 A 6-digit code sent by text message (SMS) to a phone number an account has already proven:
 a way to **sign in** beside the password or the emailed code. Off by default, and the
-weakest of the methods: read "Security properties and limits" before switching it on. The
-reasoning is in [ADR 0037](../adr/0037-phone-numbers-and-sms.md).
+weakest of the methods: read "Security properties and limits" before switching it on.
 
 It does not sign anyone **up**. A user adds a phone number to their account while signed in
 ([phone numbers](../phone-numbers.md)); from then on they can sign in with it. It is not a

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import { failure, IDS, installFakeApi } from '~/testing/fake-api'
+import {
+  failure,
+  fakeOrganization,
+  fakeScimToken,
+  fakeSsoConnection,
+  IDS,
+  installFakeApi,
+} from '~/testing/fake-api'
 import {
   DEV_PATH,
   holdAnswers,
@@ -237,6 +244,44 @@ describe('a confirmed change is sent once, however slow the list is to come back
       await current.user.click(await screen.findByRole('button', { name: /^Rename / }))
       await current.user.type(within(dialog()).getByLabelText('Name'), ' two')
       await confirmTwice(current, 'Rename', '/v1/instance/projects')
+    })
+    test('a SCIM token’s revocation', async () => {
+      const api = installFakeApi()
+      const acme = '00000000-0000-7000-8000-0000000aaa01'
+      api.state.settings.settings.organizations = {
+        ...api.state.settings.settings.organizations,
+        enabled: true,
+      }
+      api.state.organizations.push(fakeOrganization({ id: acme, name: 'Acme Corp', slug: 'acme' }))
+      api.state.scimTokens.push(fakeScimToken({ organizationId: acme }))
+      const current = start(`${DEV_PATH}/organizations/${acme}`, { api })
+      await current.user.click(
+        await screen.findByRole('button', { name: 'Revoke Okta provisioning' })
+      )
+      await confirmTwice(current, 'Revoke token', '/v1/admin/scim-tokens')
+      expect(api.state.scimTokens[0]?.revokedAt).not.toBeNull()
+    })
+
+    test('an SSO connection’s activation and deletion', async () => {
+      const api = installFakeApi()
+      const acme = '00000000-0000-7000-8000-0000000aaa01'
+      api.state.settings.settings.organizations = {
+        ...api.state.settings.settings.organizations,
+        enabled: true,
+      }
+      api.state.settings.settings.sso = { enabled: true }
+      api.state.organizations.push(fakeOrganization({ id: acme, name: 'Acme Corp', slug: 'acme' }))
+      api.state.ssoConnections.push(fakeSsoConnection({ organizationId: acme, tested: true }))
+      const current = start(`${DEV_PATH}/organizations/${acme}`, { api })
+      await current.user.click(await screen.findByRole('button', { name: 'Activate Okta' }))
+      await confirmTwice(current, 'Activate', '/v1/admin/sso-connections')
+      expect(api.state.ssoConnections[0]?.status).toBe('active')
+      // An active connection is not deleted: it is disabled first.
+      await current.user.click(await screen.findByRole('button', { name: 'Disable Okta' }))
+      await confirmTwice(current, 'Disable', '/v1/admin/sso-connections')
+      await current.user.click(await screen.findByRole('button', { name: 'Delete Okta' }))
+      await confirmTwice(current, 'Delete connection', '/v1/admin/sso-connections')
+      expect(api.state.ssoConnections).toHaveLength(0)
     })
   })
 })

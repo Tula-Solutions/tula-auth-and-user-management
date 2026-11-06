@@ -10,7 +10,7 @@ import {
 } from './email-template'
 
 /**
- * An environment's wording for one kind of email (ADR 0039): a subject, a body, or both. The
+ * An environment's wording for one kind of email: a subject, a body, or both. The
  * part left out is the server's built-in copy.
  *
  * Both are **plain text with `{{name}}` placeholders and nothing else**: no HTML, no

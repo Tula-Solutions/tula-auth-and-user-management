@@ -13,7 +13,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 ## Publishable packages (see ADR 0020)
 
 - **Eleven packages are built for npm; nine are released and two are held back**
-  ([docs/releasing.md](../../docs/releasing.md)). The lists are in
+  ([docs/internal/releasing.md](../../docs/internal/releasing.md)). The lists are in
   `scripts/publish-manifest.ts`: `PUBLISHABLE_PACKAGES` (all eleven, built and checked by
   `packages:check`), `HELD_PACKAGES` (`@tula-tech/expo` and `@tula-tech/expo-screens`: built and
   checked, never published, `"private": true`) and `RELEASED_PACKAGES`, derived from the
@@ -54,7 +54,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   release's tarballs to `https://npm.pkg.github.com` as `@tula-solutions/<name>` with the
   run's own token, names that registry in every upload, never replaces a version, and
   leaves a copy's dependencies at their `@tula-tech/*` names
-  ([docs/releasing.md](../../docs/releasing.md), "The copy on GitHub Packages";
+  ([docs/internal/releasing.md](../../docs/internal/releasing.md), "The copy on GitHub Packages";
   `.claude/hooks/github-packages.test.ts`). No doc tells a reader to install a copy.
 - **`bun publish` on a person's machine, `npm publish --provenance` in the release
   workflow**: npm is used there because Bun's publish has no provenance
@@ -83,10 +83,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   release pull request from `develop` and `back-merge.yml` brings the release back. Both start
   `ci.yml` with `workflow_dispatch` because a run's own token starts no `pull_request` run;
   they hold no secret, and `release.yml`'s safety layers are unchanged
-  ([docs/releasing.md](../../docs/releasing.md), "The release flow").
+  ([docs/internal/releasing.md](../../docs/internal/releasing.md), "The release flow").
 - **`@tula-tech/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula-tech/contract/error-codes`, `/event-types`,
-  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`) and types from
+  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`, `/organization-permissions`) and types from
   `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails

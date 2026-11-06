@@ -323,9 +323,63 @@ again; a sign-out made in the page refreshes after the request has reached the s
   in the app origin's storage) and axe in both colour schemes. The example is built once
   per run, in the browser-test job, not in `verify`.
 
+## Amendment: the organization claims and the access token's cookies
+
+Date: 2026-10-22 (TULA-117, Orgs 06, [ADR 0065](0065-organizations.md)).
+
+**`auth()` and the claims.** While an organization is active the access token carries
+`org_id`, `org_role` and `org_perms`. `sessionClaims` keeps them only as a set that
+`readOrganizationClaims` (`@tula-tech/contract/custom-claims`) accepts: the id's characters, the
+role key against the role grammar, every permission against the permission grammar and its
+100-character bound, at most 32 permissions, all three present, and the bytes within
+`MAX_ORGANIZATION_CLAIMS_BYTES`. Anything else, in a verified token, in the stateful check's
+answer and in the opened `x-tula-auth` header alike, means no organization, never a partial one.
+`auth()` returns `orgId`, `orgRole`, `orgPermissions` and `has({ permission } | { role })`;
+`has` is `hasOrganizationAccess` of the contract: an exact string match, no wildcard, `false`
+with no active organization and for a check that names neither or both. The middleware's
+`access` option takes rules (`{ routes, permission }` or `{ routes, role }`), refuses a signed-in
+visitor who fails one (a 403 for an API route or a write, a redirect to `forbiddenUrl` for a
+page) and sends a visitor with no session to sign in. A rule is checked when the middleware is
+created: a wildcard, a malformed key, or a rule with both or neither check throws.
+
+**Measured worst case.** The largest role the API accepts (a custom role of 32 permissions of
+69 characters, a 32-character key) with the largest custom-claims template (1,017 bytes of
+JSON) gives an access token of **5,302 characters**; `__Host-tula_at=` and the token are
+**5,317 bytes** against the roughly 4,096 bytes (name and value) a browser keeps per cookie.
+The organization claims alone are about 3.9 KB, also too close. Without organizations the
+largest token is about 3 KB, which is why one cookie was enough until now.
+
+**Decision: the access token is stored in up to two cookies.** Options weighed: a smaller
+claim budget (refused: it takes a role or a template away from an operator, and TULA-112 fixed
+the caps), a server-side store of the token (refused: `hybrid` sessions exist so that a
+Next.js server verifies offline with no store, and a store is a second source of truth to keep
+in step with revocation) and the refresh cookie alone (every request would refresh). A token
+longer than 3,072 characters is split at that length into `tula_at` and `tula_at_1` (with the
+`__Host-` prefix over https, as ever), each below the limit with room for the name and the
+attributes. `readAccessToken` joins the parts in order and stops at the first missing one; the
+result is only a candidate, and the signature decides, so a part replaced by another visitor's
+or a stale tail verifies as nothing. Every write sets the parts it needs and clears the ones
+that are present and no longer needed (a switch to the personal account shortens the token), a
+sign-out clears both, and the stateful rule above (an answer that issues the session's cookie
+removes `tula_rt` and `tula_at`) removes both parts. A token longer than 6,144 characters, the
+bound of two parts, is not stored: the session lives on its refresh cookie, one warning
+(`access-token-size`, fixed text) names the cause, and the proxy refreshes on the next request.
+The `Cookie` request header with the worst case is about 5.5 KB, inside Node's 16 KB default
+and a typical proxy's 8 KB.
+
+**Tests.** `access-cookie.test.ts` (the helpers, the handler's two cookies, the proxy and
+`auth()` reading two parts, a stale tail, sign-out); `real-api.test.ts` ("organizations and the
+access-token cookie": the maximal role and template against the real API, each cookie inside the
+limit, a switch that removes the tail, a refresh of an expired long token, a stateful session);
+`organizations.test.ts` (the malformed-claims tables for the token, the stateful answer and the
+sealed header; `has`; the matchers); and the `nextjs` browser project
+(`e2e/tests/nextjs/organizations.spec.ts`: a permission-protected route allowed, refused and with
+no organization, and the maximal role in a real browser).
+
 ## Deferred
 
-- `auth.protect()` and role or permission checks (nothing to check yet).
+- `auth.protect()` (the permission and role checks of TULA-117 are `has()` and the middleware's
+  `access` rules).
 - The Pages Router, and Server Actions that refresh a session themselves.
 - Caching a stateful session's verification between requests.
 - A tab that learns of a sign-out from another tab re-renders its Server Components while the

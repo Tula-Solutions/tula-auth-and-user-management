@@ -15,6 +15,7 @@ import {
   type PlaygroundConfig,
   setMethod,
   setMfaPolicy,
+  setOrganizations,
   setProvider,
   themeOverrides,
 } from './config'
@@ -64,6 +65,20 @@ describe('the rules a configuration keeps', () => {
 
   test('the two-step policy is set as given', () => {
     expect(setMfaPolicy(DEFAULT_CONFIG, 'required').settings.mfaPolicy).toBe('required')
+  })
+
+  test('organizations are off unless a preset turns them on, and switching them off leaves their screens', () => {
+    expect(DEFAULT_CONFIG.settings.organizations).toBe(false)
+    const preset = EMBED_PRESETS.organizations
+    expect(preset?.config.settings.organizations).toBe(true)
+    expect(preset?.config.screen).toBe('organization-switcher')
+    expect(preset?.panels).toContain('organizations')
+    const off = setOrganizations(preset?.config ?? DEFAULT_CONFIG, false)
+    expect(off.settings.organizations).toBe(false)
+    expect(off.screen).toBe('sign-in')
+    // A screen that is not an organization's stays where it is.
+    expect(setOrganizations({ ...DEFAULT_CONFIG, screen: 'account' }, false).screen).toBe('account')
+    expect(setOrganizations(DEFAULT_CONFIG, true).settings.organizations).toBe(true)
   })
 })
 
@@ -234,6 +249,22 @@ describe('the copied React and CSS', () => {
     expect(code).toContain("emailLinkUrl='/auth/email-link'")
     expect(jsx(withLook({ screen: 'account' }))).toContain('<UserProfile')
     expect(jsx(withLook({ screen: 'sign-up' }))).toContain('<SignUp')
+  })
+
+  test('each organization screen is its own component, with the destinations of the app', () => {
+    const base = EMBED_PRESETS.organizations?.config ?? DEFAULT_CONFIG
+    const switcher = jsx({ ...base, screen: 'organization-switcher' })
+    expect(switcher).toContain(
+      "import { OrganizationSwitcher, TulaProvider } from '@tula-tech/react'"
+    )
+    expect(switcher).toContain("organizationProfileUrl='/organization'")
+    expect(switcher).toContain("createOrganizationUrl='/organization/new'")
+    expect(jsx({ ...base, screen: 'create-organization' })).toContain('<CreateOrganization')
+    const profile = jsx({ ...base, screen: 'organization-profile' })
+    expect(profile).toContain('<OrganizationProfile')
+    expect(profile).toContain("invitationUrl='/organizations'")
+    expect(configTs(base)).toContain('organizations: {')
+    expect(configTs(DEFAULT_CONFIG)).not.toContain('organizations')
   })
 
   test('no secret key is ever written', () => {

@@ -13,7 +13,7 @@ static HTML. Its commands are in its README.
 ## Documentation site (`apps/docs`)
 
 - **`docs/**/*.md` is the only source, and the site holds no copy of it.** Every Markdown file
-  of `docs/` has a page except `docs/plans/`, `docs/adr/` and `docs/codebase-map/`
+  of `docs/` has a page except `docs/plans/`, `docs/adr/`, `docs/codebase-map/` and `docs/internal/`
   (`EXCLUDED_DIRECTORIES` in `src/lib/config.ts`: a decision to leave a directory out is made
   there and in nowhere else). A page's route follows its path (`docs/methods/password.md` is
   `/methods/password/`, a `README.md` is its directory's index, `docs/README.md` is `/docs/`;
@@ -114,8 +114,18 @@ static HTML. Its commands are in its README.
   source), a malformed component (below), a relative link or image to a file that does not
   exist, and a `#anchor` the target does not have. The resolver (`src/lib/links.ts`) is a pure
   function over an injected `LinkEnvironment` and is tested on its own. A link to a repository
-  file that is not a page (an ADR, a package README, a source file) becomes its address on
-  GitHub (`REPO_URL`, branch `develop`); its anchors are still checked when it is Markdown.
+  file that is not a page (a package README, a source file) becomes its address on GitHub
+  (`REPO_URL`, branch `develop`); its anchors are still checked when it is Markdown. A link into
+  a directory the site leaves out (`EXCLUDED_DIRECTORIES`) fails.
+- **The published site carries none of the repository's bookkeeping** (TULA-199): no ADR (by
+  number or link), no ticket id (`TULA-…`), no audit item id (`H-…`) and no link into an
+  unpublished directory, in any page, Markdown twin or file for agents
+  (`src/lib/internal-references.ts`, run on every build, with no allow-list). The site is a
+  product's documentation: a reader cannot follow those and should not need to. Where a page
+  needs the reason a record holds, it says the reason in its own words. The ADRs, plans and
+  `docs/internal/` stay in the repository for contributors, and `AGENTS.md` and these rules
+  link them freely: they are not published. Say what exists, not what is planned: a page's
+  limits go under "Limits", never "Not built".
 - **Anchors are GitHub's** (`github-slugger`, `-1` for a repeat), because the docs link to
   `file.md#heading` as GitHub renders it. `docs/**` links keep working in both places.
 - **The Markdown pipeline is unified**: `remark-parse`, `remark-gfm`, `remark-rehype`,

@@ -31,6 +31,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case passwordSequence
     case passwordReused
     case passwordNotSet
+    case importUnsupportedAlgorithm
+    case importHashMalformed
+    case importHashParametersTooWeak
+    case importHashParametersTooCostly
     case verificationInvalidCode
     case verificationExpired
     case verificationTooManyAttempts
@@ -79,6 +83,53 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case deviceNonceRequired
     case deviceBindingNotSupported
     case deviceBindingRequired
+    case userLastOrganizationManager
+    case userManaged
+    case organizationDisabled
+    case organizationSlugTaken
+    case organizationMemberExists
+    case organizationLastManager
+    case organizationRoleUnknown
+    case organizationNotAMember
+    case organizationCreationDisabled
+    case organizationLimitReached
+    case organizationPersonalAccountDisabled
+    case organizationRoleExists
+    case organizationRoleInUse
+    case organizationRoleBuiltIn
+    case organizationRoleLimit
+    case organizationPermissionRequired
+    case organizationRoleNotAssignable
+    case organizationInvitationExists
+    case organizationInvitationNotFound
+    case organizationInvitationExpired
+    case organizationInvitationRevoked
+    case organizationInvitationUsed
+    case organizationInvitationWrongAccount
+    case organizationInvitationEmailUnverified
+    case organizationInvitationRoleGone
+    case organizationDomainPublic
+    case organizationDomainTaken
+    case organizationDomainAddressMismatch
+    case organizationDomainLimit
+    case organizationSuggestionUnavailable
+    case ssoDisabled
+    case ssoConnectionNotFound
+    case ssoNameTaken
+    case ssoDomainTaken
+    case ssoDomainNotVerified
+    case ssoIssuerNotAllowed
+    case ssoSamlInvalid
+    case ssoConnectionInUse
+    case ssoInvalidTransition
+    case ssoUrlNotHttps
+    case ssoTestRequired
+    case ssoTestNotFound
+    case ssoRoleNotAllowed
+    case ssoUnavailable
+    case ssoProviderError
+    case ssoUserNotProvisioned
+    case ssoEmailDomainMismatch
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -122,6 +173,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .passwordSequence,
         .passwordReused,
         .passwordNotSet,
+        .importUnsupportedAlgorithm,
+        .importHashMalformed,
+        .importHashParametersTooWeak,
+        .importHashParametersTooCostly,
         .verificationInvalidCode,
         .verificationExpired,
         .verificationTooManyAttempts,
@@ -170,6 +225,53 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .deviceNonceRequired,
         .deviceBindingNotSupported,
         .deviceBindingRequired,
+        .userLastOrganizationManager,
+        .userManaged,
+        .organizationDisabled,
+        .organizationSlugTaken,
+        .organizationMemberExists,
+        .organizationLastManager,
+        .organizationRoleUnknown,
+        .organizationNotAMember,
+        .organizationCreationDisabled,
+        .organizationLimitReached,
+        .organizationPersonalAccountDisabled,
+        .organizationRoleExists,
+        .organizationRoleInUse,
+        .organizationRoleBuiltIn,
+        .organizationRoleLimit,
+        .organizationPermissionRequired,
+        .organizationRoleNotAssignable,
+        .organizationInvitationExists,
+        .organizationInvitationNotFound,
+        .organizationInvitationExpired,
+        .organizationInvitationRevoked,
+        .organizationInvitationUsed,
+        .organizationInvitationWrongAccount,
+        .organizationInvitationEmailUnverified,
+        .organizationInvitationRoleGone,
+        .organizationDomainPublic,
+        .organizationDomainTaken,
+        .organizationDomainAddressMismatch,
+        .organizationDomainLimit,
+        .organizationSuggestionUnavailable,
+        .ssoDisabled,
+        .ssoConnectionNotFound,
+        .ssoNameTaken,
+        .ssoDomainTaken,
+        .ssoDomainNotVerified,
+        .ssoIssuerNotAllowed,
+        .ssoSamlInvalid,
+        .ssoConnectionInUse,
+        .ssoInvalidTransition,
+        .ssoUrlNotHttps,
+        .ssoTestRequired,
+        .ssoTestNotFound,
+        .ssoRoleNotAllowed,
+        .ssoUnavailable,
+        .ssoProviderError,
+        .ssoUserNotProvisioned,
+        .ssoEmailDomainMismatch,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -213,6 +315,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "password.sequence": self = .passwordSequence
         case "password.reused": self = .passwordReused
         case "password.not_set": self = .passwordNotSet
+        case "import.unsupported_algorithm": self = .importUnsupportedAlgorithm
+        case "import.hash_malformed": self = .importHashMalformed
+        case "import.hash_parameters_too_weak": self = .importHashParametersTooWeak
+        case "import.hash_parameters_too_costly": self = .importHashParametersTooCostly
         case "verification.invalid_code": self = .verificationInvalidCode
         case "verification.expired": self = .verificationExpired
         case "verification.too_many_attempts": self = .verificationTooManyAttempts
@@ -261,6 +367,53 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "device.nonce_required": self = .deviceNonceRequired
         case "device.binding_not_supported": self = .deviceBindingNotSupported
         case "device.binding_required": self = .deviceBindingRequired
+        case "user.last_organization_manager": self = .userLastOrganizationManager
+        case "user.managed": self = .userManaged
+        case "organization.disabled": self = .organizationDisabled
+        case "organization.slug_taken": self = .organizationSlugTaken
+        case "organization.member_exists": self = .organizationMemberExists
+        case "organization.last_manager": self = .organizationLastManager
+        case "organization.role_unknown": self = .organizationRoleUnknown
+        case "organization.not_a_member": self = .organizationNotAMember
+        case "organization.creation_disabled": self = .organizationCreationDisabled
+        case "organization.limit_reached": self = .organizationLimitReached
+        case "organization.personal_account_disabled": self = .organizationPersonalAccountDisabled
+        case "organization.role_exists": self = .organizationRoleExists
+        case "organization.role_in_use": self = .organizationRoleInUse
+        case "organization.role_built_in": self = .organizationRoleBuiltIn
+        case "organization.role_limit": self = .organizationRoleLimit
+        case "organization.permission_required": self = .organizationPermissionRequired
+        case "organization.role_not_assignable": self = .organizationRoleNotAssignable
+        case "organization.invitation_exists": self = .organizationInvitationExists
+        case "organization.invitation_not_found": self = .organizationInvitationNotFound
+        case "organization.invitation_expired": self = .organizationInvitationExpired
+        case "organization.invitation_revoked": self = .organizationInvitationRevoked
+        case "organization.invitation_used": self = .organizationInvitationUsed
+        case "organization.invitation_wrong_account": self = .organizationInvitationWrongAccount
+        case "organization.invitation_email_unverified": self = .organizationInvitationEmailUnverified
+        case "organization.invitation_role_gone": self = .organizationInvitationRoleGone
+        case "organization.domain_public": self = .organizationDomainPublic
+        case "organization.domain_taken": self = .organizationDomainTaken
+        case "organization.domain_address_mismatch": self = .organizationDomainAddressMismatch
+        case "organization.domain_limit": self = .organizationDomainLimit
+        case "organization.suggestion_unavailable": self = .organizationSuggestionUnavailable
+        case "sso.disabled": self = .ssoDisabled
+        case "sso.connection_not_found": self = .ssoConnectionNotFound
+        case "sso.name_taken": self = .ssoNameTaken
+        case "sso.domain_taken": self = .ssoDomainTaken
+        case "sso.domain_not_verified": self = .ssoDomainNotVerified
+        case "sso.issuer_not_allowed": self = .ssoIssuerNotAllowed
+        case "sso.saml_invalid": self = .ssoSamlInvalid
+        case "sso.connection_in_use": self = .ssoConnectionInUse
+        case "sso.invalid_transition": self = .ssoInvalidTransition
+        case "sso.url_not_https": self = .ssoUrlNotHttps
+        case "sso.test_required": self = .ssoTestRequired
+        case "sso.test_not_found": self = .ssoTestNotFound
+        case "sso.role_not_allowed": self = .ssoRoleNotAllowed
+        case "sso.unavailable": self = .ssoUnavailable
+        case "sso.provider_error": self = .ssoProviderError
+        case "sso.user_not_provisioned": self = .ssoUserNotProvisioned
+        case "sso.email_domain_mismatch": self = .ssoEmailDomainMismatch
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -306,6 +459,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .passwordSequence: return "password.sequence"
         case .passwordReused: return "password.reused"
         case .passwordNotSet: return "password.not_set"
+        case .importUnsupportedAlgorithm: return "import.unsupported_algorithm"
+        case .importHashMalformed: return "import.hash_malformed"
+        case .importHashParametersTooWeak: return "import.hash_parameters_too_weak"
+        case .importHashParametersTooCostly: return "import.hash_parameters_too_costly"
         case .verificationInvalidCode: return "verification.invalid_code"
         case .verificationExpired: return "verification.expired"
         case .verificationTooManyAttempts: return "verification.too_many_attempts"
@@ -354,6 +511,53 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .deviceNonceRequired: return "device.nonce_required"
         case .deviceBindingNotSupported: return "device.binding_not_supported"
         case .deviceBindingRequired: return "device.binding_required"
+        case .userLastOrganizationManager: return "user.last_organization_manager"
+        case .userManaged: return "user.managed"
+        case .organizationDisabled: return "organization.disabled"
+        case .organizationSlugTaken: return "organization.slug_taken"
+        case .organizationMemberExists: return "organization.member_exists"
+        case .organizationLastManager: return "organization.last_manager"
+        case .organizationRoleUnknown: return "organization.role_unknown"
+        case .organizationNotAMember: return "organization.not_a_member"
+        case .organizationCreationDisabled: return "organization.creation_disabled"
+        case .organizationLimitReached: return "organization.limit_reached"
+        case .organizationPersonalAccountDisabled: return "organization.personal_account_disabled"
+        case .organizationRoleExists: return "organization.role_exists"
+        case .organizationRoleInUse: return "organization.role_in_use"
+        case .organizationRoleBuiltIn: return "organization.role_built_in"
+        case .organizationRoleLimit: return "organization.role_limit"
+        case .organizationPermissionRequired: return "organization.permission_required"
+        case .organizationRoleNotAssignable: return "organization.role_not_assignable"
+        case .organizationInvitationExists: return "organization.invitation_exists"
+        case .organizationInvitationNotFound: return "organization.invitation_not_found"
+        case .organizationInvitationExpired: return "organization.invitation_expired"
+        case .organizationInvitationRevoked: return "organization.invitation_revoked"
+        case .organizationInvitationUsed: return "organization.invitation_used"
+        case .organizationInvitationWrongAccount: return "organization.invitation_wrong_account"
+        case .organizationInvitationEmailUnverified: return "organization.invitation_email_unverified"
+        case .organizationInvitationRoleGone: return "organization.invitation_role_gone"
+        case .organizationDomainPublic: return "organization.domain_public"
+        case .organizationDomainTaken: return "organization.domain_taken"
+        case .organizationDomainAddressMismatch: return "organization.domain_address_mismatch"
+        case .organizationDomainLimit: return "organization.domain_limit"
+        case .organizationSuggestionUnavailable: return "organization.suggestion_unavailable"
+        case .ssoDisabled: return "sso.disabled"
+        case .ssoConnectionNotFound: return "sso.connection_not_found"
+        case .ssoNameTaken: return "sso.name_taken"
+        case .ssoDomainTaken: return "sso.domain_taken"
+        case .ssoDomainNotVerified: return "sso.domain_not_verified"
+        case .ssoIssuerNotAllowed: return "sso.issuer_not_allowed"
+        case .ssoSamlInvalid: return "sso.saml_invalid"
+        case .ssoConnectionInUse: return "sso.connection_in_use"
+        case .ssoInvalidTransition: return "sso.invalid_transition"
+        case .ssoUrlNotHttps: return "sso.url_not_https"
+        case .ssoTestRequired: return "sso.test_required"
+        case .ssoTestNotFound: return "sso.test_not_found"
+        case .ssoRoleNotAllowed: return "sso.role_not_allowed"
+        case .ssoUnavailable: return "sso.unavailable"
+        case .ssoProviderError: return "sso.provider_error"
+        case .ssoUserNotProvisioned: return "sso.user_not_provisioned"
+        case .ssoEmailDomainMismatch: return "sso.email_domain_mismatch"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -475,6 +679,18 @@ public enum TulaErrorDefinitions {
 
     /// `password.not_set`
     public static let passwordNotSet = TulaErrorDefinition(code: .passwordNotSet, status: 409, message: "This account has no password yet. Use \"forgot password\" to set one.")
+
+    /// `import.unsupported_algorithm`
+    public static let importUnsupportedAlgorithm = TulaErrorDefinition(code: .importUnsupportedAlgorithm, status: 422, message: "That password hash algorithm is not supported.")
+
+    /// `import.hash_malformed`
+    public static let importHashMalformed = TulaErrorDefinition(code: .importHashMalformed, status: 422, message: "That password hash is malformed.")
+
+    /// `import.hash_parameters_too_weak`
+    public static let importHashParametersTooWeak = TulaErrorDefinition(code: .importHashParametersTooWeak, status: 422, message: "That password hash is too weak to import.")
+
+    /// `import.hash_parameters_too_costly`
+    public static let importHashParametersTooCostly = TulaErrorDefinition(code: .importHashParametersTooCostly, status: 422, message: "That password hash is too costly to verify.")
 
     /// `verification.invalid_code`
     public static let verificationInvalidCode = TulaErrorDefinition(code: .verificationInvalidCode, status: 422, message: "That code is incorrect.")
@@ -620,6 +836,147 @@ public enum TulaErrorDefinitions {
     /// `device.binding_required`
     public static let deviceBindingRequired = TulaErrorDefinition(code: .deviceBindingRequired, status: 400, message: "Signing in here needs a device key.")
 
+    /// `user.last_organization_manager`
+    public static let userLastOrganizationManager = TulaErrorDefinition(code: .userLastOrganizationManager, status: 409, message: "This user is the only manager of an organization. Add another manager or delete the organization first.")
+
+    /// `user.managed`
+    public static let userManaged = TulaErrorDefinition(code: .userManaged, status: 403, message: "This account is managed by your organization. Ask your administrator to change it.")
+
+    /// `organization.disabled`
+    public static let organizationDisabled = TulaErrorDefinition(code: .organizationDisabled, status: 403, message: "Organizations are not enabled for this environment.")
+
+    /// `organization.slug_taken`
+    public static let organizationSlugTaken = TulaErrorDefinition(code: .organizationSlugTaken, status: 409, message: "An organization with that slug already exists.")
+
+    /// `organization.member_exists`
+    public static let organizationMemberExists = TulaErrorDefinition(code: .organizationMemberExists, status: 409, message: "That user is already a member of this organization.")
+
+    /// `organization.last_manager`
+    public static let organizationLastManager = TulaErrorDefinition(code: .organizationLastManager, status: 409, message: "An organization must keep at least one member who can manage its members.")
+
+    /// `organization.role_unknown`
+    public static let organizationRoleUnknown = TulaErrorDefinition(code: .organizationRoleUnknown, status: 422, message: "That role does not exist in this environment.")
+
+    /// `organization.not_a_member`
+    public static let organizationNotAMember = TulaErrorDefinition(code: .organizationNotAMember, status: 403, message: "You are not a member of that organization.")
+
+    /// `organization.creation_disabled`
+    public static let organizationCreationDisabled = TulaErrorDefinition(code: .organizationCreationDisabled, status: 403, message: "Creating an organization is not allowed in this environment.")
+
+    /// `organization.limit_reached`
+    public static let organizationLimitReached = TulaErrorDefinition(code: .organizationLimitReached, status: 403, message: "You have reached the number of organizations you can create.")
+
+    /// `organization.personal_account_disabled`
+    public static let organizationPersonalAccountDisabled = TulaErrorDefinition(code: .organizationPersonalAccountDisabled, status: 409, message: "An organization must be active in this environment.")
+
+    /// `organization.role_exists`
+    public static let organizationRoleExists = TulaErrorDefinition(code: .organizationRoleExists, status: 409, message: "A role with that key already exists in this environment.")
+
+    /// `organization.role_in_use`
+    public static let organizationRoleInUse = TulaErrorDefinition(code: .organizationRoleInUse, status: 409, message: "Members still hold this role. Give them another role first.")
+
+    /// `organization.role_built_in`
+    public static let organizationRoleBuiltIn = TulaErrorDefinition(code: .organizationRoleBuiltIn, status: 409, message: "A built-in role cannot be changed or deleted.")
+
+    /// `organization.role_limit`
+    public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
+
+    /// `organization.permission_required`
+    public static let organizationPermissionRequired = TulaErrorDefinition(code: .organizationPermissionRequired, status: 403, message: "Your role does not allow that.")
+
+    /// `organization.role_not_assignable`
+    public static let organizationRoleNotAssignable = TulaErrorDefinition(code: .organizationRoleNotAssignable, status: 403, message: "You can only invite to a role no stronger than yours.")
+
+    /// `organization.invitation_exists`
+    public static let organizationInvitationExists = TulaErrorDefinition(code: .organizationInvitationExists, status: 409, message: "That address already has a pending invitation.")
+
+    /// `organization.invitation_not_found`
+    public static let organizationInvitationNotFound = TulaErrorDefinition(code: .organizationInvitationNotFound, status: 404, message: "This invitation does not exist.")
+
+    /// `organization.invitation_expired`
+    public static let organizationInvitationExpired = TulaErrorDefinition(code: .organizationInvitationExpired, status: 410, message: "This invitation has expired.")
+
+    /// `organization.invitation_revoked`
+    public static let organizationInvitationRevoked = TulaErrorDefinition(code: .organizationInvitationRevoked, status: 410, message: "This invitation was withdrawn.")
+
+    /// `organization.invitation_used`
+    public static let organizationInvitationUsed = TulaErrorDefinition(code: .organizationInvitationUsed, status: 410, message: "This invitation was already used.")
+
+    /// `organization.invitation_wrong_account`
+    public static let organizationInvitationWrongAccount = TulaErrorDefinition(code: .organizationInvitationWrongAccount, status: 403, message: "This invitation was sent to another email address.")
+
+    /// `organization.invitation_email_unverified`
+    public static let organizationInvitationEmailUnverified = TulaErrorDefinition(code: .organizationInvitationEmailUnverified, status: 403, message: "Verify your email address to accept this invitation.")
+
+    /// `organization.invitation_role_gone`
+    public static let organizationInvitationRoleGone = TulaErrorDefinition(code: .organizationInvitationRoleGone, status: 409, message: "The role this invitation offers no longer exists.")
+
+    /// `organization.domain_public`
+    public static let organizationDomainPublic = TulaErrorDefinition(code: .organizationDomainPublic, status: 422, message: "A public email domain cannot be claimed by an organization.")
+
+    /// `organization.domain_taken`
+    public static let organizationDomainTaken = TulaErrorDefinition(code: .organizationDomainTaken, status: 409, message: "That domain is verified for an organization already.")
+
+    /// `organization.domain_address_mismatch`
+    public static let organizationDomainAddressMismatch = TulaErrorDefinition(code: .organizationDomainAddressMismatch, status: 422, message: "That address is not on the domain.")
+
+    /// `organization.domain_limit`
+    public static let organizationDomainLimit = TulaErrorDefinition(code: .organizationDomainLimit, status: 409, message: "This organization has the most domains it can have.")
+
+    /// `organization.suggestion_unavailable`
+    public static let organizationSuggestionUnavailable = TulaErrorDefinition(code: .organizationSuggestionUnavailable, status: 403, message: "You cannot join that organization.")
+
+    /// `sso.disabled`
+    public static let ssoDisabled = TulaErrorDefinition(code: .ssoDisabled, status: 403, message: "Single sign-on is not enabled for this environment.")
+
+    /// `sso.connection_not_found`
+    public static let ssoConnectionNotFound = TulaErrorDefinition(code: .ssoConnectionNotFound, status: 404, message: "No such single sign-on connection.")
+
+    /// `sso.name_taken`
+    public static let ssoNameTaken = TulaErrorDefinition(code: .ssoNameTaken, status: 409, message: "The organization already has a connection with that name.")
+
+    /// `sso.domain_taken`
+    public static let ssoDomainTaken = TulaErrorDefinition(code: .ssoDomainTaken, status: 409, message: "Another active connection already serves one of those domains.")
+
+    /// `sso.domain_not_verified`
+    public static let ssoDomainNotVerified = TulaErrorDefinition(code: .ssoDomainNotVerified, status: 422, message: "Every domain must be one of the organization's verified domains.")
+
+    /// `sso.issuer_not_allowed`
+    public static let ssoIssuerNotAllowed = TulaErrorDefinition(code: .ssoIssuerNotAllowed, status: 422, message: "The issuer is not an address the server may call.")
+
+    /// `sso.saml_invalid`
+    public static let ssoSamlInvalid = TulaErrorDefinition(code: .ssoSamlInvalid, status: 422, message: "The SAML settings could not be read or are incomplete.")
+
+    /// `sso.connection_in_use`
+    public static let ssoConnectionInUse = TulaErrorDefinition(code: .ssoConnectionInUse, status: 409, message: "The connection is active; disable it before deleting it.")
+
+    /// `sso.invalid_transition`
+    public static let ssoInvalidTransition = TulaErrorDefinition(code: .ssoInvalidTransition, status: 409, message: "A connection cannot move to that status from its current one.")
+
+    /// `sso.url_not_https`
+    public static let ssoUrlNotHttps = TulaErrorDefinition(code: .ssoUrlNotHttps, status: 422, message: "The identity provider\u{2019}s sign-in address must start with https.")
+
+    /// `sso.test_required`
+    public static let ssoTestRequired = TulaErrorDefinition(code: .ssoTestRequired, status: 409, message: "Run a passing test sign-in of the connection\u{2019}s current settings before activating it.")
+
+    /// `sso.test_not_found`
+    public static let ssoTestNotFound = TulaErrorDefinition(code: .ssoTestNotFound, status: 404, message: "No such test sign-in.")
+
+    /// `sso.role_not_allowed`
+    public static let ssoRoleNotAllowed = TulaErrorDefinition(code: .ssoRoleNotAllowed, status: 403, message: "A setup link cannot map a group to a role that holds system permissions.")
+
+    /// `sso.unavailable`
+    public static let ssoUnavailable = TulaErrorDefinition(code: .ssoUnavailable, status: 400, message: "Single sign-on is not available for that address.")
+
+    /// `sso.provider_error`
+    public static let ssoProviderError = TulaErrorDefinition(code: .ssoProviderError, status: 401, message: "The identity provider did not sign you in.")
+
+    /// `sso.user_not_provisioned`
+    public static let ssoUserNotProvisioned = TulaErrorDefinition(code: .ssoUserNotProvisioned, status: 403, message: "Your account has not been set up for this organization. Ask its administrator.")
+
+    /// `sso.email_domain_mismatch`
+    public static let ssoEmailDomainMismatch = TulaErrorDefinition(code: .ssoEmailDomainMismatch, status: 403, message: "Your email address is not on this connection's domains.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -686,6 +1043,10 @@ public enum TulaErrorDefinitions {
         passwordSequence,
         passwordReused,
         passwordNotSet,
+        importUnsupportedAlgorithm,
+        importHashMalformed,
+        importHashParametersTooWeak,
+        importHashParametersTooCostly,
         verificationInvalidCode,
         verificationExpired,
         verificationTooManyAttempts,
@@ -734,6 +1095,53 @@ public enum TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        userLastOrganizationManager,
+        userManaged,
+        organizationDisabled,
+        organizationSlugTaken,
+        organizationMemberExists,
+        organizationLastManager,
+        organizationRoleUnknown,
+        organizationNotAMember,
+        organizationCreationDisabled,
+        organizationLimitReached,
+        organizationPersonalAccountDisabled,
+        organizationRoleExists,
+        organizationRoleInUse,
+        organizationRoleBuiltIn,
+        organizationRoleLimit,
+        organizationPermissionRequired,
+        organizationRoleNotAssignable,
+        organizationInvitationExists,
+        organizationInvitationNotFound,
+        organizationInvitationExpired,
+        organizationInvitationRevoked,
+        organizationInvitationUsed,
+        organizationInvitationWrongAccount,
+        organizationInvitationEmailUnverified,
+        organizationInvitationRoleGone,
+        organizationDomainPublic,
+        organizationDomainTaken,
+        organizationDomainAddressMismatch,
+        organizationDomainLimit,
+        organizationSuggestionUnavailable,
+        ssoDisabled,
+        ssoConnectionNotFound,
+        ssoNameTaken,
+        ssoDomainTaken,
+        ssoDomainNotVerified,
+        ssoIssuerNotAllowed,
+        ssoSamlInvalid,
+        ssoConnectionInUse,
+        ssoInvalidTransition,
+        ssoUrlNotHttps,
+        ssoTestRequired,
+        ssoTestNotFound,
+        ssoRoleNotAllowed,
+        ssoUnavailable,
+        ssoProviderError,
+        ssoUserNotProvisioned,
+        ssoEmailDomainMismatch,
         rateLimited,
         requestMalformed,
         requestTooLarge,

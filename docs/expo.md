@@ -4,14 +4,9 @@
 provider and hooks. It draws no screen; the screens are your app's, and the hooks tell them
 which one the server is asking for. An app that would rather show Tula's own screens takes
 [the native ones](#tulas-native-screens) instead, from a package of their own,
-`@tula-tech/expo-screens` ([ADR 0063](adr/0063-expo-native-screens.md)). The reasoning for the headless client is in
-[ADR 0046](adr/0046-expo-sdk.md), for passkeys and providers
-[ADR 0048](adr/0048-expo-passkeys-and-providers.md), and for Apple's and Google's own
-sheets, the device key and the config plugin
-[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md), and for an emailed link
-opened in the app [ADR 0055](adr/0055-expo-emailed-link.md).
+`@tula-tech/expo-screens`.
 
-> **Not yet run on a phone.** The package is tested against the real API in process with a
+> **Not run on a phone.** The package is tested against the real API in process with a
 > stand-in for the secure store, and the [example app](../examples/expo/README.md) was
 > installed, type-checked and bundled for iOS and Android on Expo SDK 57, with the passkey
 > and the browser module in it, before Apple's and Google's sheets, the device key and
@@ -25,12 +20,6 @@ opened in the app [ADR 0055](adr/0055-expo-emailed-link.md).
 > also carried the native screens' option, was run by Expo once, by `expo prebuild` in a
 > scratch app ([below](#the-config-plugin)); no app was built from what it wrote, and
 > neither plugin was run by Expo as it is now.
-> What was not verified:
-> [the package](plans/phase-2-unverified.md#step-213-tula-techexpo-tula-36-adr-0046),
-> [passkeys and providers](plans/phase-2-unverified.md#step-213-passkeys-and-provider-sign-in-in-tula-techexpo-tula-48-adr-0048),
-> [Apple's and Google's sheets, the device key and the plugin](plans/phase-2-unverified.md#step-213-native-google-and-apple-and-a-device-key-in-tula-techexpo-tula-55-adr-0052),
-> [the emailed link](plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tula-techexpo-tula-73-adr-0055),
-> [the native screens](plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063).
 
 ## What this version does
 
@@ -85,17 +74,18 @@ development build.
 
 Each of the five can be replaced by an object of your own with the same two or three functions
 (`BrowserSession`, `PasskeySheet`, `IdTokenSheet`, `DeviceKeyStore`): the package calls
-no native module by itself. Why these modules, and what was read of each, is in
-[ADR 0052](adr/0052-expo-native-providers-and-device-keys.md); none of the last three
-was ever installed or called for this package.
+no native module by itself. None of the last three was ever installed or called for this
+package.
 
 `@tula-tech/expo` and `@tula-tech/expo-screens` are held back from npm until they have been run on a
-device ([releasing.md](releasing.md)); the
+device; the
 [example app](../examples/expo/README.md) installs the packed packages of a checkout.
 
 ## The client and the provider
 
 Create one client, outside any component. Creating it sends nothing and reads nothing.
+
+The client refuses plain `http` to another machine, which is what a computer's address on the network (`http://192.168.…:3003`) or the Android emulator's (`http://10.0.2.2:3003`) is. The example sets `allowInsecureHttp: __DEV__`, so that only a development build accepts one; a release build needs an `https` address.
 
 <!-- snippet: examples/expo/app/src/tula.ts#client -->
 ```ts
@@ -104,6 +94,9 @@ function createClient(publishableKey: string, baseUrl: string) {
     publishableKey,
     // The address of the Tula API as the phone reaches it: never `localhost` on a device.
     baseUrl,
+    // Plain http to a computer on the network (`http://192.168.…`, `http://10.0.2.2:3003`) is
+    // refused unless asked for: asked for in development only, never in a release build.
+    allowInsecureHttp: __DEV__,
     // The platform's passkey sheet (`react-native-passkey`) and the system browser's
     // authentication session (`expo-web-browser`). Both are optional: leave one out, with
     // its import and its package, and the app offers no passkey, or no provider.
@@ -549,8 +542,7 @@ The provider's page opens in the system browser's authentication session
 app, and the browser hands the app the URL it was sent back to.
 
 **The redirect URL** is where that round trip ends. It is listed, character for character,
-in the environment's allowed redirect URLs
-([ADR 0044](adr/0044-app-link-and-custom-scheme-redirects.md)), and is one of:
+in the environment's allowed redirect URLs, and is one of:
 
 | Kind | Example | For |
 | --- | --- | --- |
@@ -638,9 +630,8 @@ the flow on `complete`, or on the second step the server asks for. Outside a com
   against `com.example.app:///oauth/callback`), the case of an `https` link's host, a
   trailing slash. **A platform that rewrites any of that turns every real sign-in into
   `refused` with `unexpected_return`.** If you see that on a device, it is this and not
-  your configuration; accepting more than the exact string is a decision for
-  [ADR 0048](adr/0048-expo-passkeys-and-providers.md), because another app can register
-  the same scheme, and is not something to work around in an app.
+  your configuration; accepting more than the exact string is not something to work around in an app, because
+  another app can register the same scheme.
 - **One round trip at a time**: a second while the browser is open is `flow.busy`.
 - An exchange that got no answer (`network.failed`, `network.timeout`, `rate_limited`)
   can be sent again for a minute with `retryProvider()` (`retryProviderSignIn`): the
@@ -667,8 +658,7 @@ path more likely to work there until someone has run it.
 ## Apple's and Google's own sheets
 
 Sign in with Apple's sheet and Google's account sheet hand the app an **ID token**; the
-server signs the user in for it ([ADR 0045](adr/0045-native-id-token-exchange.md),
-[ADR 0047](adr/0047-native-apple-sign-in.md), [the method](methods/oauth.md)). No browser
+server signs the user in for it ([the method](methods/oauth.md)). No browser
 opens and no redirect URL is involved. **Neither sheet has been shown by this package**:
 what follows is tested with stand-ins for both modules and with tokens the server's mock
 provider makes.
@@ -732,7 +722,7 @@ value.
   call made anyway is refused with `storage.failed` before any request; like the emailed
   link's, that message is written for another case, so do not show it for this one.
 - **A dismissed sheet is not an error and not a sign-in**: `dismissed` is `true`, `error`
-  stays `null`, no token was sent, and the button works again (the outcome `cancelled`).
+  stays `null`, no token was sent, and the button works again (the outcome `cancelled`). A device with no Google account to sign in with is the outcome `no_account`: offer another way in.
   The next try starts an attempt of its own: an attempt takes one token.
 - **The nonce is the package's business.** The server makes a nonce for every attempt and
   accepts the token only with it. Google's sheet is handed the nonce as it is. Apple's is
@@ -759,10 +749,16 @@ of the bundle it runs there. `@tula-tech/expo/apple` can be imported anywhere.
 ## A session bound to a device key
 
 Give the client a key store and its sessions are **bound to a device key**
-([device binding](device-binding.md), [ADR 0043](adr/0043-device-binding.md)): the first
+([device binding](device-binding.md)): the first
 sign-in makes a P-256 key the device keeps and does not hand out, the server binds the
 session to it, and every refresh carries a proof signed by it. A refresh token copied off
 the phone is then of no use without the phone's key.
+
+**The key identifies the device, not the person.** Signing out does not
+delete it, on purpose: the next sign-in finds it instead of making a new one. On a shared
+phone the users who sign in one after another are bound to the same key; a different
+person is told apart by the account, never by the key. An app that must not carry a key
+over calls `removeDeviceKey()` when its user signs out.
 
 The key store is the client's `deviceKeys` option, as in
 [the client above](#the-client-and-the-provider). `hardwareDeviceKeys`
@@ -835,7 +831,7 @@ a Kotlin app gets, on the same native clients; nothing is drawn in React Native.
 the package **`@tula-tech/expo-screens`**, apart from `@tula-tech/expo` and not built on it: Expo
 links a package's native module into every app that installs the package, so the module
 is in a package only an app that wants the screens installs. An app on the headless client
-compiles none of it. The reasoning is in [ADR 0063](adr/0063-expo-native-screens.md).
+compiles none of it.
 
 > **Written and partly compiled; never run.** The Android half was compiled, with the
 > Kotlin SDK's sources in it, inside a scratch Expo SDK 57 app, while the module was still
@@ -847,7 +843,6 @@ compiles none of it. The reasoning is in [ADR 0063](adr/0063-expo-native-screens
 > autolinking from where it is now was not tried. **No screen was drawn through this
 > package**: not in a simulator, not in an emulator, not on a phone, and no JavaScript of it
 > was bundled or run outside the package's tests, which stand in for the native module.
-> [What was run and what was not](plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063).
 
 ```bash
 bunx expo install expo   # already there in an Expo app: 57 or later
@@ -893,8 +888,7 @@ The Kotlin SDK's tests (the JVM tests, the emulator UI tests) all ran on the rig
 column. On the left-hand one the SDK was compiled, and nothing more: no test of it ran
 against those versions, and no screen was drawn with them. A test in the repository fails
 when a version on either side changes without the written list of differences changing
-with it. [ADR 0063](adr/0063-expo-native-screens.md) has what was tried and what was only
-read from the published artifacts.
+with it.
 
 ### What the screens look like
 
@@ -1175,8 +1169,7 @@ screens' option (since moved to `@tula-tech/expo-screens/plugin`,
 [above](#tulas-native-screens)), was run once: `expo prebuild` (Expo 57.0.28) in a scratch
 app on 2026-10-13, with `nativeScreens`, `domains`, `appLinks` and `apple`, wrote the
 entitlements, the intent filter and the Gradle property the tests expect; `google` was not
-among the options, and no app was built from the result
-([what was run](plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063)).
+among the options, and no app was built from the result.
 
 <!-- snippet: examples/expo/app/app.config.ts#config -->
 ```ts
@@ -1234,11 +1227,10 @@ export default function config(context: { config: ExpoConfigLike }): ExpoConfigL
 
 ## The emailed link
 
-A sign-in can be finished with the link in an email, opened in the app
-([ADR 0055](adr/0055-expo-emailed-link.md)). **No emailed link has opened an app through
+A sign-in can be finished with the link in an email, opened in the app.
+**No emailed link has opened an app through
 this package, on a phone or in a simulator**: what follows is tested against the real API
-in process, with the URL handed to the package as an operating system would hand it over
-([what was not verified](plans/phase-2-unverified.md#step-213-an-emailed-link-opened-in-tula-techexpo-tula-73-adr-0055)).
+in process, with the URL handed to the package as an operating system would hand it over.
 
 **What it needs** is one `https` app link, for example
 `https://app.example.com/sign-in/link`:
@@ -1380,8 +1372,7 @@ What `openEmailLink` does with a URL:
   neither the binding nor the sign-in that asked, so the link is refused without a
   request, and the code of that email is of no use either (the sign-in it belongs to went
   with the app). The user asks again; say so on the screen. Keeping a sign-in across a
-  restart would mean storing its secret, and that is not done
-  ([ADR 0055](adr/0055-expo-emailed-link.md)).
+  restart would mean storing its secret, and that is not done.
 - **Offer the code field beside "check your email".** The same email carries a 6-digit
   code, which works on whatever device the email is read:
   `attemptFirstFactor({ strategy: 'email_code', code })`.
@@ -1446,6 +1437,35 @@ export function HomeScreen(props: { onSignOut(): void }) {
   (`isStepUpRequired`, `stepUpMethods`); `useTula().session.stepUp(proof)` proves it, and
   the call is then repeated.
 
+## Organizations
+
+The client is `@tula-tech/core`'s, so organizations are `client.organizations`
+([Organizations](organizations.md)); take the client
+from `useTula()`. It lists the user's organizations (`list()`), creates one where the
+environment lets users (`create({ name, slug })`), and chooses the one the session acts in
+(`setActive(id)`, or `setActive(null)` for the personal account): the next access token
+carries `org_id`, `org_role` and `org_perms`, the refresh token does not change, and
+`useAuth().getToken()` hands your own backend that token, and the signed-in state's
+`organizationId` says which is active. To draw the right screen, read the claims from the
+token the client holds with `readOrganizationClaims` and `hasOrganizationAccess` of
+`@tula-tech/contract/custom-claims`, as [Organizations](organizations.md) shows; your backend
+verifies the token and checks the same keys.
+
+An invitation arrives as an emailed link whose address carries the token in its **fragment**
+(`#tula_invitation=...`). Open it in the app (a universal link or an app link, as for
+[the emailed sign-in link](#the-emailed-link)), read it with `readInvitationLink(url)` and
+hand the token to `client.organizations.invitations`: `preview(token)` needs no session, and
+`accept(token)` and `decline(token)` need one (the invited account, with that address
+verified). `readInvitationLink` also returns the address without the token; keep that one.
+The token is a credential: it is in no error message of the client, and the app should not
+log it either. `client.organizations.suggestions()` lists the organizations a verified
+address is offered, and `join(id)` joins one.
+
+The app's journeys against the real API are the same three of `@tula-tech/core`'s suite
+(my organizations and the active organization, organization invitations, verified domains),
+which `packages/expo/src/journeys.test.ts` runs for this package's client. Nothing here was
+run in a real Expo app.
+
 ## Where the tokens are
 
 | Token | Where | Never |
@@ -1456,6 +1476,13 @@ export function HomeScreen(props: { onSignOut(): void }) {
 | A provider's ID token | Memory, from the sheet's answer to the one request that sends it. | Storage, a log line, an error. |
 | The binding of an [emailed link](#the-emailed-link) | Memory, for fifteen minutes at most: from the request that asked for the link to the one that presents it. | The secure store, AsyncStorage, a file, a log line, an error, a URL. |
 
+- **The entry is gated by the phone's lock, not by the person's face or fingerprint.**
+  The secure store is never created with `requireAuthentication`: a
+  refresh every minute would prompt for the face, fingerprint or passcode each time, and Expo Go
+  does not support it. So anyone who can use the unlocked phone as the same user, or reads
+  its storage on a rooted one, can read the token. The defence is the
+  [device key](#a-session-bound-to-a-device-key), which makes a copied token useless
+  elsewhere; there is no opt-in for a prompt per read.
 - **The entry stays on the device.** It is not synced and not restored to another phone:
   after a restore or a new phone the user signs in again.
 - **By default it can be read only while the phone is unlocked** (`when_unlocked`). An app
@@ -1472,7 +1499,7 @@ export function HomeScreen(props: { onSignOut(): void }) {
 - **A store that fails is not "signed out".** A read, a write or a delete the secure store
   refuses is `storage.failed`, and the running app keeps its session.
 - **A write the store refuses is tried three times** (again after 50 ms and after 200 ms;
-  a read and a delete are asked once). The write that matters is the one after a refresh:
+  a delete is tried the same way, a read is asked once). The write that matters is the one after a refresh:
   the server has replaced the refresh token by then, and the store still holds the one it
   replaced. If all three fail:
   - the running app is still signed in and its tokens work. `session.refresh()`,

@@ -37,7 +37,7 @@ import dev.tula.auth.generated.TulaOperations
 // `TulaClient.stepUp` proves it.
 
 /**
- * Proving again that it is the user (ADR 0025): each call answers one of the methods an
+ * Proving again that it is the user: each call answers one of the methods an
  * `auth.step_up_required` listed, and replaces the access token with one that carries the
  * proof. A user with a second factor steps up with it, never with the password alone.
  */
@@ -136,7 +136,7 @@ private fun FlowContext.receipt(payload: kotlinx.serialization.json.JsonElement?
 }
 
 /**
- * The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is synced,
+ * The signed-in user's passkeys. Never key material: a name, whether it is synced,
  * and when it was added and last used.
  */
 class TulaPasskeys internal constructor(private val context: FlowContext) {
@@ -196,7 +196,7 @@ class TulaPasskeys internal constructor(private val context: FlowContext) {
 }
 
 /**
- * The signed-in user's second factor (ADR 0025): an authenticator app and its backup codes,
+ * The signed-in user's second factor: an authenticator app and its backup codes,
  * or a texted code.
  *
  * A setup key, its URI and backup codes are returned once and kept nowhere in the client.
@@ -314,7 +314,7 @@ class TulaFactors internal constructor(private val context: FlowContext) {
 }
 
 /**
- * An email address for a signed-in account that has none (ADR 0059): an account whose first
+ * An email address for a signed-in account that has none: an account whose first
  * sign-in was with a provider that gives no address.
  *
  * Both calls are refused `email.already_set` for an account that has an address, and need a
@@ -364,7 +364,7 @@ class TulaEmailAddress internal constructor(private val context: FlowContext) {
 }
 
 /**
- * The signed-in account's phone number (ADR 0037): one optional number, proven with a texted
+ * The signed-in account's phone number: one optional number, proven with a texted
  * code. It is contact data, and a way to sign in or a second step only where the
  * environment switched those on.
  *
@@ -426,7 +426,7 @@ class TulaPhone internal constructor(private val context: FlowContext) {
     override fun toString(): String = "TulaPhone"
 }
 
-/** The provider accounts the signed-in user signs in with (ADR 0026). */
+/** The provider accounts the signed-in user signs in with. */
 class TulaIdentities internal constructor(private val context: FlowContext) {
     /** The user's connected accounts: a provider and when it was connected. Never a provider's token. */
     suspend fun list(): List<Identity> = context.transport.decode(

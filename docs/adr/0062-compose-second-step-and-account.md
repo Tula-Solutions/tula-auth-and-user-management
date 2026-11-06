@@ -173,7 +173,7 @@ number and its code, a question before something is removed).
   said to be so.
 - **Passkeys.** Listed, added through the client's passkey sheet and removed after a
   question. **A passkey cannot be renamed here, and the screen says so**: the client has no
-  call for it (`HttpURLConnection` sends no `PATCH`; TULA-76). Without a passkey sheet no
+  call for it (no call yet; the default engine sends `PATCH` since TULA-130; TULA-76). Without a passkey sheet no
   "Add" is drawn and that is said in words.
 - **Phone number.** Added (a number, then the texted code), and removed after a question.
 - **Sign-out.** See below.

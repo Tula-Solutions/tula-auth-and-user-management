@@ -91,6 +91,11 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **Nothing removes a second factor except its owner (after a step-up) or an admin reset.** A
   password reset stops at `needs_second_factor`; there is no emailed MFA bypass; the policy
   `off` still asks enrolled users for their factor.
+- **Turning the texted factor on ends the user's other sessions; a failed sweep undoes it.**
+  The enable is committed first, then the sweep runs, and if the sweep cannot finish the
+  factor is switched off again (503, nothing half-applied). Decision (TULA-157, H-094): the
+  undo is recorded as `user.sms_factor_removed` with `method: 'self'`, an existing event, so
+  that the contract does not move.
 
 ## What to test
 
@@ -142,3 +147,32 @@ rules themselves are above and are not repeated).
   log line. Keep the tests that confirm an authenticator and add a passkey between the look
   and the write of `users.enableSmsFactor` (refused, nothing recorded), the suite's rows, and
   the tests of both orders of a dormant code.
+- **A banned user's second step verifies the code first, then refuses with `auth.user_banned`.**
+  Decision (TULA-157, H-143): not changed. Refusing before the verify would save the banned
+  user's backup or TOTP code, but then the ban could never be told to someone who proved the
+  factor, and a banned user would see "invalid code" for ever. No access is granted either way,
+  so telling the ban after proof wins; the spent code is the price.
+
+## Decisions awaiting review (TULA-157, rate limits)
+
+- **Decision (TULA-157, H-110): the step-up routes keep the per-IP limit, with the per-user
+  lockout as the real bound.** A guess at a step-up counts under the one per-user key
+  `Mfa.stepUpLockKey` (ADR 0011), so a second per-user rate limit on the routes would count
+  the same attempts twice, and the per-IP limit is only a cheap pre-filter. Recommendation:
+  no code change. The cost is that many users behind one NAT share the per-IP budget
+  (`STEP_UP_RATE_LIMIT` a minute); raise that number rather than adding a per-user rule.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-145): a second-factor guess and an enrolment confirmation share the
+  per-user lockout (ADR 0011). Accepted: it costs availability, never confidentiality.
+- Decision (TULA-157, H-146): a session holder can run the per-user step-up lockout dry
+  (`Mfa.stepUpLockKey`). Accepted, no code change; raise `STEP_UP_RATE_LIMIT`, add no
+  per-user rule (see above).
+- Decision (TULA-157, H-148): `mfa.policy` is checked at sign-in only (ADR 0025), so a user
+  signed in before it became `required` is not asked to enrol. Recommendation: ask for
+  enrolment (or a step-up) at the next sensitive action. Recorded only: it changes the
+  contract's flow for live sessions.
+- Decision (TULA-157, H-149): a session's step-up facts survive a phone change or removal.
+  Recorded, low impact: an SMS-only `amr` never satisfies recent-auth. Revoke them if SMS
+  ever counts for step-up.

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { FlowAttemptSchema } from './flow'
 
-/** The OAuth providers an environment can configure with its own credentials (ADR 0026). */
+/** The OAuth providers an environment can configure with its own credentials. */
 export const OAUTH_PROVIDERS = [
   'google',
   'github',
@@ -18,7 +18,7 @@ export const OAuthProviderSchema = z.enum(OAUTH_PROVIDERS).meta({ ref: 'OAuthPro
 
 /**
  * The providers Tula takes **no email address** from, as a fact about the provider and not a
- * setting: X and Facebook (ADR 0026, "Providers without an address").
+ * setting: X and Facebook.
  *
  * Neither asserts an address verified in a way a sign-in can rest on, so their adapters ask
  * for none and report none. A first sign-in with one creates an account **with no email
@@ -90,7 +90,7 @@ export const MicrosoftTenantSchema = z
 
 /**
  * The providers whose **ID token** a native app may hand to the server for a sign-in, with no
- * browser redirect (ADR 0045): the app shows the system's own account sheet, the provider
+ * browser redirect: the app shows the system's own account sheet, the provider
  * gives the app an ID token, and the server verifies it.
  *
  * A closed list in the contract, as a fact about what the server can verify and not a
@@ -102,7 +102,7 @@ export const MicrosoftTenantSchema = z
  * - `apple`: the system's Sign in with Apple sheet, on Apple's platforms only
  *   ({@link ID_TOKEN_CLIENT_KINDS}). The accepted audiences are the bundle ids of the
  *   environment's registered iOS apps, and the token's `nonce` is the SHA-256 of the
- *   server's ({@link IdTokenStartSchema}; ADR 0047).
+ *   server's ({@link IdTokenStartSchema}).
  *
  * @example
  * ```ts
@@ -134,9 +134,9 @@ export const ID_TOKEN_CLIENT_KINDS = {
 } as const satisfies Record<(typeof ID_TOKEN_PROVIDERS)[number], readonly ('ios' | 'android')[]>
 
 /**
- * Whether a provider's record takes `additionalClientIds` (ADR 0045): Google alone. Apple's
+ * Whether a provider's record takes `additionalClientIds`: Google alone. Apple's
  * native audiences are not on its record: they are the bundle ids of the environment's
- * registered iOS apps (ADR 0047).
+ * registered iOS apps.
  *
  * @param provider - The provider.
  * @returns `true` for Google.
@@ -185,7 +185,7 @@ export function isGoogleClientId(value: string): boolean {
 
 /**
  * The client ids, beside a provider's own `clientId`, whose **ID tokens** the server accepts
- * in a native sign-in (ADR 0045): for Google, the Android and iOS OAuth client ids of the
+ * in a native sign-in: for Google, the Android and iOS OAuth client ids of the
  * operator's apps. Not secrets. A set: an id is written once, and the order says nothing.
  *
  * Each entry widens who can mint a token the server takes as a sign-in, which is why it is
@@ -231,7 +231,7 @@ export function ownClientIdAmong(clientId: string, additionalClientIds: readonly
 
 /**
  * The most accounts of one provider the server looks at when it counts the ones that depend
- * on it ({@link OAuthProviderDependentsSchema}; ADR 0059). The count is a read an operator
+ * on it ({@link OAuthProviderDependentsSchema}). The count is a read an operator
  * waits for, so its work is bounded: past this many accounts the answer says `more`.
  */
 export const DEPENDENT_ACCOUNTS_SCAN_LIMIT = 1000
@@ -241,7 +241,7 @@ export const DEPENDENT_ACCOUNTS_SCAN_LIMIT = 1000
  * way to sign in that the environment accepts (a password, a verified address with the
  * emailed code on, another enabled provider, a passkey). Switching the provider off, or
  * removing its credentials, locks those accounts out until it is back
- * (`GET /v1/admin/oauth-providers/{provider}/dependents`; ADR 0059).
+ * (`GET /v1/admin/oauth-providers/{provider}/dependents`).
  *
  * A number and a boolean, and nothing about who: never an id, an address or a name.
  *
@@ -288,7 +288,7 @@ export interface OAuthProviderAudiences {
  * - **`additionalClientIds`: a client id gained.** Every accepted client id is another app
  *   whose ID tokens sign users in. An id taken away, and a reordering, are not.
  * - **`enabled`: the provider switched off, or its credentials removed, while accounts depend
- *   on it** (ADR 0059): `before.enabled` is `true`, `after` is `null` or not enabled, and
+ *   on it**: `before.enabled` is `true`, `after` is `null` or not enabled, and
  *   `before.dependents` counted at least one account, or could not look at all of them
  *   (`more`). Those accounts are locked out until the provider is back; one with no email
  *   address (made through X or Facebook) has no recovery of its own. Nothing is judged where
@@ -341,7 +341,7 @@ export const MAX_ID_TOKEN_LENGTH = 8192
 export const MAX_ID_TOKEN_NAME_LENGTH = 100
 
 /**
- * Start a native sign-in with a provider's ID token (ADR 0045). The body names the provider
+ * Start a native sign-in with a provider's ID token. The body names the provider
  * and nothing else: there is no redirect URL, because there is no browser.
  */
 export const IdTokenStartRequestSchema = z
@@ -359,7 +359,7 @@ export const IdTokenStartRequestSchema = z
  *   - **Apple**: the **lowercase hexadecimal SHA-256 of the nonce's UTF-8 bytes** (64
  *     characters), as `ASAuthorizationAppleIDRequest.nonce`. Apple puts the string it was
  *     given into the token, so the token's `nonce` claim must be that hash; a token that
- *     carries the nonce itself is refused (ADR 0047).
+ *     carries the nonce itself is refused.
  */
 export const IdTokenStartSchema = z
   .object({ attempt: FlowAttemptSchema, nonce: z.string() })
@@ -509,7 +509,7 @@ const credential = (max: number) => z.string().trim().min(1).max(max)
  *   ({@link MicrosoftTenantSchema}: which accounts may sign in).
  *
  * Google also takes `additionalClientIds`: the client ids of the operator's Android and iOS
- * apps, whose ID tokens a native sign-in accepts beside `clientId`'s (ADR 0045). Left out,
+ * apps, whose ID tokens a native sign-in accepts beside `clientId`'s. Left out,
  * there are none: the field is the whole set on every write, never merged.
  *
  * The secret (`clientSecret` or `privateKey`) may be left out when the provider is already

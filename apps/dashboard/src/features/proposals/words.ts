@@ -61,7 +61,7 @@ const SPENT = 'The proposal is spent: it cannot be approved again.'
 const REFUSALS: Readonly<Record<string, string>> = {
   expired: 'The proposal has expired. Nothing was changed. The agent can ask again.',
   already_decided:
-    'The proposal was already approved, here or somewhere else: a proposal is approved once. This click changed nothing. How it ended is in the list.',
+    'The proposal was already decided, here or somewhere else: a proposal is approved or rejected once. This click changed nothing. How it ended is in the list.',
   mismatch:
     'The proposal is not the one that was shown: its operation or its target differs. Nothing was changed.',
   agent_key_revoked:
@@ -97,7 +97,7 @@ export const MAY_HAVE_BEEN_TAKEN =
 /** How a proposal stands, for a badge and a sentence. */
 export interface ProposalState {
   /** A closed word for tests and styling; `unknown` for a status of a later server. */
-  kind: 'pending' | 'expired' | 'approved' | 'executed' | 'failed' | 'unknown'
+  kind: 'pending' | 'expired' | 'rejected' | 'approved' | 'executed' | 'failed' | 'unknown'
   /** The badge: two or three words. */
   label: string
   /** What it means, and whether it can still be approved. */
@@ -168,6 +168,14 @@ export function proposalState(proposal: Proposal): ProposalState {
         : 'Nothing was changed, and it cannot be approved any more.',
     }
   }
+  if (status === 'rejected') {
+    return {
+      kind: 'rejected',
+      label: 'Rejected',
+      detail:
+        'It was rejected and nothing was changed. It cannot be approved; the agent can ask again.',
+    }
+  }
   if (status === 'executed') {
     return {
       kind: 'executed',
@@ -209,6 +217,16 @@ const ALREADY_SO: Readonly<Record<string, string>> = {
   unban_user: 'the user was not banned',
   end_session: 'the session had already ended',
   disable_oauth_provider: 'the provider was already off',
+}
+
+/**
+ * What a rejection says, for the panel that shows it. A rejection changes nothing in the
+ * environment, so it is never worded as carried out.
+ */
+export const REJECTED_OUTCOME: ApprovalOutcome = {
+  kind: 'nothing',
+  title: 'Rejected',
+  text: 'The proposal was rejected. Nothing was changed, and it cannot be approved now; the agent can ask again.',
 }
 
 /** What an approval came to, for the dialog that made it. */

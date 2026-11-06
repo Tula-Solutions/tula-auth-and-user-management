@@ -22,10 +22,15 @@ export const UPSTREAM_TIMEOUT_MS = 15_000
  */
 export const READ_OPERATIONS = [
   'getEnvironmentSettings',
+  'getSsoConnection',
   'getUser',
   'getUserAuthentication',
   'listAuditLogs',
   'listOAuthProviders',
+  'listOrganizationMemberships',
+  'listOrganizationRoles',
+  'listOrganizations',
+  'listSsoConnections',
   'listUsers',
   'listUserSessions',
 ] as const satisfies readonly (keyof AdminOperations)[]

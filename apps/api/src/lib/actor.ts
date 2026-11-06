@@ -3,6 +3,8 @@ import type { AuditActorType } from '@tula-tech/contract'
 import type { Context } from 'hono'
 import type { AppEnv, SessionVariables, TenantVariables } from '~/dependencies'
 import { clientIp } from '~/lib/client-ip'
+import type { ScimVariables } from '~/middleware/scim-token'
+import type { SetupLinkVariables } from '~/middleware/setup-link'
 
 /** Longest user agent stored with a session or an audit entry; longer values are cut. */
 export const MAX_USER_AGENT_LENGTH = 512
@@ -75,6 +77,30 @@ export function adminActor<E extends AppEnv & { Variables: TenantVariables }>(
   }
   const tenant = c.get('tenant')
   return { type: tenant.agent ? 'agent' : 'admin', id: tenant.apiKeyId, ...requestOrigin(c) }
+}
+
+/**
+ * The actor of a SCIM request: the directory's token (ADR 0067).
+ *
+ * @param c - A context `scimToken()` has run on.
+ * @returns A `directory` actor whose id is the SCIM token's id.
+ */
+export function directoryActor<E extends AppEnv & { Variables: ScimVariables }>(
+  c: Context<E>
+): Actor {
+  return { type: 'directory', id: c.get('scim').tokenId, ...requestOrigin(c) }
+}
+
+/**
+ * The actor of a setup portal request: the setup link's token (ADR 0067, "Setup links").
+ *
+ * @param c - A context `setupLink()` has run on.
+ * @returns A `setup_link` actor whose id is the link's id.
+ */
+export function setupLinkActor<E extends AppEnv & { Variables: SetupLinkVariables }>(
+  c: Context<E>
+): Actor {
+  return { type: 'setup_link', id: c.get('setupLink').linkId, ...requestOrigin(c) }
 }
 
 /**

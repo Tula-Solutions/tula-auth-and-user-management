@@ -4,7 +4,7 @@ import { OAUTH_PROVIDERS } from './oauth'
 import { SessionClientSchema } from './session'
 import { MAX_WEBHOOK_URL_LENGTH } from './webhook'
 
-// A hook (ADR 0035): a signed QUESTION the server asks an operator's endpoint before it does
+// A hook: a signed QUESTION the server asks an operator's endpoint before it does
 // something, whose answer decides whether it happens. Not a webhook: a webhook is a notice of
 // what has already happened, and its answer changes nothing.
 //
@@ -162,8 +162,8 @@ export const HOOK_FAILURE_REASONS = [
 export type HookFailureReason = (typeof HOOK_FAILURE_REASONS)[number]
 
 /**
- * What a call of a hook came to, as a hook's `recentOutcomes` counts it (ADR 0035, "Recent
- * outcomes"). A closed list, and all the server keeps of a call:
+ * What a call of a hook came to, as a hook's `recentOutcomes` counts it. A closed list, and all the
+ * server keeps of a call:
  *
  * - `allowed`: the hook answered as its point's contract says and did not refuse. For
  *   `before_token`, which cannot refuse, every usable answer is this one.
@@ -401,6 +401,8 @@ export const HOOK_SIGN_UP_METHODS = [
   'password',
   'passwordless',
   ...OAUTH_PROVIDERS.map((provider) => `oauth_${provider}` as const),
+  // A first sign-in through an organization's SSO connection.
+  'sso',
 ] as const
 
 /**
@@ -411,7 +413,7 @@ export const HOOK_SIGN_UP_METHODS = [
  *   an account is unique by. The address has been **proven** by the time the question is
  *   asked (an emailed code, or a provider that asserts it verified). **`null` when the
  *   account would have no address**: a first sign-in with a provider Tula takes none from
- *   (`oauth_x`, `oauth_facebook`; ADR 0026). The key is always there; a receiver that
+ *   (`oauth_x`, `oauth_facebook`). The key is always there; a receiver that
  *   decides by the address decides what an account without one gets.
  * - `method`: one of {@link HOOK_SIGN_UP_METHODS}.
  * - `client`: the kind of client the sign-up was started from.

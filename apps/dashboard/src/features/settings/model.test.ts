@@ -323,6 +323,65 @@ describe('signing in with a texted code', () => {
   })
 })
 
+describe('the organizations settings', () => {
+  // The screen has no rule of its own: the contract says which change is a weakening, and
+  // each path it names must have a sentence of the dashboard's (never the bare path).
+  test.each([
+    [
+      'switching them off',
+      'organizations.enabled',
+      (draft: typeof base) => {
+        Object.assign(draft, { organizations: { ...draft.organizations, enabled: true } })
+      },
+      (draft: typeof base) => {
+        Object.assign(draft, { organizations: { ...draft.organizations, enabled: false } })
+      },
+    ],
+    [
+      'letting users create them',
+      'organizations.allowUserCreated',
+      () => {},
+      (draft: typeof base) => {
+        Object.assign(draft, { organizations: { ...draft.organizations, allowUserCreated: true } })
+      },
+    ],
+    [
+      'raising the cap',
+      'organizations.maxCreatedPerUser',
+      () => {},
+      (draft: typeof base) => {
+        Object.assign(draft, { organizations: { ...draft.organizations, maxCreatedPerUser: 99 } })
+      },
+    ],
+    [
+      'removing the cap',
+      'organizations.maxCreatedPerUser',
+      () => {},
+      (draft: typeof base) => {
+        Object.assign(draft, { organizations: { ...draft.organizations, maxCreatedPerUser: null } })
+      },
+    ],
+  ])('%s is asked about, in words', (_name, path, prepare, change) => {
+    const before = edited(prepare)
+    const after = edited((draft) => {
+      prepare(draft)
+      change(draft)
+    })
+    const plan = planSave(before, after, null)
+    expect(plan.weakenings).toContain(path)
+    expect(describeWeakening(path)).not.toBe(path)
+  })
+
+  test('lowering the cap, or choosing a role, is not a weakening', () => {
+    const after = edited((draft) => {
+      Object.assign(draft, { organizations: { ...draft.organizations, maxCreatedPerUser: 1 } })
+      Object.assign(draft, { organizations: { ...draft.organizations, creatorRole: 'owner' } })
+      Object.assign(draft, { organizations: { ...draft.organizations, defaultRole: 'viewer' } })
+    })
+    expect(planSave(base, after, null).weakenings).toEqual([])
+  })
+})
+
 describe('describeWeakening', () => {
   test('says a known path in words and keeps an unknown one', () => {
     expect(describeWeakening('password.minLength')).toContain('shorter')

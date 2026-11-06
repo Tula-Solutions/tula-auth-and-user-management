@@ -14,6 +14,11 @@ export interface DashboardRequestInit extends RequestInit {
    * header (`x-tula-can-still-sign-in`).
    */
   onResponse?: (response: Response) => void
+  /**
+   * Return the successful `Response` itself instead of its parsed JSON, for a body that is
+   * not JSON (the audit log export is NDJSON or CSV). Failures are still an {@link ApiError}.
+   */
+  raw?: boolean
 }
 
 /** Admin routes act on one environment, named by a header (ADR 0032). */
@@ -56,11 +61,13 @@ export async function dashboardFetch<T>(
   url: string,
   options: DashboardRequestInit = {}
 ): Promise<T> {
-  const { onResponse, headers: given, ...init } = options
+  const { onResponse, raw, headers: given, ...init } = options
   const headers = new Headers(given)
   headers.delete('authorization')
   headers.set(DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE)
-  if (url.startsWith(ADMIN_PREFIX)) {
+  // The browser resolves dot segments (and their %2e forms) before it sends the URL, so the
+  // prefix is judged on the resolved path: `/v1/instance/../admin/x` is an admin call.
+  if (new URL(url, 'http://dashboard.invalid').pathname.startsWith(ADMIN_PREFIX)) {
     // The environment is the caller's (`useEnvironmentRequest`: fixed when its screen
     // rendered), never the selection at the time the request leaves: a call that runs late
     // (a retry, a mutation that waited) would otherwise be made under whatever the operator
@@ -105,6 +112,9 @@ export async function dashboardFetch<T>(
     throw failure
   }
   onResponse?.(response)
+  if (raw) {
+    return response as T
+  }
   if (response.status === 204 || response.status === 205) {
     return undefined as T
   }

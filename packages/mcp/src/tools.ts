@@ -1,4 +1,4 @@
-import { OAUTH_PROVIDERS } from '@tula-tech/contract'
+import { ActivityTypeSchema, OAUTH_PROVIDERS } from '@tula-tech/contract'
 import * as z from 'zod'
 import { detectFramework, SCAFFOLD_FRAMEWORKS, type ScaffoldFramework } from './detect'
 import { ToolError } from './errors'
@@ -156,6 +156,58 @@ const USER = S.object({
   bannedAt: S.string(40),
   lastSignInAt: S.string(40),
   createdAt: S.string(40),
+})
+
+// An organization: operator- and user-typed text (`name`, `slug`) and ids. Event-style
+// restraint does not apply to a read, but nothing is named that the admin answer does not hold.
+const ORGANIZATION = S.object({
+  id: S.string(64),
+  name: S.string(200),
+  slug: S.string(64),
+  createdBy: S.string(64),
+  createdAt: S.string(40),
+  updatedAt: S.string(40),
+})
+
+// A membership names the user by id and never by address: an assistant that needs the person
+// asks `get_user` (ADR 0065, ADR 0033). `role` is the role's key.
+const MEMBERSHIP = S.object({
+  id: S.string(64),
+  organizationId: S.string(64),
+  userId: S.string(64),
+  role: S.string(40),
+  createdAt: S.string(40),
+  updatedAt: S.string(40),
+})
+
+// A role's permissions are keys of the `org:<feature>:<action>` grammar (at most 32 a role,
+// 100 characters each); they are the operator's words and no secret.
+const ORGANIZATION_ROLE = S.object({
+  id: S.string(64),
+  key: S.string(40),
+  name: S.string(200),
+  permissions: S.array(S.string(100), 32),
+  builtIn: S.boolean,
+  version: S.number,
+  createdAt: S.string(40),
+  updatedAt: S.string(40),
+})
+
+// A connection's identity provider addresses, issuer, client id and certificate fingerprints are
+// left out on purpose: the tools say whether a connection works, not where it points (ADR 0067).
+const SSO_CONNECTION = S.object({
+  id: S.string(64),
+  organizationId: S.string(64),
+  protocol: S.string(20),
+  name: S.string(100),
+  status: S.string(20),
+  defaultRole: S.string(40),
+  domains: S.array(S.string(255), 20),
+  saml: S.object({
+    certificates: S.array(S.object({ notAfter: S.string(40), expired: S.boolean }), 4),
+  }),
+  createdAt: S.string(40),
+  updatedAt: S.string(40),
 })
 
 const SIGN_IN_METHODS = S.object({
@@ -330,11 +382,9 @@ const providerInput = z.strictObject({
   provider: z.enum(OAUTH_PROVIDERS).describe('The provider, as list_oauth_providers names it.'),
 })
 const auditInput = z.strictObject({
-  action: z
-    .string()
-    .regex(/^[a-z_]{1,40}\.[a-z_]{1,60}$/)
-    .optional()
-    .describe('One action, e.g. "session.created" or "user.password_changed".'),
+  action: ActivityTypeSchema.optional().describe(
+    'One action, e.g. "session.created" or "user.password_changed".'
+  ),
   actorId: id.optional().describe('Who did it.'),
   targetId: id.optional().describe('What it was done to.'),
   actorType: z.enum(['user', 'admin', 'system', 'agent', 'instance_admin']).optional(),
@@ -342,6 +392,23 @@ const auditInput = z.strictObject({
   to: instant.optional().describe('Entries before this instant.'),
   page,
   size: z.number().int().min(1).max(100).default(50).describe('Entries per page, at most 100.'),
+})
+const listOrganizationsInput = z.strictObject({
+  page,
+  size: z.number().int().min(1).max(50).default(20).describe('Organizations per page, at most 50.'),
+})
+const organizationMembersInput = z.strictObject({
+  organizationId: id.describe('The organization’s id, as list_organizations returns it.'),
+  page,
+  size: z.number().int().min(1).max(100).default(50).describe('Members per page, at most 100.'),
+})
+const listSsoConnectionsInput = z.strictObject({
+  organizationId: id
+    .optional()
+    .describe('Only this organization’s connections; left out, the whole environment’s.'),
+})
+const ssoConnectionInput = z.strictObject({
+  connectionId: id.describe('The connection’s id, as list_sso_connections returns it.'),
 })
 const noInput = z.strictObject({})
 const detectInput = z.strictObject({
@@ -659,8 +726,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     run: async ({ reads }, input: z.infer<typeof auditInput>) => {
       const answer = await reads().read('listAuditLogs', {
         query: given({
-          // The API validates the action against its own list; an unknown one is its error.
-          action: input.action as never,
+          action: input.action,
           actorId: input.actorId,
           targetId: input.targetId,
           actorType: input.actorType,
@@ -691,6 +757,71 @@ export const TOOLS: readonly ToolDefinition[] = [
       shaped(
         await reads().read('listOAuthProviders'),
         S.object({ data: S.array(OAUTH_PROVIDER_SHAPE, 20) })
+      ),
+  },
+  {
+    name: 'list_organizations',
+    title: 'List organizations',
+    group: 'read',
+    description: `List the environment’s organizations, a page at a time (at most 50): id, name, slug, who created it and when. While organizations are switched off in the settings (organizations.enabled) the API answers organization.disabled.${UNTRUSTED}`,
+    input: listOrganizationsInput,
+    run: async ({ reads }, input: z.infer<typeof listOrganizationsInput>) => {
+      const answer = await reads().read('listOrganizations', {
+        query: given({ page: input.page, size: input.size }),
+      })
+      return shaped(answer, S.object({ meta: PAGINATION, data: S.array(ORGANIZATION, 50) }))
+    },
+  },
+  {
+    name: 'list_organization_members',
+    title: 'List an organization’s members',
+    group: 'read',
+    description: `One organization’s members, a page at a time (at most 100): the membership’s id, the user’s id (not their address: get_user has the person), the role’s key and the times.${UNTRUSTED}`,
+    input: organizationMembersInput,
+    run: async ({ reads }, input: z.infer<typeof organizationMembersInput>) => {
+      const answer = await reads().read('listOrganizationMemberships', {
+        params: { id: input.organizationId },
+        query: given({ page: input.page, size: input.size }),
+      })
+      return shaped(answer, S.object({ meta: PAGINATION, data: S.array(MEMBERSHIP, 100) }))
+    },
+  },
+  {
+    name: 'list_organization_roles',
+    title: 'List organization roles',
+    group: 'read',
+    description: `The environment’s organization roles, the built-in admin and member and the custom ones (at most 50): key, name, permission keys (org:<feature>:<action>), whether the role is built in, and its version. All organizations share them.${UNTRUSTED}`,
+    input: noInput,
+    run: async ({ reads }) =>
+      shaped(
+        await reads().read('listOrganizationRoles'),
+        S.object({ data: S.array(ORGANIZATION_ROLE, 100) })
+      ),
+  },
+  {
+    name: 'list_sso_connections',
+    title: 'List SSO connections',
+    group: 'read',
+    description: `The environment’s enterprise single sign-on connections (at most 100), or one organization’s: id, name, protocol, status, bound domains, the default role and, for a SAML connection, each signing certificate’s expiry. It never returns an address, issuer, client id, secret or fingerprint of the identity provider.${UNTRUSTED}`,
+    input: listSsoConnectionsInput,
+    run: async ({ reads }, input: z.infer<typeof listSsoConnectionsInput>) =>
+      shaped(
+        await reads().read('listSsoConnections', {
+          query: given({ organizationId: input.organizationId }),
+        }),
+        S.object({ connections: S.array(SSO_CONNECTION, 100) })
+      ),
+  },
+  {
+    name: 'get_sso_connection',
+    title: 'Get an SSO connection',
+    group: 'read',
+    description: `One enterprise single sign-on connection by id, with the same fields as list_sso_connections.${UNTRUSTED}`,
+    input: ssoConnectionInput,
+    run: async ({ reads }, input: z.infer<typeof ssoConnectionInput>) =>
+      shaped(
+        await reads().read('getSsoConnection', { params: { id: input.connectionId } }),
+        SSO_CONNECTION
       ),
   },
   {

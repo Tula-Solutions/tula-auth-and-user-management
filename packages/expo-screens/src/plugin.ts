@@ -4,7 +4,7 @@
 // no `@expo/config-plugins` and is tested on plain objects. It is built as CommonJS, which
 // is how Expo loads a plugin (`require`), and as a module beside it for an `import`.
 //
-// It is apart from `@tula-tech/expo/plugin` on purpose (ADR 0063): an app on the headless client
+// It is apart from `@tula-tech/expo/plugin` on purpose: an app on the headless client
 // lists that one and never this one, and an app that draws the native screens lists this
 // one, with or without the other.
 
@@ -36,7 +36,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** The lowest Android API level the native screens run on (`tula-auth-android`, ADR 0054). */
+/** The lowest Android API level the native screens run on (`tula-auth-android`). */
 export const NATIVE_SCREENS_MIN_SDK = 28
 
 /** The Gradle property an Expo project reads its `minSdkVersion` from. */
@@ -58,7 +58,7 @@ const RAISES_MIN_SDK = 'tulaRaisesMinSdk'
  * own minimum), and the docs say so.
  *
  * Its order against another plugin that sets the same property (`expo-build-properties`)
- * was not tried: `docs/plans/phase-2-unverified.md`, "Step 2.16".
+ * was not tried.
  *
  * @param lines - Expo's `modResults` of `android.gradleProperties`: a list of
  *   `{ type: 'property', key, value }` among comments and empty lines.
@@ -129,7 +129,7 @@ function raisingMinSdk(previous: unknown): Mod {
  * was given.
  *
  * Whether Expo's prebuild runs this mod as written here was not tried since the plugin
- * became this package's own: `docs/plans/phase-2-unverified.md`, "Step 2.16".
+ * became this package's own.
  *
  * @param config - The app's Expo configuration.
  * @param props - Nothing: leave it out, or pass an empty object.

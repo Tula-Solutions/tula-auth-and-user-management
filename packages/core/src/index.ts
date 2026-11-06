@@ -63,6 +63,7 @@ export type {
   SignInFlow,
   SignUpFlow,
 } from './flows'
+export { type InvitationLink, readInvitationLink } from './invitation'
 export type { Identity, OAuthCallbackOutcome, OAuthProvider } from './oauth'
 export { isRetryableOAuthError } from './oauth'
 export type {
@@ -81,10 +82,19 @@ export {
 export { memoryStorage, type TokenStorage } from './storage'
 export type { DeviceKeySource } from './transport'
 export type {
+  AcceptedInvitation,
+  ActiveOrganization,
+  AssignableRole,
+  AssignableRoleList,
   AuthState,
   BackupCodes,
   ClientConfig,
   ClientKind,
+  CreatedOrganizationSetupLink,
+  CreateOrganizationInput,
+  CreateOrganizationInvitationInput,
+  CreateOrganizationSetupLinkInput,
+  CreateOrganizationSsoConnectionInput,
   EmailCodeSent,
   FactorEnrolmentMethod,
   Factors,
@@ -92,7 +102,25 @@ export type {
   FirstFactorStrategy,
   FlowKind,
   FlowStep,
+  InvitationPreview,
   MfaPolicy,
+  MyOrganizationInvitation,
+  MyOrganizationInvitationList,
+  OrganizationDomain,
+  OrganizationDomainList,
+  OrganizationInvitation,
+  OrganizationInvitationList,
+  OrganizationMember,
+  OrganizationMemberList,
+  OrganizationSetupLink,
+  OrganizationSetupLinkList,
+  OrganizationSsoConnection,
+  OrganizationSsoConnectionList,
+  OrganizationSsoGroupRoles,
+  OrganizationSsoTestResult,
+  OrganizationSsoTestStart,
+  OrganizationSuggestion,
+  OrganizationSuggestionList,
   Passkey,
   PasswordPolicy,
   PhoneCodeSent,
@@ -100,9 +128,14 @@ export type {
   SecondFactorProof,
   Session,
   SmsFactorCode,
+  StartOrganizationDomainInput,
   StepUpMethod,
   StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
+  UpdateOrganizationInput,
+  UpdateOrganizationSsoConnectionInput,
   User,
+  UserOrganization,
+  UserOrganizationList,
 } from './types'

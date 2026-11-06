@@ -1,6 +1,7 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
+import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 
@@ -15,6 +16,7 @@ describeUserRepository('MemoryUserRepository', async () => {
   const users = new MemoryUserRepository(log)
   return {
     users,
+    sessions: new MemorySessionStore(log, users),
     // Each registers itself with the repository, as `createTestDeps` wires them.
     factors: new MemoryFactorStore(log, users),
     passkeys: new MemoryPasskeyStore(log, users),

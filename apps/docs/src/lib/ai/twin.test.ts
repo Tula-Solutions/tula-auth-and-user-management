@@ -21,7 +21,7 @@ const environment: LinkEnvironment = {
       'docs/a.png',
     ].includes(path)
       ? 'file'
-      : path === 'docs/adr'
+      : path === 'packages'
         ? 'directory'
         : null,
   anchorsOf: (file) =>
@@ -108,12 +108,12 @@ describe('twinBody links', () => {
       route: '/quickstart/',
       title: 'Q',
       description: '',
-      source: '# Q\n\n[adr](adr/) and [licence](../LICENSE)\n',
+      source: '# Q\n\n[ex](../packages/) and [licence](../LICENSE)\n',
       environment,
       urls,
     })
     expect(body).toContain(
-      '(https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/develop/docs/adr)'
+      '(https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/develop/packages)'
     )
     expect(body).toContain(
       '(https://github.com/Tula-Solutions/tula-auth-and-user-management/blob/develop/LICENSE)'

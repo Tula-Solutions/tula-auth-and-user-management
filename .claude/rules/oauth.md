@@ -151,7 +151,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   (`ID_TOKEN_PROVIDERS`); which clients may start is per provider
   (`ID_TOKEN_CLIENT_KINDS`: `ios` and `android` for Google, `ios` alone for Apple; the
   client's own claim: a policy, not a boundary); no redirect URL, ticket or binding. From there it is the browser flow's own code
-  (`completeProviderSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
+  (`completeExternalSignIn`: `OAuth.resolveAccount`, `Factors.requiredFor`, `finish`):
   never a second path to an account or a session.
   - **A token is verified by the adapter, through the port's optional `verifyIdToken`**:
     the code flow's verifier (signature, `RS256`, issuer, expiry), then
@@ -280,7 +280,7 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   anyone with a session can succeed here with their own inbox, and a success clears the
   key); the code is checked; the address is stored. The limits are per user (a minute's
   cooldown, `EMAIL_ADDITION_EMAILS_PER_HOUR`) and per address under a keyed hash
-  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key.
+  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key, and per environment (`EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR`, TULA-157 H-204).
   **`<UserProfile>`'s "Email address" section is drawn only for an account with no
   address** (`components/email-address.tsx`): no rule of its own, every call through
   `useStepUp`, words that never say a code was sent, keyed by the session id. A declined
@@ -321,6 +321,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
 - **No provider token is stored or logged**, and provider credentials are sealed and never
   returned. Identity changes are audited (`user.identity_linked`, `user.identity_unlinked`)
   and announced to the owner (`notifications.identityChanged`).
+- **Unlinking an identity ends the user's other sessions** (`OAuth.unlink`, reason
+  `mfa_changed`, the current session kept), before the notice: whoever held the provider
+  account loses the session it made. Decision (TULA-157, H-093): the existing reason is reused
+  so that `openapi.json` does not move.
 
 ## What to test
 
@@ -404,3 +408,19 @@ rules themselves are above and are not repeated).
   (`oauth.email_missing`); a name in the token (ignored) and a name beside it (a new
   account's, never an existing user's, never for Google); and no nonce, bundle ID or name in
   a log line, an audit entry, an event or an error.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-154): the mock provider's `postedByOwnPage` accepts a POST with
+  neither `Sec-Fetch-Site` nor `Origin`. Accepted: local tier and loopback only.
+- Decision (TULA-157, H-155): the `email_addition` budget (ADR 0059) can be spent by any
+  account without an address. Accepted; revisit if abuse shows up.
+- Decision (TULA-157, H-156): `oauth.ticket_invalid` versus `oauth.different_browser` is told
+  apart only after a ticket-hash match, so it is no pre-authentication oracle. Kept.
+- Decision (TULA-157, H-158): the OAuth nonce is burned (`oauthPhase` compare-and-set)
+  before the ID token is verified, so a failed attempt is not retried (ADR 0045). Kept.
+- Decision (TULA-157, H-159): arctic's token-exchange responses (Apple, GitHub) are bounded
+  by a deadline but not by a size cap. Recommendation: cap them. Recorded only: the hosts are
+  fixed provider hosts, the value is low.
+- Tests that pin H-160 and H-162: `adapters/oauth/nonce-opt-out.test.ts` (only LinkedIn uses
+  `NONCE_NOT_ECHOED`) and `modules/oauth/credentials-open.test.ts` (the sealed secret wins).

@@ -35,7 +35,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 28 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 30 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may
@@ -183,3 +183,19 @@ The failure paths a change to an email template is held to (moved from the check
 - **The record:** neither a subject nor a body in an audit entry, an event's payload, a log
   line or an error (the event canary runs the scenario with its text tapped), and `@tula-tech/mcp`
   does not return them.
+
+## Decisions awaiting review (TULA-157)
+
+- **Decision (TULA-157, H-222): no lower add-email cap for unverified accounts.** The per-user (5 an
+  hour) and per-address (5 an hour) limits already bound it, and the path exists only for an
+  account with no address. Recommendation: keep; recorded, code unchanged.
+- **Decision (TULA-157, H-223): email step-up has no environment-level charge.** It is bounded per
+  IP and per user (`Mfa.stepUpLockKey`, notices' own limit). Recommendation: leave; a per-environment
+  budget would let one user starve the others.
+- **Decision (TULA-157, H-224): `normalizeEmail` stays trim + lowercase.** Folding `+tags` and dots is
+  provider-specific and would merge addresses their owners consider distinct (the function's JSDoc
+  says so); plus-variants therefore get their own budgets, and the per-IP and per-user limits
+  remain the bound. Recommendation: document only.
+- **Decision (TULA-157, H-225), changed:** `SMTP_URL` on `smtp://` now sets nodemailer `requireTLS`
+  in `staging` and `prod` (`SmtpOptions.requireTls`, `transportOptions`), so STARTTLS cannot be
+  stripped; port-587 relays keep working.

@@ -71,7 +71,7 @@ export interface ObtainedDeviceKey {
 
 /**
  * The name the device's key is kept under. One key for the installed app: it binds every
- * session the app starts and earns nothing by itself (ADR 0043: a device does not outlive
+ * session the app starts and earns nothing by itself (a device does not outlive
  * its session).
  *
  * @example

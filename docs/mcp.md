@@ -3,22 +3,20 @@
 `tula mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An MCP
 client (Claude Code, Claude Desktop, an editor) starts it as a child process and talks to it
 over standard input and output. It lets an assistant **read** an environment (users,
-sessions, audit entries, settings, deployment checks), gives it the files for adding Tula
+sessions, audit entries, settings, organizations, deployment checks), gives it the files for adding Tula
 to an app, lets it **draft** a settings change as an edit to your config file, lets it
 **test** that sign-up and sign-in work and, with an agent key, lets it **ask** for a change
 that a person approves.
 
 **One tool changes live data, and only while it runs**: `test_signin` has the server sign a
 throwaway user up and in and delete it, where the environment allows that
-([the sign-in test](#the-sign-in-test), [ADR 0058](adr/0058-test-signin.md)). **No other
+([the sign-in test](#the-sign-in-test)). **No other
 tool does.** Nothing bans a user, revokes a session or edits a setting,
 and the scaffold tools return files without writing them. The draft tool returns an edit
-to `tula.config.ts` and writes nothing: you apply it with `tula apply`
-([ADR 0056](adr/0056-mcp-settings-config-diff.md)). A propose tool records a
+to `tula.config.ts` and writes nothing: you apply it with `tula apply`. A propose tool records a
 *proposal*: a request that does nothing until you approve it, outside this server, with a
 credential the server is not given ([proposals.md](proposals.md)). The server never
-returns a secret, a token or key material. The design is in
-[ADR 0033](adr/0033-mcp-server.md) and [ADR 0053](adr/0053-proposals.md).
+returns a secret, a token or key material.
 
 ## Configuration
 
@@ -30,10 +28,13 @@ way every `tula` command does ([docs/cli.md](cli.md)). None is required.
 | `TULA_API_URL` (or `TULA_API_URL_<NAME>` with `--env <name>`) | Where the Tula API is. https, or this machine. |
 | `TULA_AGENT_KEY` (or `TULA_AGENT_KEY_<NAME>`), or `--agent-key-file <path>` | The read tools, the propose tools **and** the sign-in test. An agent key (`tula_ak_…`) reads what a secret key reads, asks for changes, and runs a sign-in test where the environment allows one; it changes nothing else. The key decides the environment. **Use this one for an assistant.** |
 | `TULA_SECRET_KEY` (or `TULA_SECRET_KEY_<NAME>`), or `--secret-key-file <path>` | The read tools and the sign-in test, when there is no agent key. It does not propose. |
-| `TULA_ADMIN_TOKEN`, or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
+| `TULA_ADMIN_TOKEN` (not read beside an agent key), or `--admin-token-file <path>` | `run_doctor`'s server-side checks only. |
 
 - Without a key the read tools and the draft tool answer `not_configured`; the scaffold tools work with no
   configuration at all. Without an agent key the propose tools answer `not_configured`.
+- **A secret key alone gives the server the whole admin read client** (every `GET` the key may make, not
+  only the tools listed here). An agent key reads the same and can change nothing else, so it is the safer one
+  to hand an assistant.
 - **With an agent key the secret key is not read**, even if it is set: the server then
   holds nothing that can approve a proposal, or change anything beyond a sign-in test, and says on standard error
   that it left the secret key alone. Keep the secret key out of an assistant's environment
@@ -126,6 +127,11 @@ not name is refused.
 | `list_audit_entries` | `action?`, `actorId?`, `targetId?`, `actorType?`, `from?`, `to?`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [entry] }` |
 | `get_settings` | none | `{ revision, settings, managedBy }` |
 | `list_oauth_providers` | none | `{ data: [provider] }` |
+| `list_organizations` | `page?`, `size?` (≤ 50, default 20) | `{ meta, data: [organization] }` |
+| `list_organization_members` | `organizationId`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [membership] }` |
+| `list_organization_roles` | none | `{ data: [role] }` (the built-in roles and the custom ones, at most 100) |
+| `list_sso_connections` | `organizationId?` | `{ connections: [connection] }` (at most 100) |
+| `get_sso_connection` | `connectionId` | `connection` |
 | `run_doctor` | none | `{ apiUrl, version, environment, checks: [{ id, source, status, summary, fix?, values? }] }` |
 
 - A **user** is `id`, `email`, `emailVerifiedAt`, `firstName`, `lastName`, `bannedAt`,
@@ -141,6 +147,21 @@ not name is refused.
   `tenant` (Microsoft's: an alias or a tenant id, not a secret), `additionalClientIds`
   (Google's: the client ids of the operator's native apps, not secrets), `callbackUrl`,
   `updatedAt`.
+- An **organization** is `id`, `name`, `slug`, `createdBy`, `createdAt`, `updatedAt`
+  ([organizations](organizations.md)).
+- A **membership** is `id`, `organizationId`, `userId`, `role` (the role's key), `createdAt` and
+  `updatedAt`. It carries no email address or name: `get_user` answers who a `userId` is.
+- A **role** is `id`, `key`, `name`, `permissions` (the permission keys, at most 32),
+  `builtIn`, `version`, `createdAt`, `updatedAt` ([roles and permissions](roles-and-permissions.md)).
+  An environment with organizations switched off answers these three tools with the API's
+  `organization.disabled`. The first read of the roles can create the two built-in role rows, if
+  the environment does not have them yet.
+- A **connection** is `id`, `organizationId`, `protocol`, `name`, `status`, `defaultRole`, `domains`,
+  `createdAt`, `updatedAt` and, for SAML, `saml.certificates` (each `notAfter` and `expired`). The
+  identity provider's issuer, addresses, client id and certificate fingerprints are not returned,
+  and a client secret never leaves the server. While SSO is switched off in the settings the API
+  answers `sso.disabled`. `run_doctor`'s `sso_connections` check reports expiring or ended
+  certificates, a metadata address that does not answer and a domain no longer verified.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 
@@ -177,8 +198,7 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
   (`password.minLength`, `mfa.policy`, `providers.google.additionalClientIds`, …); `weakens`
   is whether there is any. `tula apply --yes` refuses such a plan without `--allow-weaker`.
   The rule is the contract's, the one the API, the dashboard and the CLI share. **One
-  weakening is not judged here**: switching off a provider that accounts depend on
-  ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). The tool never reads that
+  weakening is not judged here**: switching off a provider that accounts depend on. The tool never reads that
   count, so `weakens: false` for such a draft is not "nobody is locked out". A draft that
   switches off a provider the server has on says so in one more entry of `notes`, in fixed
   words (no provider's name, no number); `tula diff` counts the accounts for the person
@@ -329,7 +349,7 @@ rendered), or what your webhook receiver did with the events.
 - A tool answers `response.invalid` when the server's answer is not the proposal it asked
   for (another operation or another target): nothing of such an answer is returned.
 - `list_audit_entries` shows what became of a proposal: `action` `proposal.created`,
-  `proposal.approved`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
+  `proposal.approved`, `proposal.rejected`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
 
 ### Scaffold tools (need nothing)
 
@@ -343,7 +363,7 @@ rendered), or what your webhook receiver did with the events.
 `framework` is `nextjs` (App Router), `react-vite`, `expo`, `swiftui` or `compose`. The files
 are the ones the example apps and `create-tula` use, byte for byte. **`expo` is answered
 with the error `scaffold.not_released` and no file**: its scaffold needs `@tula-tech/expo`,
-which is held back from npm ([releasing.md](releasing.md)), and a tool that told an
+which is not published to npm, and a tool that told an
 assistant to install it would send it to a package that is not there. `create-tula`
 refuses the Expo template for the same reason. **The server writes
 nothing**: your client writes the files, after you agree. `detect_framework` reads one

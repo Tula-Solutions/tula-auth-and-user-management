@@ -181,8 +181,6 @@ describe('the method pages', () => {
           `${page}: ${heading}`
         )
       }
-      // The reasoning lives in the ADR; the page links to it.
-      expect(`${page}: ${/\]\(\.\.\/adr\/\d{4}-[a-z0-9-]+\.md\)/.test(text)}`).toBe(`${page}: true`)
     }
   })
 
@@ -698,7 +696,7 @@ describe('commands that fetch a package by name', () => {
   // names the package: `bunx --package @tula-tech/cli@latest tula …`.
 
   /** History and plans: they record what was planned and run, and are not instructions. */
-  const RECORDS = ['docs/adr/', 'docs/plans/', 'docs/reference/', 'docs/business-plan.md']
+  const RECORDS = ['docs/adr/', 'docs/plans/', 'docs/reference/', 'docs/internal/business-plan.md']
 
   /** The markdown a reader follows, the templates a scaffolded project gets, and what the scaffolder prints. */
   function instructionFiles(): string[] {
@@ -863,7 +861,7 @@ describe('commands that fetch a package by name', () => {
   // `bun run <script> --otp 123456` is echoed by Bun itself ("$ … --otp "123456"") before
   // the script starts, where nothing of the script can strike it out. `--silent` stops that.
   test('the runbook hands over a one-time password without Bun echoing it', () => {
-    const doc = readFileSync(join(root, 'docs/releasing.md'), 'utf8')
+    const doc = readFileSync(join(root, 'docs/internal/releasing.md'), 'utf8')
     const samples = doc.split('\n').filter((line) => /--otp\s+\d/.test(line))
     expect(samples.length).toBeGreaterThan(0)
     for (const sample of samples) {
@@ -992,5 +990,13 @@ describe('commands that fetch a package by name', () => {
     expect(untagged('bun run --filter @tula-tech/react generate')).toEqual([])
     expect(untagged("plugins: ['@tula-tech/expo/plugin'] # bunx expo prebuild")).toEqual([])
     expect(untagged('import { x } from "@tula-tech/core"')).toEqual([])
+  })
+})
+
+describe('the dashboard page and proposals (TULA-198)', () => {
+  test('says a waiting proposal can be rejected, not that it cannot be dismissed', () => {
+    const page = readFileSync(join(root, 'docs/dashboard.md'), 'utf8')
+    expect(page).not.toMatch(/cannot be dismissed/i)
+    expect(page).toMatch(/\breject/i)
   })
 })

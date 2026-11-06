@@ -1,5 +1,7 @@
 import { TulaProvider } from '@tula-tech/react'
 import { renderToString } from 'react-dom/server'
+import { OrganizationProfile } from '@/components/tula/organization-profile'
+import { OrganizationSwitcher } from '@/components/tula/organization-switcher'
 import { SignIn } from '@/components/tula/sign-in'
 import { FormAlert, Status } from '@/components/tula/status'
 import { StepCard } from '@/components/tula/step-card'
@@ -25,6 +27,8 @@ const html = renderToString(
     <Status message='status text' />
     <Status message='status done' tone='neutral' />
     <FormAlert message='alert text' detail='alert detail' />
+    <OrganizationSwitcher allowCreate />
+    <OrganizationProfile />
     <SignIn onSwitchToSignUp={() => undefined} onForgotPassword={() => undefined} />
   </TulaProvider>
 )

@@ -501,3 +501,24 @@ export async function beforeToken(request: Request): Promise<Response> {
   return Response.json(answer)
 }
 // #endregion
+
+/** Bring users across from another system, with the password hashes they have there. */
+export async function importUsers(rows: { email: string; bcryptHash: string; name: string }[]) {
+  // #region user-import
+  // Up to 500 users per call. Run it again over the same file after a failure:
+  // a user that exists is skipped, never created twice.
+  const { data } = await admin.call('importUsers', {
+    body: {
+      users: rows.map((row) => ({
+        email: row.email,
+        emailVerified: true,
+        name: row.name,
+        password: { algorithm: 'bcrypt', hash: row.bcryptHash },
+      })),
+    },
+  })
+  const refused = data.results.filter((result) => result.status === 'refused')
+  // Each refused row has a contract error `code`, such as `import.hash_parameters_too_weak`.
+  // #endregion
+  return { data, refused }
+}

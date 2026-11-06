@@ -1,8 +1,10 @@
 package dev.tula.auth
 
+import dev.tula.auth.generated.ActiveOrganization
 import dev.tula.auth.generated.CurrentUser
 import dev.tula.auth.generated.RefreshTokenRequest
 import dev.tula.auth.generated.SessionTokens
+import dev.tula.auth.generated.SetActiveOrganizationRequest
 import dev.tula.auth.generated.TulaJson
 import dev.tula.auth.generated.TulaOperation
 import dev.tula.auth.generated.TulaOperations
@@ -89,6 +91,9 @@ const val REFRESH_RETRY_WINDOW_MS: Long = 10_000
 
 /** The least time the repeat of a refresh is given, however long the first try took. */
 internal const val MIN_REFRESH_RETRY_TIMEOUT_MS: Long = 1_000
+
+/** How many tokens a failed sign-out remembers for the next one. */
+private const val MAX_UNDELIVERED = 8
 
 /**
  * The longest a `Retry-After` on a failed refresh makes [TulaSession.getToken] fail fast
@@ -180,7 +185,7 @@ private fun tokenWasRefused(error: TulaError): Boolean =
 
 /**
  * Token state, refresh and sign-out: everything the client knows about the session. A port of
- * `@tula-tech/core`'s session manager for a client that is never a browser (ADR 0054).
+ * `@tula-tech/core`'s session manager for a client that is never a browser.
  *
  * The rules, all enforced here:
  * - The access token lives in memory only. The refresh token is held in memory and in
@@ -244,10 +249,10 @@ internal class SessionManager(
      * or one that was not about the session). The client is signed out and stays so; this is
      * kept only so that the next sign-out can send it. Memory only: never storage, an error or
      * a log line, and nothing but [signOut] reads it (no refresh presents it). Forgotten once
-     * delivered, when the API answers that the session is over, and when a new session is
-     * adopted.
+     * delivered and when the API answers that the session is over, never by a new session being
+     * adopted: [signOut] presents every distinct token here, at most eight.
      */
-    private var undelivered: String? = null
+    private var undelivered: List<String> = emptyList()
 
     private fun setState(next: AuthState) {
         if (next != current.value) {
@@ -499,7 +504,7 @@ internal class SessionManager(
             )
         } catch (error: TulaError) {
             if (generation == mine && !error.code.startsWith("session.")) {
-                undelivered = presented
+                undelivered = (undelivered + presented).distinct().takeLast(MAX_UNDELIVERED)
             }
         }
     }
@@ -604,8 +609,6 @@ internal class SessionManager(
             if (!isSessionTokens(issued)) {
                 throw transport.invalid()
             }
-            // A new session: an earlier one's sign-out is no longer this client's to retry.
-            undelivered = null
             val installed = commit(issued)
             val failure = persist(issued)
             settle(installed)
@@ -668,27 +671,27 @@ internal class SessionManager(
         } catch (error: TulaError) {
             failure = error
         }
-        val newest = orphan ?: presented ?: undelivered
+        val newest = orphan ?: presented
         orphan = null
-        if (newest != null) {
+        // Every distinct token still owed a revoke, newest first.
+        val kept = mutableListOf<String>()
+        for (token in listOfNotNull(newest).plus(undelivered).distinct()) {
             try {
                 transport.call(
                     TulaOperations.signOut,
-                    CallInput(body = encode(RefreshTokenRequest.serializer(), RefreshTokenRequest(newest))),
+                    CallInput(body = encode(RefreshTokenRequest.serializer(), RefreshTokenRequest(token))),
                 )
-                undelivered = null
             } catch (error: TulaError) {
                 // The server may still hold the session: the caller must know, even though
-                // this client is signed out.
-                failure = error
-                // The token has just been dropped, so it is held for the retry, unless the
-                // API said the session is over or a sign-in finished meanwhile (whose own
-                // token the next sign-out presents).
-                if (generation == mine) {
-                    undelivered = if (error.code.startsWith("session.")) null else newest
+                // this client is signed out. The token is held for the retry unless the API
+                // said the session is over.
+                failure = failure ?: error
+                if (!error.code.startsWith("session.")) {
+                    kept.add(token)
                 }
             }
         }
+        undelivered = kept.take(MAX_UNDELIVERED)
         // A device key that can never be had again would fail the next sign-in too: with
         // nobody signed in, what such a store keeps is removed. Any other store is left alone.
         proofs?.dropUnusableKey(refreshTimeoutMs)
@@ -741,6 +744,56 @@ internal class SessionManager(
         if (tokens?.sessionId != answer.sessionId || startRefresh(true).await() == null) {
             throw unauthenticated()
         }
+    }
+
+    /**
+     * Make an organization the one the session acts in (`PUT /v1/client/me/organizations/active`)
+     * and take the access token that carries it.
+     *
+     * As [stepUp] does, it installs only the access token of the answer: choosing does not
+     * rotate the refresh token, and one a misbehaving server put in the answer is ignored.
+     * When the session's token was replaced while the call was on its way, or a refresh is
+     * running, the answer's token is not installed (it is a result for an older generation):
+     * one refresh, started after the choice was accepted, carries it.
+     *
+     * @param organizationId The organization, or `null` for the personal account.
+     * @return The answer: the session's id and the organization it acts in now.
+     * @throws TulaError what the API refused with; `response.invalid` for an answer that is
+     *   not the choice that was asked for; `auth.unauthenticated` when the client was signed
+     *   out, or signed in as someone else, while the call was in flight.
+     */
+    suspend fun setActiveOrganization(organizationId: String?): ActiveOrganization = withContext(confined) {
+        // A refresh already in flight would otherwise hand the choice a token about to be replaced.
+        idleNow()
+        var left = generation
+        val answer = transport.decode(
+            ActiveOrganization.serializer(),
+            authorized(
+                TulaOperations.setActiveOrganization,
+                CallInput(body = encode(SetActiveOrganizationRequest.serializer(), SetActiveOrganizationRequest(organizationId))),
+            ) { left = generation },
+        )
+        val issued = SessionTokens(answer.sessionId, answer.accessToken, answer.accessTokenExpiresAt)
+        // A 200 is not proof of talking to the API: the answer must name the choice and carry
+        // a token this client can install (a stateful session's answer has none, and is not a
+        // session for this client).
+        if (!isSessionTokens(issued) || answer.organizationId != organizationId || organizationId?.isEmpty() == true) {
+            throw transport.invalid()
+        }
+        // Signed out, or signed in as someone else, while the call was in flight: the answer
+        // is about a session this client no longer has.
+        if (current.value is AuthState.SignedOut || tokens?.sessionId != answer.sessionId) {
+            throw unauthenticated()
+        }
+        if (generation == left && refreshing == null) {
+            settle(commit(issued))
+            return@withContext answer
+        }
+        idleNow()
+        if (tokens?.sessionId != answer.sessionId || startRefresh(true).await() == null) {
+            throw unauthenticated()
+        }
+        answer
     }
 
     private fun unauthenticated(): TulaError = TulaError(

@@ -7,14 +7,13 @@ refresh token copied off the device, out of a backup or out of a log, is then of
 without the device.
 
 This page covers what a client sends, what the server answers, what an operator sees, and
-what binding does and does not show. The decisions are in
-[ADR 0043](adr/0043-device-binding.md).
+what binding does and does not show.
 
-**What this is for today.** The server, the contract, the conformance scenarios and the
-headless TypeScript client (`@tula-tech/core`) with a **software** key. The native SDKs that keep
-the key in the Secure Enclave or StrongBox arrive with later steps of
-[Phase 2](plans/phase-2.md). `@tula-tech/expo` takes a key store that keeps the key there
-([expo.md](expo.md#a-session-bound-to-a-device-key)); it has been tested with a software
+**What this covers.** The server, the contract, the conformance scenarios and the
+headless TypeScript client (`@tula-tech/core`) with a **software** key. The Swift, Kotlin and
+Expo SDKs take a key store that keeps the key in the Secure Enclave or StrongBox
+([swift.md](swift.md), [kotlin.md](kotlin.md),
+[expo.md](expo.md#a-session-bound-to-a-device-key)); they have been tested with a software
 key behind that interface only, and no key was made on a phone. A software key held by the same process that holds the refresh
 token adds little against whoever can read that process: see
 [what binding proves](#what-binding-proves-and-what-it-does-not).

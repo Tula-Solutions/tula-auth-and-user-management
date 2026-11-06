@@ -11,7 +11,7 @@ At the end of Phase 2 an app on iOS, Android or Expo signs a user in with the sa
 same flow protocol and the same rules as the web SDKs, using native screens it did not write;
 and a backend learns what happened through signed webhooks and shapes what a token says. The
 business plan's first positioning point is "native-first mobile"
-([business plan](../business-plan.md), section 3). Phase 1 shipped none of it.
+([business plan](../internal/business-plan.md), section 3). Phase 1 shipped none of it.
 
 ## Where Phase 1 left things
 
@@ -45,7 +45,7 @@ What Phase 1 deliberately left open, and Phase 2 has to close:
 ## What Phase 2 contains, and where the documents disagree
 
 The scope below is the "Not in Phase 1" paragraph of the [Phase 1 plan](phase-1.md#not-in-phase-1),
-checked against every "Build order" paragraph of the [business plan](../business-plan.md).
+checked against every "Build order" paragraph of the [business plan](../internal/business-plan.md).
 They do not agree everywhere. Each disagreement, and what this plan does about it:
 
 | # | The documents | This plan |
@@ -891,7 +891,7 @@ are in [the table below](#decisions-needed-before-starting).
 | # | Decision | Outcome |
 | --- | --- | --- |
 | D1 | Licence | **Apache-2.0 for the whole repository**, server included (business plan 10.1), not the split recommended below. Publishing is no longer blocked by it. |
-| D2 | Package names | The owner reserves the `@tula` npm scope, a Maven group and the Swift package name now. On 2026-10-08 `@tula/core`, `@tula/react` and `create-tula` were unpublished on npm; whether the `@tula` organization itself is free was not determined. **Decided since: the npm scope is `@tula-tech`, the owner's npm organisation; the packages are `@tula-tech/*` and `create-tula` ([releasing](../releasing.md)).** |
+| D2 | Package names | The owner reserves the `@tula` npm scope, a Maven group and the Swift package name now. On 2026-10-08 `@tula/core`, `@tula/react` and `create-tula` were unpublished on npm; whether the `@tula` organization itself is free was not determined. **Decided since: the npm scope is `@tula-tech`, the owner's npm organisation; the packages are `@tula-tech/*` and `create-tula` ([releasing](../internal/releasing.md)).** |
 | D3 | Developer accounts and identifiers | One set owned by the project (Apple Developer Program, Google Play Console and Cloud project, a physical iPhone and Android phone, a domain), set up by the owner while Milestone A is built. |
 | D4 | Minimum OS versions and UI toolkits | iOS 16 and Android API 28; SwiftUI and Compose only. The floors are confirmed against platform documentation when 2.14 and 2.15 start. |
 | D5 | SMS | Twilio only. A first factor and a second factor, both off by default; never a step-up or recovery path for an account with a stronger factor; its own `amr` value. |

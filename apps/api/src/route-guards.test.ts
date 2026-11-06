@@ -53,7 +53,12 @@ async function setup() {
     ipAddress: null,
     authMethods: ['pwd'],
   })
-  return { deps, app: createApp(deps), accessToken: session.accessToken as string }
+  return {
+    deps,
+    app: createApp(deps),
+    accessToken: session.accessToken as string,
+    refreshToken: session.refreshToken as string,
+  }
 }
 
 /** Every `/v1/client/*` route that is not a read, from the app itself. */
@@ -85,9 +90,6 @@ const NO_OWN_LIMIT: Record<string, string> = {
     'ends the session a refresh token or session cookie names: 256 random bits, so nothing can ' +
     'be guessed, and the only effect is the caller’s own sign-out. It must also keep working ' +
     'when a limiter is saturated: a user who cannot sign out stays signed in.',
-  'POST /v1/client/sessions/revoke-others':
-    'authenticated by the caller’s access token and takes no credential or body; it ends ' +
-    'sessions of the caller alone and is idempotent, so repeating it gains nothing.',
   'DELETE /v1/client/sessions/:sessionId':
     'authenticated by the caller’s access token and takes no credential; the id is a UUID of ' +
     'the caller’s own sessions (another user’s is the same 404), so nothing is guessable.',
@@ -179,5 +181,77 @@ describe('the client routes that change state', async () => {
     for (const reason of Object.values(NO_OWN_LIMIT)) {
       expect(reason.length).toBeGreaterThan(40)
     }
+  })
+})
+
+describe('an SSO connection’s callback', () => {
+  test('is limited per IP and per connection, before anything is looked up', async () => {
+    const { deps, app } = await setup()
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    const found = spyOn(deps.flowAttempts, 'findById')
+    const response = await app.request(`/v1/sso/callback/${SOME_ID}?state=x&code=y`)
+    const keys = hit.mock.calls.map(([key]) => key)
+    hit.mockRestore()
+    expect(response.status).toBe(400)
+    expect(keys.some((key) => key.startsWith('sso_callback:ip:'))).toBe(true)
+    expect(keys).toContain(`sso_callback_connection:${SOME_ID}`)
+    // A state of the wrong shape is refused before any attempt is read.
+    expect(found).not.toHaveBeenCalled()
+    found.mockRestore()
+  })
+})
+
+/**
+ * The end-user routes that change who can sign in as the user, or hand someone a way in. Each
+ * is behind `requireRecentAuth()` (`.claude/rules/mfa.md`); a route that drops it must fail here.
+ */
+const STEP_UP_ROUTES: Array<[method: string, path: string]> = [
+  ['POST', '/v1/client/me/email'],
+  ['POST', '/v1/client/me/email/verify'],
+  ['POST', '/v1/client/me/factors/totp'],
+  ['POST', '/v1/client/me/factors/totp/confirm'],
+  ['DELETE', '/v1/client/me/factors/totp'],
+  ['POST', '/v1/client/me/factors/sms'],
+  ['POST', '/v1/client/me/factors/sms/confirm'],
+  ['DELETE', '/v1/client/me/factors/sms'],
+  ['POST', '/v1/client/me/factors/backup-codes'],
+  ['POST', '/v1/client/me/identities/oauth'],
+  ['DELETE', `/v1/client/me/identities/${SOME_ID}`],
+  ['POST', '/v1/client/me/passkeys/options'],
+  ['POST', '/v1/client/me/passkeys'],
+  ['PATCH', `/v1/client/me/passkeys/${SOME_ID}`],
+  ['DELETE', `/v1/client/me/passkeys/${SOME_ID}`],
+  ['POST', '/v1/client/me/phone'],
+  ['POST', '/v1/client/me/phone/verify'],
+  ['DELETE', '/v1/client/me/phone'],
+  ['DELETE', `/v1/client/me/organizations/${SOME_ID}`],
+  ['POST', `/v1/client/me/organizations/${SOME_ID}/setup-links`],
+  ['DELETE', `/v1/client/me/organizations/${SOME_ID}/setup-links/${SOME_ID}`],
+]
+
+describe('the end-user routes that need a recent authentication (H-138)', () => {
+  test('a session whose sign-in is older than the window is asked to step up on each', async () => {
+    const { deps, app, refreshToken } = await setup()
+    deps.clock.advance('11m')
+    // A refresh does not renew `auth_time`, so this token is valid and stale.
+    const stale = (await Sessions.refresh(deps, TEST_TENANT, refreshToken)).accessToken as string
+    const unguarded: string[] = []
+    for (const [method, path] of STEP_UP_ROUTES) {
+      const res = await app.request(path, {
+        method,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${stale}`,
+          'x-tula-publishable-key': PK,
+          'x-tula-client': 'ios',
+        },
+        body: '{}',
+      })
+      const body = (await res.json().catch(() => null)) as { code?: string } | null
+      if (res.status !== 403 || body?.code !== 'auth.step_up_required') {
+        unguarded.push(`${method} ${path} → ${res.status} ${body?.code}`)
+      }
+    }
+    expect(unguarded).toEqual([])
   })
 })

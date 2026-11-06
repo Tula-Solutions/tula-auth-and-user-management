@@ -1,0 +1,475 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim groups: Entra patch shapes",
+  "description": "Operations in any case, a members array as the value, a member removed by a filter path, and excludedAttributes=members (ADR 0067).",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims and verifies a domain, so the directory may create accounts on it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "provision a",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "a-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-a-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "a-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "aId": "id"
+      }
+    },
+    {
+      "name": "provision b",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "b-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-b-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "b-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "bId": "id"
+      }
+    },
+    {
+      "name": "create group eng",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Groups",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          "displayName": "eng-{{suffix}}",
+          "externalId": "g-eng-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "displayName": "eng-{{suffix}}"
+        }
+      },
+      "capture": {
+        "engGid": "id"
+      }
+    },
+    {
+      "name": "Add, capitalised, with a members array",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "Add",
+              "path": "members",
+              "value": [
+                {
+                  "value": "{{aId}}"
+                },
+                {
+                  "value": "{{bId}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "both are members",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "value": "{{aId}}"
+            },
+            {
+              "value": "{{bId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "excludedAttributes=members leaves them out",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/{{engGid}}?excludedAttributes=members",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "displayName": "eng-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "REMOVE, upper case, with a filter path",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "REMOVE",
+              "path": "members[value eq \"{{aId}}\"]"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "one member is left",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "value": "{{bId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "replace renames the group",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "replace",
+              "path": "displayName",
+              "value": "eng3-{{suffix}}"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "displayName": "eng3-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "an unknown member is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "add",
+              "path": "members",
+              "value": [
+                {
+                  "value": "00000000-0000-7000-8000-000000000000"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

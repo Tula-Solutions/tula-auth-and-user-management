@@ -72,7 +72,7 @@ export function releaseTitle(version: string): string {
   return `release: v${version}`
 }
 
-/** The hand-kept version places of docs/releasing.md ("First release", step 3), by file. */
+/** The hand-kept version places of docs/internal/releasing.md ("First release", step 3), by file. */
 export const HAND_KEPT_CONSTANTS: readonly string[] = [
   'packages/cli/src/version.ts',
   'packages/create-tula/src/scaffold.ts',
@@ -329,6 +329,10 @@ export function prepareCommand(
   const released = readVersion()
   steps.changesetVersion(root)
   const version = readVersion()
+  // The value is written to GITHUB_OUTPUT as `name=value` lines: a newline in it would add outputs.
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`not a plain version: ${version}`)
+  }
   if (version === released) {
     throw new Error(`changeset version did not move the version (still ${released})`)
   }

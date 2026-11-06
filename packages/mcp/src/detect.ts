@@ -1,4 +1,5 @@
-import { lstat, readFile, realpath } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { ToolError } from './errors'
 
@@ -118,20 +119,29 @@ export async function detectFramework(root: string, directory: string): Promise<
     throw OUTSIDE
   }
   const manifest = join(real, 'package.json')
-  const stats = await lstat(manifest).catch(() => {
-    throw new ToolError('path.not_found', 'There is no package.json in that directory.')
-  })
-  if (stats.isSymbolicLink()) {
-    throw OUTSIDE
-  }
-  if (!stats.isFile() || stats.size > MAX_MANIFEST_BYTES) {
-    throw new ToolError('package.invalid', 'The package.json there is not a readable file.')
-  }
+  // One handle for the check and the read: a link swapped in between cannot be followed.
+  // O_NOFOLLOW refuses a manifest that is a link (ELOOP); the size is the handle's own.
+  const handle = await open(manifest, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ELOOP') {
+        throw OUTSIDE
+      }
+      throw new ToolError('path.not_found', 'There is no package.json in that directory.')
+    }
+  )
   let parsed: unknown
   try {
-    parsed = JSON.parse(await readFile(manifest, 'utf8'))
-  } catch {
-    throw new ToolError('package.invalid', 'The package.json there is not valid JSON.')
+    const stats = await handle.stat()
+    if (!stats.isFile() || stats.size > MAX_MANIFEST_BYTES) {
+      throw new ToolError('package.invalid', 'The package.json there is not a readable file.')
+    }
+    try {
+      parsed = JSON.parse(await handle.readFile('utf8'))
+    } catch {
+      throw new ToolError('package.invalid', 'The package.json there is not valid JSON.')
+    }
+  } finally {
+    await handle.close()
   }
   const names = new Set<string>()
   if (typeof parsed === 'object' && parsed !== null) {

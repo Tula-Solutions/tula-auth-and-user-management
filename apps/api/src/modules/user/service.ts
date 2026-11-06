@@ -3,6 +3,13 @@ import {
   type CreateUserRequest,
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
+  type ErrorCode,
+  errorDefinition,
+  type ImportRowResult,
+  type ImportUserRow,
+  type ImportUsersRequest,
+  type ImportUsersResult,
+  MAX_IMPORT_METADATA_BYTES,
   type OAuthProvider,
   type ProposalApprover,
   type User,
@@ -22,16 +29,24 @@ import {
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
 import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import { requireNotManaged } from '~/modules/user/managed'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import type { PasswordOutcome, UserRecord } from '~/ports/user-repository'
+import {
+  type BanOrigin,
+  InvalidUserDataError,
+  type PasswordOutcome,
+  type UserRecord,
+} from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -120,6 +135,7 @@ export async function get(
  * @param userId - The access token's subject.
  * @returns The user, and whether they have a password (never the credential itself).
  * @throws NotFoundError when the account was deleted while its access token was still valid.
+ * @throws AuthError `auth.user_banned` when the account is banned.
  */
 export async function me(
   deps: Pick<Deps, 'users'>,
@@ -127,6 +143,10 @@ export async function me(
   userId: string
 ): Promise<CurrentUser> {
   const user = await requireUser(deps, scope, userId)
+  // A ban's revocation can fail after the ban is stored; this read must not outlive it.
+  if (user.bannedAt) {
+    throw new AuthError('auth.user_banned')
+  }
   const found = await Passwords.ofUser(deps, scope.environmentId, user)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
@@ -232,6 +252,7 @@ export async function create(
     firstName,
     lastName,
     bannedAt: null,
+    banOrigin: null,
     lastSignInAt: null,
     createdAt: now,
     phoneNumber: null,
@@ -262,7 +283,266 @@ export async function create(
   return toUser(record)
 }
 
-type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
+/** Split a full name at its first run of whitespace; each half fits a name column. */
+function splitName(name: string | undefined): {
+  firstName: string | null
+  lastName: string | null
+} {
+  const trimmed = name?.trim() ?? ''
+  if (trimmed === '') {
+    return { firstName: null, lastName: null }
+  }
+  const [first = '', ...rest] = trimmed.split(/\s+/)
+  const last = rest.join(' ')
+  return {
+    firstName: [...first].slice(0, 100).join(''),
+    lastName: last === '' ? null : [...last].slice(0, 100).join(''),
+  }
+}
+
+/** Whether a string can be stored: no NUL (`text` and `jsonb` refuse it) and no lone surrogate. */
+function storable(text: string | undefined): boolean {
+  return text === undefined || (!text.includes('\u0000') && !LONE_SURROGATE.test(text))
+}
+
+/** The deepest nesting a row's metadata may have (the object itself is level 1). */
+const MAX_IMPORT_METADATA_DEPTH = 32
+
+/** A UTF-16 surrogate with no partner (`String.prototype.isWellFormed` is not in the TS lib). */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+/**
+ * Whether every key and value of a metadata object can be stored by the database and the
+ * object fits {@link MAX_IMPORT_METADATA_BYTES} **as `jsonb` prints it** (the column's check
+ * measures `metadata::text`).
+ *
+ * `jsonb` prints a space after every `:` and `,` and rewrites numbers, so the compact JSON
+ * is measured with one extra byte for each structural `:` and `,`, and a number JSON writes
+ * with an exponent is refused (`jsonb` would write it out in full, which can be far longer).
+ * A NUL or a lone surrogate in any key or string is refused: `jsonb` rejects both.
+ */
+function metadataFits(metadata: Record<string, unknown>): boolean {
+  // Iterative on purpose: the contract's z.unknown() does not bound depth, and recursing over
+  // (or stringifying) a 100,000-deep array overflows the stack, which would fail the whole call
+  // after earlier rows were committed. The depth is judged before any JSON.stringify.
+  const pending: { value: unknown; depth: number }[] = [{ value: metadata, depth: 1 }]
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { value, depth } = next
+    if (typeof value === 'string') {
+      if (!storable(value)) {
+        return false
+      }
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value) || /e/i.test(String(value))) {
+        return false
+      }
+    } else if (value !== null && typeof value === 'object') {
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return false
+      }
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      } else {
+        for (const [key, child] of Object.entries(value)) {
+          if (!storable(key)) {
+            return false
+          }
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      }
+    }
+  }
+  const compact = JSON.stringify(metadata)
+  let bytes = new TextEncoder().encode(compact).length
+  let inString = false
+  for (let at = 0; at < compact.length; at += 1) {
+    const char = compact[at]
+    if (inString) {
+      if (char === '\\') {
+        at += 1
+      } else if (char === '"') {
+        inString = false
+      }
+    } else if (char === '"') {
+      inString = true
+    } else if (char === ':' || char === ',') {
+      bytes += 1
+    }
+  }
+  return bytes <= MAX_IMPORT_METADATA_BYTES
+}
+
+function refusal(index: number, code: ErrorCode): ImportRowResult {
+  return { index, status: 'refused', code, message: errorDefinition(code).message }
+}
+
+/**
+ * Create the users of one import (`POST /v1/admin/users/import`, ADR 0066), each in a
+ * transaction of its own.
+ *
+ * The call is not all-or-nothing: a row that is refused, or that is a duplicate, does not
+ * stop the rest, and the answer says what became of every row. A row is atomic: the user, their
+ * identity, their credential and their `user.imported` audit entry are written together or
+ * not at all. Running the same call again is safe: rows already imported are reported as
+ * skipped (with the existing user's id), which makes a resumed import idempotent by normalized
+ * email.
+ *
+ * A row's password hash is parsed and judged ({@link Foreign.prepare}) and then stored, as
+ * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters).
+ * It is verified with its own algorithm at the user's first sign-in and replaced there by an
+ * argon2id hash of the same password (`Passwords.needsRehash`). The environment's password
+ * policy and the breached-password check are not applied: only the user knows the plaintext.
+ * The password's age starts at the import, and it has no history (ADR 0066).
+ *
+ * @param deps - Users, clock, ids and the secret box.
+ * @param scope - The project and environment.
+ * @param input - The rows, in order, and the Firebase project's parameters for the rows that
+ *   use them.
+ * @param actor - The administrator running the import, recorded on every entry.
+ * @returns One result per row, in order, with the counts.
+ */
+export async function importUsers(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
+  scope: Scope,
+  input: ImportUsersRequest,
+  actor: Actor
+): Promise<ImportUsersResult> {
+  const seen = new Set<string>()
+  const results: ImportRowResult[] = []
+  for (const [index, row] of input.users.entries()) {
+    results.push(await importRow(deps, scope, row, index, seen, actor, input.firebaseScrypt))
+  }
+  const count = (status: ImportRowResult['status']) =>
+    results.filter((result) => result.status === status).length
+  return {
+    results,
+    created: count('created'),
+    skipped: count('skipped'),
+    refused: count('refused'),
+  }
+}
+
+async function importRow(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
+  scope: Scope,
+  row: ImportUserRow,
+  index: number,
+  seen: Set<string>,
+  actor: Actor,
+  firebase: ImportUsersRequest['firebaseScrypt']
+): Promise<ImportRowResult> {
+  const parsed = parseEmail(row.email)
+  if (!parsed) {
+    return refusal(index, 'email.invalid')
+  }
+  if (seen.has(parsed.normalized)) {
+    return { index, status: 'skipped', reason: 'repeated_in_batch' }
+  }
+  if (
+    !storable(row.name) ||
+    !storable(row.externalId) ||
+    (row.metadata !== undefined && !metadataFits(row.metadata))
+  ) {
+    return refusal(index, 'validation.failed')
+  }
+  const id = deps.ids.next()
+  let algorithm: Foreign.ImportAlgorithm | undefined
+  let passwordHash: string | null = null
+  if (row.password !== undefined) {
+    // The id is needed first: a Firebase hash's sealed parameters are bound to the user.
+    const judged = await Foreign.prepare(
+      deps,
+      { environmentId: scope.environmentId, userId: id },
+      row.password,
+      firebase
+    )
+    if (!judged.ok) {
+      return refusal(index, judged.code)
+    }
+    algorithm = judged.algorithm
+    passwordHash = judged.stored
+  }
+  const now = deps.clock.now()
+  let created: boolean
+  try {
+    created = await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email: parsed.email,
+        emailNormalized: parsed.normalized,
+        emailVerifiedAt: row.emailVerified ? now : null,
+        ...splitName(row.name),
+        createdAt: now,
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash,
+        ...(row.externalId !== undefined && { externalId: row.externalId }),
+        ...(row.metadata !== undefined && { metadata: row.metadata }),
+      },
+      Audit.entry(deps, scope, {
+        type: 'user.imported',
+        actor,
+        target: { type: 'user', id },
+        data: {
+          emailVerified: row.emailVerified,
+          ...(algorithm === undefined ? { passwordless: true } : { passwordAlgorithm: algorithm }),
+        },
+      })
+    )
+  } catch (error) {
+    // The store's own check refused what the pre-check let through: that row alone is
+    // refused, and the rows before it stay (ADR 0066).
+    if (error instanceof InvalidUserDataError) {
+      return refusal(index, 'validation.failed')
+    }
+    throw error
+  }
+  // Taken in either case from here on, whether this row made the user or found them there.
+  seen.add(parsed.normalized)
+  if (created) {
+    return { index, status: 'created', id }
+  }
+  // The address is taken: say whose it is, so a retried batch can tell its own users from
+  // ones that were there before (ADR 0066, "A retried batch"). An id and a yes or no, nothing
+  // else of the user; the administrator named the address and can list users anyway.
+  const existing = await deps.users.findImportMatch(scope.environmentId, parsed.normalized)
+  if (existing === null) {
+    return { index, status: 'skipped', reason: 'email_exists' }
+  }
+  return {
+    index,
+    status: 'skipped',
+    reason: 'email_exists',
+    id: existing.id,
+    sameExternalId: row.externalId !== undefined && existing.externalId === row.externalId,
+  }
+}
+
+type RevocationDeps = Pick<
+  Deps,
+  'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids' | 'verificationTokens'
+>
+
+/**
+ * Consume the user's outstanding `email_addition` code (ADR 0059): a ban or an admin-set
+ * address ends the claim to add another one, which an unban must not bring back.
+ */
+async function consumeEmailAddition(
+  deps: Pick<Deps, 'verificationTokens' | 'clock'>,
+  scope: Scope,
+  userId: string
+): Promise<void> {
+  const pending = await deps.verificationTokens.findLatest(scope.environmentId, 'email_addition', {
+    userId,
+  })
+  if (pending && !pending.consumedAt) {
+    await deps.verificationTokens.consume(scope.environmentId, pending.id, deps.clock.now())
+  }
+}
 
 /**
  * Ban a user: they can no longer sign in or refresh, and every session ends now.
@@ -277,6 +557,8 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * @param proposal - When the ban carries out an agent's proposal a human approved (ADR
  *   0053): the proposal and who approved it, recorded in the entry beside the agent actor.
  *   Only `Proposals.approve` passes it.
+ * @param origin - `directory` when a directory's deprovisioning bans (ADR 0067), so only its
+ *   reactivation lifts it; an operator's ban by default.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -285,7 +567,8 @@ export async function ban(
   scope: Scope,
   userId: string,
   actor: Actor,
-  proposal?: { proposalId: string; approvedBy: ProposalApprover }
+  proposal?: { proposalId: string; approvedBy: ProposalApprover },
+  origin: BanOrigin = 'operator'
 ): Promise<User> {
   const now = deps.clock.now()
   const user = await deps.users.setBanned(
@@ -298,11 +581,13 @@ export async function ban(
       actor,
       target: { type: 'user', id: userId },
       data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
-    })
+    }),
+    origin
   )
   if (!user) {
     throw new NotFoundError()
   }
+  await consumeEmailAddition(deps, scope, userId)
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   return toUser(user)
 }
@@ -383,6 +668,13 @@ export async function liftBan(
 /**
  * Delete a user and everything that belongs to them.
  *
+ * **Refused while the user is the only member who holds `org:sys:memberships:manage` of an
+ * organization** (ADR 0065, TULA-124): the cascade would leave an organization nobody can
+ * manage, as removing or demoting that member would (`organization.last_manager`). The
+ * operator adds another manager or deletes the organization first. The refusal is checked
+ * before anything is changed (a refused deletion does not end the user's sessions), and
+ * again by the store under the organizations' locks, which is what decides it.
+ *
  * Their sessions are revoked through the session service first, so their access tokens are
  * denylisted before the rows disappear.
  *
@@ -393,6 +685,8 @@ export async function liftBan(
  * @param userId - The user.
  * @param actor - Who is deleting them, for the audit log.
  * @throws NotFoundError when they do not exist in this environment.
+ * @throws AuthError `user.last_organization_manager` (`params.organizationIds`) when they are
+ *   the only manager of an organization.
  */
 export async function remove(
   deps: RevocationDeps,
@@ -401,19 +695,56 @@ export async function remove(
   actor: Actor
 ): Promise<void> {
   await requireUser(deps, scope, userId)
+  const early = await deps.users.soleManagerOf(scope.environmentId, userId)
+  if (early.length > 0) {
+    throw lastOrganizationManager(early)
+  }
   await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
-  const deleted = await deps.users.delete(
+  const result = await deps.users.delete(
     scope.environmentId,
     userId,
     Audit.entry(deps, scope, { type: 'user.deleted', actor, target: { type: 'user', id: userId } })
   )
-  if (!deleted) {
-    throw new NotFoundError()
+  switch (result.outcome) {
+    case 'deleted':
+      // The delete cascaded any session a sign-in stored after the first sweep, so a sweep now
+      // finds nothing; the store names the ones it ended and they are denylisted here (H-229).
+      // Accepted: should the denylist fail now (503), the user is already gone and a retry
+      // cannot name these again, so a session that raced the first sweep keeps its access
+      // token until it expires (one access-token lifetime, ~60s). The first sweep covered
+      // every session that existed before the deletion began.
+      await Sessions.denylist(deps, result.endedSessionIds, deps.clock.now())
+      return
+    case 'last_manager':
+      throw lastOrganizationManager(result.organizationIds)
+    case 'not_found':
+      throw new NotFoundError()
   }
 }
 
+/** The most organization ids an error names; `count` says how many there are. */
+const MAX_NAMED_ORGANIZATIONS = 20
+
+/** The refusal to delete a user who alone manages these organizations. */
+function lastOrganizationManager(organizationIds: readonly string[]): AuthError {
+  return new AuthError('user.last_organization_manager', {
+    organizationIds: organizationIds.slice(0, MAX_NAMED_ORGANIZATIONS).join(','),
+    count: organizationIds.length,
+  })
+}
+
 type PasswordDeps = RevocationDeps &
-  Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
+  Pick<
+    Deps,
+    | 'config'
+    | 'environmentSettings'
+    | 'breachChecker'
+    | 'mailer'
+    | 'rateLimiter'
+    | 'secretBox'
+    | 'ssoConnections'
+    | 'scim'
+  >
 
 /**
  * How often storing a password is tried when the stored password moved between the comparison
@@ -470,9 +801,16 @@ async function replacePassword(
   actor: Actor,
   method: 'admin_reset' | 'self' | 'reset',
   beforeStore?: () => Promise<void>,
-  expired?: { setAt: number }
+  expired?: { setAt: number },
+  breakGlass = false
 ): Promise<void> {
   const { email, emailNormalized } = user
+  if (method !== 'admin_reset' && !breakGlass) {
+    // The identity provider owns a managed account's password (decision 11). Here, in the one
+    // path that stores a user's own password, so reset, expired-password replacement and change
+    // all hold; an administrator's route is the break-glass and never asks.
+    await requireNotManaged(deps, scope.environmentId, user)
+  }
   if (email === null || emailNormalized === null) {
     // A password sign-in starts with an address. On an account that has none (made through X
     // or Facebook; ADR 0026) a password would be a credential nobody can use, and one that
@@ -614,7 +952,7 @@ async function replacePassword(
  * @throws ConflictError when another user of the environment has the address.
  */
 export async function setEmail(
-  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config'>,
+  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config' | 'verificationTokens'>,
   scope: Scope,
   userId: string,
   email: string,
@@ -655,6 +993,7 @@ export async function setEmail(
   if (stored === 'taken') {
     throw new ConflictError({ message: 'A user with this email already exists.' })
   }
+  await consumeEmailAddition(deps, scope, userId)
   return toUser(stored)
 }
 
@@ -662,8 +1001,9 @@ export async function setEmail(
  * Set a user's password from a server or the dashboard (an admin reset). A user who has no
  * password gets their first one.
  *
- * Every session of the user ends: whoever knew the old password is signed out everywhere. The
- * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
+ * Every session of the user ends, before the new hash is stored and again after it (a sweep
+ * that fails first leaves the old password in force; H-096): whoever knew the old password is
+ * signed out everywhere. The sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
  * The user is emailed that an administrator set their password (ADR 0023).
  *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
@@ -682,7 +1022,12 @@ export async function setPassword(
   actor: Actor
 ): Promise<void> {
   const user = await requireUser(deps, scope, userId)
-  await replacePassword(deps, scope, user, password, actor, 'admin_reset')
+  // Sessions end before the store and again after it, as a reset does (H-096): a failed sweep
+  // never leaves the new password beside live old sessions, and a sign-in with the old password
+  // that landed in between is caught by the second one.
+  await replacePassword(deps, scope, user, password, actor, 'admin_reset', async () => {
+    await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+  })
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   // Guesses at the old password must not keep the user out of the new one they were just given.
   // (`replacePassword` refused an account with no address, so there is one to clear for.)
@@ -714,6 +1059,8 @@ export async function setPassword(
  * @param password - The new password; must meet the policy.
  * @param actor - The user themselves, with the request's origin, for the audit log.
  * @param claim - Spends the proof; throw to refuse.
+ * @param breakGlass - The user is a break-glass member of an enforced connection, who keeps a
+ *   password reset though the connection manages the account (ADR 0067).
  * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or whatever
  *   `claim` throws.
  */
@@ -723,13 +1070,24 @@ export async function resetPassword(
   userId: string,
   password: string,
   actor: Actor,
-  claim: () => Promise<void>
+  claim: () => Promise<void>,
+  breakGlass = false
 ): Promise<void> {
   const user = await requireUser(deps, scope, userId)
-  await replacePassword(deps, scope, user, password, actor, 'reset', async () => {
-    await claim()
-    await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
-  })
+  await replacePassword(
+    deps,
+    scope,
+    user,
+    password,
+    actor,
+    'reset',
+    async () => {
+      await claim()
+      await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+    },
+    undefined,
+    breakGlass
+  )
   // Again, now that the old password no longer works: someone who knew it could have signed in
   // between the first sweep and the store, and that session must not outlive the reset.
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
@@ -741,7 +1099,7 @@ export async function resetPassword(
     // The password is stored; a lockout left in place only delays the next sign-in.
     logger.warn('could not clear the sign-in lockout after a password reset', {
       environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
 }
@@ -835,6 +1193,9 @@ export async function replaceExpiredPassword(
  * nobody anything about anyone else; it is given before the lockout is counted, since nothing
  * was guessed.
  *
+ * The other sessions are swept before the store and again after it, and the lockout is
+ * cleared last, only once the change succeeded (H-096, H-170).
+ *
  * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
  *   clock.
  * @param scope - The project and environment.
@@ -843,11 +1204,12 @@ export async function replaceExpiredPassword(
  * @param origin - Where the request came from, for the audit log.
  * @throws AuthError `auth.invalid_credentials` when the current password is wrong, or
  *   `password.not_set` (409) when the account has no password.
+ * @throws AuthError `user.managed` (403) when an active SSO connection or SCIM directory manages the account.
  * @throws RateLimitError while the user is locked out after repeated wrong guesses.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function changePassword(
-  deps: PasswordDeps & Pick<Deps, 'lockout'>,
+  deps: PasswordDeps & Pick<Deps, 'lockout' | 'ssoConnections' | 'scim'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   input: ChangePasswordRequest,
@@ -855,6 +1217,10 @@ export async function changePassword(
 ): Promise<void> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
   const user = await deps.users.findById(scope.environmentId, self.userId)
+  if (user) {
+    // The identity provider owns a managed account's password (decision 11).
+    await requireNotManaged(deps, scope.environmentId, user)
+  }
   const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
   // An account with no address has no password either, and gets the same answer.
   if (user?.emailNormalized === null || (found && found.passwordHash === null)) {
@@ -868,15 +1234,29 @@ export async function changePassword(
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
-  if (!(await Passwords.verify(found?.passwordHash ?? null, input.currentPassword)) || !found) {
+  if (
+    !(await Passwords.verify(
+      found?.passwordHash ?? null,
+      input.currentPassword,
+      found && Foreign.opener(deps, scope.environmentId, found.user.id)
+    )) ||
+    !found
+  ) {
     throw new AuthError('auth.invalid_credentials')
   }
-  await deps.lockout.clear(lockKey)
-  await replacePassword(deps, scope, found.user, input.newPassword, actor, 'self')
-  await Sessions.revokeOthers(deps, scope, {
-    userId: self.userId,
-    currentSessionId: self.sessionId,
-    reason: 'password_changed',
-    actor,
+  const sweep = () =>
+    Sessions.revokeOthers(deps, scope, {
+      userId: self.userId,
+      currentSessionId: self.sessionId,
+      reason: 'password_changed',
+      actor,
+    })
+  // Other sessions end before the store and again after it (H-096), as a reset's do.
+  await replacePassword(deps, scope, found.user, input.newPassword, actor, 'self', async () => {
+    await sweep()
   })
+  await sweep()
+  // Cleared only once the change went through (H-170): a policy or history refusal leaves the
+  // guess budget as it was.
+  await deps.lockout.clear(lockKey)
 }

@@ -91,6 +91,12 @@ export const RequestSchema = z
      */
     instance: z.enum(['first', 'second']).optional(),
   })
+  // Real `fetch` refuses a GET with a body (the in-process app tolerated it), so a scenario
+  // that wrote one passed in process and failed against a live server.
+  .refine((request) => !(request.method === 'GET' && request.body !== undefined), {
+    message: 'a GET request has no body: leave `body` out',
+    path: ['body'],
+  })
   .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
     message: 'a request carries the secret key or an access token, not both',
   })
@@ -339,6 +345,26 @@ export const EmailMessageStepSchema = z
          * text. The step fails when the text holds none, or more than one different run.
          */
         captureCode: z.string().optional(),
+        /**
+         * Stores one parameter of the fragment of the link in the text: the first
+         * `https://…#…` URL of the text part. For a message whose link carries a credential
+         * in its fragment (an organization invitation's `tula_invitation`). The step fails
+         * when there is no such URL or it lacks the parameter; the value is never reported.
+         */
+        captureFragmentParam: z
+          .object({
+            /** The fragment parameter to read, e.g. `tula_invitation`. */
+            name: z.string().min(1),
+            /** Variable to store its value in. */
+            capture: z.string().min(1),
+            /**
+             * What the link must be once its fragment is removed: exactly this URL (the
+             * redirect URL that was asked for).
+             */
+            url: z.string().optional(),
+          })
+          .strict()
+          .optional(),
         /** What the subject must be, exactly. */
         subject: z.string().optional(),
         /** Strings the text part must contain, each of them. */
@@ -706,6 +732,63 @@ export const WaitStepSchema = z
   .meta({ ref: 'ConformanceWaitStep' })
 
 /** One step of a scenario. */
+/**
+ * Play the user at the server's mock enterprise identity provider (an OIDC SSO connection,
+ * ADR 0067), or learn its issuer. With `captureIssuer`, the variable receives the issuer a
+ * connection names to sign in through the mock: an address the server can reach itself.
+ * With `authorizationUrl` (the `authorizationUrl` of `…/sso`), the runner signs in at the
+ * mock as `email` and follows the connection's callback, as for an `oauth` step. Needs the
+ * mock provider (`OAUTH_MOCK_PROVIDER=true`).
+ */
+export const SsoStepSchema = z
+  .object({
+    name: z.string().min(1),
+    sso: z
+      .object({
+        /** Variable that receives the mock identity provider's issuer. */
+        captureIssuer: z.string().optional(),
+        /** The `authorizationUrl` of an SSO start, e.g. `{{authorizationUrl}}`. */
+        authorizationUrl: z.string().optional(),
+        /** The address the identity provider reports. */
+        email: z.string().optional(),
+        /** The provider's id for the account. Derived from the address when left out. */
+        subject: z.string().optional(),
+        /** OIDC only: the groups the ID token carries, separated by commas. */
+        groups: z.string().optional(),
+        /** The provider reports the address with `email_verified: false`. */
+        unverified: z.boolean().optional(),
+        /** Variable that receives the ticket. The step fails when the callback sent an error. */
+        captureTicket: z.string().optional(),
+        /** Variable that receives the attempt id. */
+        captureAttempt: z.string().optional(),
+        /** Variable that receives the id of a test sign-in (`#tula_test=<id>`, TULA-145). */
+        captureTest: z.string().optional(),
+        /** The contract error code the callback must send instead of a ticket. */
+        expectError: z.string().optional(),
+        /** Variable that receives the mock identity provider's SAML metadata document. */
+        captureSamlMetadata: z.string().optional(),
+        /** SAML only: the failure the mock identity provider produces (a `MockSamlFailure`). */
+        failure: z.string().optional(),
+        /** SAML only: which of the mock's signing keys signs (`a`, `b` or `c`). */
+        key: z.enum(['a', 'b', 'c']).optional(),
+        /** SAML only: the same assertion, posted a second time, must be refused. */
+        expectReplayRefused: z.boolean().optional(),
+      })
+      .strict()
+      .refine(
+        (sso) =>
+          [sso.captureIssuer, sso.captureSamlMetadata, sso.authorizationUrl].filter(
+            (v) => v !== undefined
+          ).length === 1,
+        {
+          message:
+            'an sso step takes one of `captureIssuer`, `captureSamlMetadata` or `authorizationUrl`',
+        }
+      ),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceSsoStep' })
+
 export const StepSchema = z
   .union([
     RequestStepSchema,
@@ -715,6 +798,7 @@ export const StepSchema = z
     SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
+    SsoStepSchema,
     IdTokenStepSchema,
     PasskeyStepSchema,
     WebhookStepSchema,

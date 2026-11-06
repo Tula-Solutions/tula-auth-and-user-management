@@ -26,12 +26,18 @@ export const APP_PATHS = {
   afterSignIn: '/app',
   signIn: '/sign-in',
   signUp: '/sign-up',
+  organizations: '/organizations',
+  organizationProfile: '/organization',
+  createOrganization: '/organization/new',
 }
 
 const COMPONENTS: Record<Screen, { component: string; page: string }> = {
   'sign-in': { component: 'SignIn', page: 'SignInPage' },
   'sign-up': { component: 'SignUp', page: 'SignUpPage' },
   account: { component: 'UserProfile', page: 'AccountPage' },
+  'organization-switcher': { component: 'OrganizationSwitcher', page: 'OrganizationsPage' },
+  'create-organization': { component: 'CreateOrganization', page: 'CreateOrganizationPage' },
+  'organization-profile': { component: 'OrganizationProfile', page: 'OrganizationProfilePage' },
 }
 
 function secretName(provider: SandboxProvider): string {
@@ -80,6 +86,9 @@ export function environmentOf(config: PlaygroundConfig): GeneratedEnvironment {
     },
     signUp: { password: settings.signUpPassword },
     mfa: { policy: settings.mfaPolicy },
+  }
+  if (settings.organizations) {
+    out.organizations = { enabled: true }
   }
   if (settings.methods.passkey) {
     out.passkeys = { rpId: 'localhost' }
@@ -194,6 +203,19 @@ export function jsx(config: PlaygroundConfig): string {
     props.push(`signUpUrl='${APP_PATHS.signUp}'`)
   } else if (config.screen === 'sign-up') {
     props.push(`signInUrl='${APP_PATHS.signIn}'`)
+  } else if (config.screen === 'organization-switcher') {
+    props.push(
+      `organizationProfileUrl='${APP_PATHS.organizationProfile}'`,
+      `createOrganizationUrl='${APP_PATHS.createOrganization}'`
+    )
+  } else if (config.screen === 'create-organization') {
+    props.push(`afterCreateUrl='${APP_PATHS.organizations}'`)
+  } else if (config.screen === 'organization-profile') {
+    props.push(
+      `invitationUrl='${APP_PATHS.organizations}'`,
+      `afterLeaveUrl='${APP_PATHS.organizations}'`,
+      `afterDeleteUrl='${APP_PATHS.organizations}'`
+    )
   } else {
     props.push(`afterSignOutUrl='${APP_PATHS.signIn}'`)
   }

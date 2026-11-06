@@ -1,8 +1,10 @@
 import { applyCommand } from './commands/apply'
 import { approveCommand } from './commands/approve'
+import { auditCommand } from './commands/audit'
 import { devCommand } from './commands/dev'
 import { diffCommand } from './commands/diff'
 import { doctorCommand } from './commands/doctor'
+import { importCommand } from './commands/import'
 import { mcpCommand } from './commands/mcp'
 import { policyCommand } from './commands/policy'
 import { type CliIo, type Command, runCli } from './framework'
@@ -11,9 +13,11 @@ import { processIo } from './process-io'
 export { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
 export { applyCommand } from './commands/apply'
 export { approveCommand } from './commands/approve'
+export { auditCommand } from './commands/audit'
 export { devCommand } from './commands/dev'
 export { diffCommand } from './commands/diff'
 export { doctorCommand } from './commands/doctor'
+export { importCommand } from './commands/import'
 export { buildMcpServer, mcpCommand } from './commands/mcp'
 export { policyCommand } from './commands/policy'
 export {
@@ -100,6 +104,8 @@ export const COMMANDS: readonly Command[] = [
   devCommand,
   mcpCommand,
   approveCommand,
+  importCommand,
+  auditCommand,
 ]
 
 /**

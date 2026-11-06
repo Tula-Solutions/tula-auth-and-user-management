@@ -5,9 +5,9 @@ Nine packages are released to npm under the `latest` dist-tag, as plain `0.x` ve
 dist-tag ([First release](#first-release) records how it went; `-alpha.0` was skipped on
 purpose, step 1); the owner then dropped the label, and `0.1.0` was skipped so that no
 plain version shares its number with the alphas. Two are built and checked and **held back**. The licence is Apache-2.0 for
-the whole repository ([`LICENSE`](../LICENSE)). The npm scope is decided: `@tula-tech`, the
+the whole repository ([`LICENSE`](../../LICENSE)). The npm scope is decided: `@tula-tech`, the
 owner's npm organisation (`create-tula` is unscoped). The design is in
-[ADR 0020](adr/0020-packaging-and-release.md).
+[ADR 0020](../adr/0020-packaging-and-release.md).
 
 **The first release is made by a person, from their machine** ([First release](#first-release)):
 the release workflow has no token and publishes through npm trusted publishing, which npm
@@ -325,6 +325,13 @@ branch is in this repository (a fork can name a branch anything). A dependency b
 in a `package.json` is waived with the label. **The check is not one of the ruleset's required
 checks**: making it required is a decision of the repository's owner.
 
+Decision (TULA-157, H-353): **make the check required**. Recommendation: add
+`changeset-check` to the ruleset's required checks. Reason: while it is advisory, a change to a
+shipped file can merge with no changeset and then be missing from the changelog and the
+version bump. The check already exempts the release and back-merge branches and has a label
+for the rest, so requiring it blocks nothing legitimate. It is a repository setting, so
+nothing here changes; the owner makes it (TULA-194).
+
 ## The release workflow
 
 `.github/workflows/release.yml` runs on every push to `main` (git-flow: `main` is
@@ -347,6 +354,23 @@ what they like, once `NPM_PUBLISH` is on. The environment closes that: GitHub le
 carries the environment's name. The workflow file can only name the environment; its rules
 are a setting of the repository, made by a person ([First release](#first-release), step
 8), and no test here can see them.
+
+Decision (TULA-157, H-354): **publish the dry-run's tarballs, not a rebuild**. Recommendation:
+have `publish` download the `package-tarballs` artifact the `dry-run` job checked and publish
+those files. Reason: today `publish` rebuilds from the checkout, so what npm receives is not
+byte for byte what the dry run verified. Not done here: `release:publish` builds, packs and
+checks in one script and `packages:check` is built around that, so the change touches the
+release script, the workflow and their tests, and cannot be exercised without a real publish.
+The gap is small (same commit, `--ignore-scripts` install, frozen lockfile) and provenance
+still names the run and the commit.
+
+Decision (TULA-157, H-356): **split `release-pr.yml`'s permissions**. Recommendation: one job
+that installs and runs `changeset version` with `contents: read`, and a second that pushes the
+branch and opens the pull request with the write permissions, passing the commit as an
+artifact. Reason: the write token is today present while `bun install` and the changeset
+tooling run. Left as is: the workflow runs only for `develop`, installs with `--ignore-scripts`
+and `persist-credentials: false` (TULA-191), so the exposure is small, and the split would
+move a commit between jobs, which the workflow's tests do not model.
 
 ## The API image
 
@@ -399,6 +423,13 @@ releases into `main` while a run of the first is still going.
 The image is not signed and carries no SBOM of its own beyond what the build attaches;
 `:latest` moves, so pin `<version>` (a new project does) or a digest where it matters.
 
+Decision (TULA-157, H-342): the image stays unsigned for now; the recommendation is a build
+provenance attestation (`actions/attest-build-provenance`, pushed to the registry by digest) in
+the `tag` job, which needs `id-token: write` and `attestations: write` there and a new row in
+`.claude/hooks/api-image.test.ts`'s permission rules. It is recorded and not made: it widens the
+permissions of a workflow held to a small set, and the owner should approve that. Until then pin
+a digest where it matters.
+
 ## The copy on GitHub Packages
 
 `.github/workflows/github-packages.yml` also runs on every push to `main`, and publishes
@@ -433,6 +464,13 @@ image: `https://github.com/orgs/Tula-Solutions/packages` lists them, and each on
 settings has **Change visibility**. A version that is on GitHub Packages is never
 replaced; one published by mistake is deleted there by hand.
 
+Decision (TULA-157, H-355): **keep the snippet allow-list as it is**. `scripts/snippets.ts`
+does not accept any tracked file: a source must have an extension of `LANGUAGES` (or be
+`.env.example`) and lie outside `isOffLimits` (env files, `node_modules`, `.git`, `*.local*`),
+and the path is checked again after symbolic links resolve. Narrowing it to a list of
+directories would break every sample that points at an example app for little gain, because
+the copied text lands in a committed markdown diff that is reviewed. Recommendation: no change.
+
 ## The documentation site
 
 A release updates the documentation site by itself; there is no step to remember.
@@ -454,9 +492,15 @@ released docs: until one does, the root shows `develop`'s docs marked **unreleas
 Two things are a person's, once: Pages is set to deploy from GitHub Actions, and the
 `github-pages` environment allows `main` **and** `develop` to deploy (a repository setting; a
 run for a branch the environment refuses fails at the deploy job, and nothing is published).
+Decision (TULA-157, H-358), **unverified**: a dispatch of `docs-pages.yml` from any branch
+and a push to `develop` both reach the `github-pages` environment; whether a branch other than
+`main` and `develop` is refused is that environment's branch rule, a hosted setting no file
+here shows. The owner confirms it (TULA-194): the rule should list `main` and `develop` and
+nothing else.
+
 Nothing in a release needs the docs site to build, but a release that breaks it (a docs link that
 no longer resolves) fails this workflow and leaves the previous site in place; `bun run verify`
-catches that before the merge. Details: [`apps/docs/README.md`](../apps/docs/README.md),
+catches that before the merge. Details: [`apps/docs/README.md`](../../apps/docs/README.md),
 "Where it is published".
 
 ## What stops a publish that was not meant
@@ -477,6 +521,14 @@ test being changed too:
    `npm-publish` environment (`main` only; it has no required reviewer, so a merge to `main` publishes). Check it by hand
    whenever the repository's settings change.
 4. The script refuses to upload from a GitHub Actions job that holds a token.
+5. Decision (TULA-157, H-343): every `uses:` in `.github/workflows/` is pinned to a commit SHA
+   with its version as a trailing comment (Dependabot keeps them moving), and every checkout sets
+   `persist-credentials: false`. Installs in the publish path use `--ignore-scripts`.
+   `.claude/hooks/workflow-supply-chain.test.ts` fails for a floating tag.
+6. The packed manifest of each package is checked again on the unpacked tarball before the copy to
+   GitHub Packages (`unpackedProblems`), a dependency that is not a registry version or a
+   `bundledDependencies` entry is refused, and `chooseChannel` refuses an `npm_config_*` token
+   variable or an npm configuration file that holds a literal token (`scripts/npm-config.ts`).
 
 ## First release
 

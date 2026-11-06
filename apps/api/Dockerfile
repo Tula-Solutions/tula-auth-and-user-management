@@ -8,8 +8,8 @@
 # a tag can be moved to different contents, a digest cannot. Dependabot proposes the update
 # when a new digest or version is published (.github/dependabot.yml); keep the tag in step with
 # `packageManager` in the root package.json. To check or refresh it by hand:
-#   docker buildx imagetools inspect oven/bun:1.4.3-slim
-FROM oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS base
+#   docker buildx imagetools inspect oven/bun:1.4.4-slim
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS base
 WORKDIR /usr/src/app
 
 # Production dependencies only, for the workspaces the API is built from. The manifests of the

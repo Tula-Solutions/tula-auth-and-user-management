@@ -1,0 +1,7 @@
+{"user_id":"auth0|64f1a0000000000000000001","email":"maya@northline.app","email_verified":true,"name":"Maya Chen","given_name":"Maya","family_name":"Chen","nickname":"maya","user_metadata":{"theme":"dark"},"app_metadata":{"plan":"team"},"created_at":"2024-01-02T10:00:00.000Z"}
+{"user_id":"auth0|64f1a0000000000000000002","email":"jon@northline.app","email_verified":false,"given_name":"Jon","family_name":"Okafor"}
+{"user_id":"google-oauth2|1100000000000000001","email":"priya@northline.app","email_verified":true,"name":"Priya N"}
+{"user_id":"auth0|64f1a0000000000000000003","email":"ines@northline.app","email_verified":true,"custom_password_hash":{"algorithm":"bcrypt","hash":{"value":"$2b$10$l30gcf50Ot55i0XDX0sXC.FFC7BkQM14q7ts8VmHMeSn4JgfZ1jEu"}}}
+{"user_id":"auth0|64f1a0000000000000000004","email":"blocked@northline.app","email_verified":true,"blocked":true}
+{"user_id":"auth0|64f1a0000000000000000005","email_verified":true,"phone_number":"+14155550100"}
+not json at all

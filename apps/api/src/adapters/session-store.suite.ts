@@ -97,6 +97,8 @@ export function describeSessionStore(
         authMethods: [],
         hookClaims: null,
         deviceThumbprint: null,
+        activeOrganizationId: null,
+        ssoConnectionId: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -172,6 +174,8 @@ export function describeSessionStore(
         authMethods: ['pwd', 'otp', 'mfa'],
         hookClaims: null,
         deviceThumbprint: null,
+        activeOrganizationId: null,
+        ssoConnectionId: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -625,6 +629,22 @@ export function describeSessionStore(
       expect((await ctx.store.findTokenById(ctx.a.environmentId, root.id))?.usedAt).toBeNull()
     })
 
+    test('a token cannot be rotated into another session’s family (H-237)', async () => {
+      const { root } = await seed(ctx.a)
+      const { session: other } = await seed(ctx.a)
+      const child = token(other.id, { parentId: root.id })
+      expect(
+        await ctx.store.rotate(ctx.a.environmentId, {
+          parentId: root.id,
+          child,
+          at: later(2_000),
+          idleExpiresAt: later(8 * DAY),
+        })
+      ).toBe(false)
+      expect(await ctx.store.findToken(ctx.a.environmentId, child.tokenHash)).toBeNull()
+      expect((await ctx.store.findTokenById(ctx.a.environmentId, root.id))?.usedAt).toBeNull()
+    })
+
     test('revoke records the reason once', async () => {
       const { session: s } = await seed(ctx.a)
       expect(
@@ -844,6 +864,33 @@ export function describeSessionStore(
       expect(await ctx.store.findById(ctx.a.environmentId, first.session.id)).toMatchObject({
         revokeReason: 'revoked_by_user',
       })
+    })
+
+    test('revokes only the listed sessions when given a list, never one created since', async () => {
+      const userId = await ctx.a.user()
+      const listed = await seed(ctx.a, { userId })
+      const since = await seed(ctx.a, { userId })
+      expect(
+        await ctx.store.revokeByUser(ctx.a.environmentId, userId, 'mfa_changed', later(1_000), {
+          activity: () => Audit.none('fixture'),
+          onlyIds: [listed.session.id],
+        })
+      ).toEqual([listed.session.id])
+      expect(
+        (await ctx.store.findById(ctx.a.environmentId, since.session.id))?.revokedAt
+      ).toBeNull()
+    })
+
+    test('an empty list of sessions revokes nothing', async () => {
+      const userId = await ctx.a.user()
+      const live = await seed(ctx.a, { userId })
+      expect(
+        await ctx.store.revokeByUser(ctx.a.environmentId, userId, 'mfa_changed', later(1_000), {
+          activity: () => Audit.none('fixture'),
+          onlyIds: [],
+        })
+      ).toEqual([])
+      expect((await ctx.store.findById(ctx.a.environmentId, live.session.id))?.revokedAt).toBeNull()
     })
 
     test('purges sessions that had ended by a moment, with their token chains, in batches', async () => {
@@ -1069,6 +1116,96 @@ export function describeSessionStore(
       )
       expect((await ctx.store.findById(env, expired.id))?.idleExpiresAt).toEqual(later(500))
       expect((await ctx.store.findById(env, live.id))?.lastActiveAt).toEqual(now)
+    })
+
+    describe('the organization a session acts in (ADR 0065)', () => {
+      test('is none for a new session, set and cleared on a live one, and read by every read', async () => {
+        const env = ctx.a.environmentId
+        const { session: s, root } = await seed(ctx.a)
+        const organization = Bun.randomUUIDv7()
+        expect((await ctx.store.findById(env, s.id))?.activeOrganizationId).toBeNull()
+        const set = await ctx.store.setActiveOrganization(env, s.id, organization, later(10))
+        expect(set?.activeOrganizationId).toBe(organization)
+        expect((await ctx.store.findById(env, s.id))?.activeOrganizationId).toBe(organization)
+        expect((await ctx.store.findToken(env, root.tokenHash))?.session.activeOrganizationId).toBe(
+          organization
+        )
+        const cleared = await ctx.store.setActiveOrganization(env, s.id, null, later(20))
+        expect(cleared?.activeOrganizationId).toBeNull()
+      })
+
+      test('a session keeps the SSO connection it was created with, from both reads', async () => {
+        const env = ctx.a.environmentId
+        const connection = Bun.randomUUIDv7()
+        const { session: s, root } = await seed(ctx.a, { ssoConnectionId: connection })
+        expect((await ctx.store.findById(env, s.id))?.ssoConnectionId).toBe(connection)
+        expect((await ctx.store.findToken(env, root.tokenHash))?.session.ssoConnectionId).toBe(
+          connection
+        )
+      })
+
+      test('a session created with one keeps it, and a refresh, a touch and a step-up leave it', async () => {
+        const env = ctx.a.environmentId
+        const organization = Bun.randomUUIDv7()
+        const { session: s, root } = await seed(ctx.a, { activeOrganizationId: organization })
+        expect((await ctx.store.findById(env, s.id))?.activeOrganizationId).toBe(organization)
+        await ctx.store.touch(env, s.id, later(1000), later(DAY))
+        await ctx.store.rotate(env, {
+          parentId: root.id,
+          child: token(s.id, { parentId: root.id }),
+          at: later(2000),
+          idleExpiresAt: later(DAY),
+        })
+        const stepped = await ctx.store.recordAuthentication(
+          env,
+          s.id,
+          { at: later(3000), methods: ['otp'], hookClaims: NO_CLAIMS },
+          steppedUp(ctx.a, s.id)
+        )
+        expect(stepped?.activeOrganizationId).toBe(organization)
+        expect((await ctx.store.findById(env, s.id))?.activeOrganizationId).toBe(organization)
+      })
+
+      test('a revoked, expired, unknown or foreign session is not changed', async () => {
+        const env = ctx.a.environmentId
+        const organization = Bun.randomUUIDv7()
+        const { session: revoked } = await seed(ctx.a)
+        await ctx.store.revoke(env, revoked.id, 'sign_out', later(1), Audit.none('fixture'))
+        const { session: expired } = await seed(ctx.a, { idleExpiresAt: later(500) })
+        const { session: live } = await seed(ctx.a)
+        expect(
+          await ctx.store.setActiveOrganization(env, revoked.id, organization, later(1000))
+        ).toBeNull()
+        expect(
+          await ctx.store.setActiveOrganization(env, expired.id, organization, later(1000))
+        ).toBeNull()
+        expect(
+          await ctx.store.setActiveOrganization(env, Bun.randomUUIDv7(), organization, later(1000))
+        ).toBeNull()
+        expect(
+          await ctx.store.setActiveOrganization(
+            ctx.b.environmentId,
+            live.id,
+            organization,
+            later(1000)
+          )
+        ).toBeNull()
+        for (const id of [revoked.id, expired.id, live.id]) {
+          expect((await ctx.store.findById(env, id))?.activeOrganizationId).toBeNull()
+        }
+      })
+
+      test('records nothing: choosing among memberships is not a change of who can do what', async () => {
+        const { session: s } = await seed(ctx.a)
+        const before = await recorded(ctx.a, s.id)
+        await ctx.store.setActiveOrganization(
+          ctx.a.environmentId,
+          s.id,
+          Bun.randomUUIDv7(),
+          later(5)
+        )
+        expect(await recorded(ctx.a, s.id)).toEqual(before)
+      })
     })
 
     test('one environment cannot read, rotate, list or revoke another’s sessions', async () => {

@@ -102,6 +102,56 @@ export default async function Dashboard() {
 }
 ```
 
+## Organizations and `has()`
+
+Where the environment has organizations ([ADR 0065](../../docs/adr/0065-organizations.md)), the
+access token of a session with an active organization carries the organization, the user's
+role in it and the role's permissions. On the server:
+
+```tsx
+const { orgId, orgRole, orgPermissions, has } = await auth()
+if (!has({ permission: 'org:billing:read' })) {
+  redirect('/no-access')
+}
+has({ role: 'admin' }) // a role instead; one check at a time
+```
+
+`has()` is an exact match on the keys (no wildcard) and `false` when no organization is
+active, for a signed-out visitor and for a check that names neither or both. The three claims
+are used only as a set that passed the contract's checks (the grammar of the keys, the bounds):
+a malformed set means no organization, never a partial one. This holds for a `hybrid`
+session's token, a `stateful` session's answer and the header the middleware seals.
+
+Protect a group of routes in the middleware, before anything renders:
+
+```ts
+// proxy.ts
+export const proxy = tulaMiddleware({
+  publicRoutes: ['/', '/pricing'],
+  access: [
+    { routes: '/billing(.*)', permission: 'org:billing:read' },
+    { routes: '/admin(.*)', role: 'admin' },
+  ],
+  forbiddenUrl: '/no-access', // pages go here; API routes and writes get a 403 JSON error
+})
+```
+
+A visitor with no session is sent to sign in; one who is signed in and fails the rule is
+refused. A rule with a wildcard, a key that is not in the grammar, or both or neither of
+`permission` and `role` throws when the middleware is created. Check again in the page or route
+that serves the data: a matcher is a convenience, not the only guard.
+
+In the browser, `useOrganization()` and `useOrganizationList()` (re-exported from
+`@tula-tech/react`) read and switch the active organization; a switch refreshes the router so
+the server components render with the new token.
+
+**A large role makes the access token outgrow one cookie.** The largest role and custom claims
+the API accepts give an access token of about 5.3 kB, more than the roughly 4 kB a browser keeps
+in one cookie. The SDK stores the token in up to two cookies, `tula_at` and `tula_at_1`, and
+joins them before it verifies the whole as one token. Nothing for you to do; do not read or
+write these cookies yourself. A token too large even for two is not stored, one warning says so,
+and the session continues on its refresh cookie.
+
 ## What you must configure on the API
 
 - **Allowed origins.** Add the app's origin to the environment's `urls.allowedOrigins`. The
@@ -156,6 +206,18 @@ export default async function Dashboard() {
   default); do not use a profile with `refresh.reuseGracePeriod: null` behind it. A refresh
   waits at most 8 seconds whatever `timeoutSeconds` says, and one that got no answer at all is
   sent once more at once: both stay inside that window.
+  The single flight is per process: with several Next.js instances, two of them can present the
+  same refresh token, and only the API's reuse grace window keeps the second from being treated as
+  reuse. Flights are keyed by API URL, environment and token, and the one that starts a flight
+  sends its own client address and `Origin` for everyone who joins it, so the API's per-IP
+  rate-limit counts that first caller.
+- **Over plain http, a sibling origin can plant cookies.** Without `https` the cookie names have
+  no `__Host-` prefix, so a page on another port or subdomain of the same host can write
+  `tula_at` or `tula_at_1` with garbage. That can force a refresh or a sign-out (a denial of
+  service); it cannot forge a session, because every token is verified. Use https in production.
+- **`x-tula-auth` is stripped only where the interceptor runs.** The header is sealed with an
+  HMAC bound to the session cookie, but a route outside the interceptor's `matcher` receives
+  whatever the browser sent. Such a route must not read `x-tula-auth` as input: call `auth()`.
 - **Set `TULA_APP_URL`** to the app's public origin. It decides whether the `__Host-` cookie
   names are used and which `Origin` the handler accepts, the same way in the interceptor, the
   handler and `auth()`. Set the variable, not only the `appUrl` option of the interceptor and

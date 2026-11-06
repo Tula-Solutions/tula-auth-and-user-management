@@ -1,6 +1,13 @@
 import type { ActivityType } from '@tula-tech/contract'
 import { type EventPayload, eventPayload } from '~/lib/event-payload'
-import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
+import type {
+  Activity,
+  ActivityLog,
+  AuditCriteria,
+  AuditEntry,
+  AuditExportCriteria,
+  AuditKey,
+} from '~/ports/activity-log'
 
 /** One row of the memory outbox: what the Postgres stores write to `tula.events`. */
 export interface OutboxRow {
@@ -116,6 +123,47 @@ export class MemoryActivityLog implements ActivityLog {
       entries: matches.slice(start, start + criteria.size).map((entry) => structuredClone(entry)),
       totalCount: matches.length,
     }
+  }
+
+  /** @inheritdoc */
+  async listAuditAfter(
+    environmentId: string,
+    criteria: AuditExportCriteria,
+    after: AuditKey | null,
+    limit: number
+  ): Promise<AuditEntry[]> {
+    return this.entries
+      .filter(
+        (entry) =>
+          entry.environmentId === environmentId &&
+          (!criteria.action || entry.type === criteria.action) &&
+          (!criteria.actorId || entry.actor.id === criteria.actorId) &&
+          (!criteria.targetId || entry.target.id === criteria.targetId) &&
+          (!criteria.actorType || entry.actor.type === criteria.actorType) &&
+          (!criteria.from || entry.occurredAt.getTime() >= criteria.from.getTime()) &&
+          (!criteria.to || entry.occurredAt.getTime() < criteria.to.getTime()) &&
+          (!criteria.organizationId ||
+            entry.data.organizationId === criteria.organizationId ||
+            (entry.target.type === 'organization' && entry.target.id === criteria.organizationId))
+      )
+      .sort(
+        (x, y) =>
+          x.occurredAt.getTime() - y.occurredAt.getTime() ||
+          (x.id > y.id ? 1 : x.id < y.id ? -1 : 0)
+      )
+      .filter(
+        (entry) =>
+          !after ||
+          entry.occurredAt.getTime() > after.occurredAt.getTime() ||
+          (entry.occurredAt.getTime() === after.occurredAt.getTime() && entry.id > after.id)
+      )
+      .slice(0, limit)
+      .map((entry) => structuredClone(entry))
+  }
+
+  /** @inheritdoc */
+  async append(activity: Activity): Promise<void> {
+    this.record([activity])
   }
 
   /**

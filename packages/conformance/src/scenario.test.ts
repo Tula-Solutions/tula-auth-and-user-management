@@ -12,6 +12,23 @@ test('the committed JSON Schema is what the Zod schema generates', async () => {
   )
 })
 
+test('a GET request with a body is refused, even a null one', () => {
+  for (const body of [null, {}, 'x']) {
+    const parsed = ScenarioSchema.safeParse({
+      name: 'x',
+      description: 'y',
+      steps: [
+        {
+          name: 's',
+          request: { method: 'GET', path: '/v1/status', body },
+          expect: { status: 200 },
+        },
+      ],
+    })
+    expect(parsed.success).toBe(false)
+  }
+})
+
 test('requests default to the publishable key', () => {
   const scenario = ScenarioSchema.parse({
     name: 'x',

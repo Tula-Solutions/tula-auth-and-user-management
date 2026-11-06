@@ -11,12 +11,12 @@ import {
 } from './email-template'
 
 /**
- * Every text message whose wording an environment can change (ADR 0042): one kind per
+ * Every text message whose wording an environment can change: one kind per
  * reason the server texts a code.
  *
  * - `phone_verification`: the code that proves a phone number being added to an account.
  * - `sign_in`: the code that signs someone in with a number their account has proven.
- * - `second_factor`: the code of a texted second step (ADR 0025): at its enrolment, after a
+ * - `second_factor`: the code of a texted second step: at its enrolment, after a
  *   sign-in's or a reset's first factor, and at a step-up. One kind for the three, because
  *   to the reader they are one message: "prove it is you, with the phone on your account".
  *
@@ -424,7 +424,8 @@ export interface SmsSegments {
  *
  * @example
  * ```ts
- * smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments: 1 }
+ * smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments:
+ * 1 }
  * ```
  */
 export function smsSegments(text: string): SmsSegments {

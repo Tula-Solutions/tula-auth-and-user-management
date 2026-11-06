@@ -1,6 +1,6 @@
 import { createContainer } from '~/container'
 import { loadEnv } from '~/env'
-import { createApp, MAX_BODY_BYTES } from '~/index'
+import { createApp, MAX_IMPORT_BODY_BYTES } from '~/index'
 import { bootJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
@@ -10,6 +10,12 @@ import { closeApi } from '~/server-close'
 
 const env = loadEnv()
 const container = createContainer(env)
+
+// Fail closed before anything is served on a login that bypasses row-level security (H-227).
+await container.verifyDatabaseRole().catch((error: unknown) => {
+  logger.error('refusing to start', { err: errorReason(error) })
+  process.exit(1)
+})
 
 // Create signing keys before taking traffic so every instance's key cache starts with them.
 const bootstrap = await Jwks.ensureAllEnvironments(container.deps).catch((error: unknown) => {
@@ -26,8 +32,9 @@ if (bootstrap.failed > 0) {
 
 const server = Bun.serve({
   port: env.PORT,
-  // Refuse oversized bodies at the socket too; `createApp` enforces the same cap per request.
-  maxRequestBodySize: MAX_BODY_BYTES,
+  // Refuse oversized bodies at the socket too; `createApp` enforces the (smaller) cap of each
+  // route, and only the bulk import is allowed up to this one.
+  maxRequestBodySize: MAX_IMPORT_BODY_BYTES,
   fetch: createApp(container.deps).fetch,
 })
 

@@ -5,9 +5,6 @@ A [session profile](methods/sessions.md) names the template its sessions use. Th
 arrive under one claim of the access token, `ext`, so that your backend can decide from the
 token alone: no extra request for "what plan is this user on" or "which address is this".
 
-The reasoning, and what was left out on purpose, is in
-[ADR 0036](adr/0036-jwt-templates.md).
-
 ## Define a template
 
 A template lives in the environment's settings, under `sessions.jwtTemplates`, and a profile
@@ -115,7 +112,11 @@ A constant says what **you** typed: `plan: { value: 'team' }` gives every sessio
 profile `"plan": "team"`. It is useful to tell profiles apart (`{ value: 'back-office' }` on
 the profile your staff tool asks for); it is not a per-user role. Per-user claims need a
 source that knows the user: a [`before_token` hook](hooks.md), which asks your backend for
-them ([Claims from a hook](#claims-from-a-hook)). Organizations and roles are later work.
+them ([Claims from a hook](#claims-from-a-hook)). An organization's claims (`org_id`,
+`org_role`, `org_perms`) are not a template's: the server writes them at the top level of the
+token while an organization is active ([Organizations](organizations.md#reading-the-organization-in-your-app)), beside `ext`.
+Both count toward the token's size, which is why the Next.js SDK stores a large access token in
+two cookies.
 
 ## Rules
 
@@ -227,8 +228,10 @@ backend, and a claim read in the browser decides nothing.
   | A sign-in or a step-up | One. |
   | **Every authenticated request of a stateful session** | **One, each time.** A stateful profile already reads the session per request; this makes it two. |
 
-## Not built
+## Limits
 
-- Claims from organizations, roles or user metadata: none of those exist yet.
-- Custom claims in the browser SDKs, and a second token (an "API token" with another audience
-  or lifetime). A template shapes the session's own access token and nothing else.
+- A template cannot read user metadata. (An organization's claims are written by the server,
+  not by a template: see above.)
+- The browser SDKs do not add claims of their own, and there is no second token (an "API
+  token" with another audience or lifetime): a template shapes the session's own access token
+  and nothing else.

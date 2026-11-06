@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { readNpmConfigFiles } from './npm-config'
 import {
   HELD_PACKAGES,
   leakedPackedFiles,
@@ -21,6 +22,7 @@ import {
   planRelease,
   printableCommand,
   refusals,
+  registryLatest,
   registryStates,
   releaseReport,
   type StagedPackage,
@@ -47,7 +49,7 @@ import {
 // single refusal stands, and only ever a staged tarball from `.release/`. The script holds
 // no credential and reads none: the package manager it spawns uses its own login. A one-time
 // password given as an argument is passed on to that command and written nowhere.
-// docs/releasing.md is the runbook.
+// docs/internal/releasing.md is the runbook.
 
 const root = resolve(import.meta.dir, '..')
 /** Staging area: one directory per package holding exactly what its tarball contains. */
@@ -246,7 +248,7 @@ async function assertStates(print: boolean): Promise<void> {
   const problems = privateStateProblems(workspace)
   if (problems.length > 0) {
     throw new Error(
-      `a package's "private" field does not match its release state (scripts/publish-manifest.ts, docs/releasing.md):\n  ${problems.join('\n  ')}`
+      `a package's "private" field does not match its release state (scripts/publish-manifest.ts, docs/internal/releasing.md):\n  ${problems.join('\n  ')}`
     )
   }
   const released = new Set(
@@ -340,13 +342,15 @@ async function main(argv: readonly string[]): Promise<number> {
   const after = await treeState()
   const channel = chooseChannel(
     process.env,
-    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null
+    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null,
+    await readNpmConfigFiles(process.env, process.cwd())
   )
   const plan = planRelease(
     staged,
     await registryStates(staged, fetch as unknown as Fetcher),
     channel,
-    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) })
+    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) }),
+    await registryLatest(staged, fetch as unknown as Fetcher)
   )
   process.stdout.write(releaseReport(args, plan, { head: after.head, root }))
   process.stdout.write(

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "ba_user_1",
+    "name": "Maya Chen",
+    "email": "maya@northline.app",
+    "emailVerified": true,
+    "image": null,
+    "createdAt": "2024-01-02T10:00:00.000Z",
+    "updatedAt": "2024-01-02T10:00:00.000Z"
+  },
+  { "id": "ba_user_2", "name": "Jon Okafor", "email": "jon@northline.app", "emailVerified": true },
+  { "id": "ba_user_3", "name": "Priya N", "email": "priya@northline.app", "emailVerified": true },
+  { "id": "ba_user_4", "name": "Ines", "email": "ines@northline.app", "emailVerified": true },
+  {
+    "id": "ba_user_5",
+    "name": "Banned",
+    "email": "banned@northline.app",
+    "emailVerified": true,
+    "banned": true
+  }
+]

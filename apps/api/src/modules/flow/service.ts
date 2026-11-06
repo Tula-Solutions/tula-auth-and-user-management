@@ -39,6 +39,7 @@ import {
   SessionClientSchema,
   type SignInStartRequest,
   type SignUpRequest,
+  type SsoStartRequest,
   type TotpEnrolment,
 } from '@tula-tech/contract'
 import { z } from 'zod'
@@ -55,6 +56,8 @@ import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail, type TestAddressPermit } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
+import { UUID_PATTERN } from '~/lib/uuid'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
@@ -62,18 +65,23 @@ import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as OrganizationDomains from '~/modules/organization-domain/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Phone from '~/modules/phone/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import * as Sms from '~/modules/sms/service'
+import * as Sso from '~/modules/sso/service'
+import { isManaged } from '~/modules/user/managed'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
 import { mergeAuthMethods } from '~/ports/session-store'
+import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
@@ -541,6 +549,46 @@ const StateSchema = z.object({
         .optional(),
     })
     .optional(),
+  /**
+   * What a single-sign-on attempt keeps server-side (ADR 0067). It rides the same round-trip
+   * phases as OAuth (`oauthPhase`). None of it is ever sent to a client.
+   */
+  /** The SSO connection that proved the first factor (ADR 0067): the session's `sso_conn`. */
+  ssoConnectionId: z.string().optional(),
+  /**
+   * The identifier's domain is enforced (TULA-140): the step shows `sso` alone. `strategies`
+   * keeps the full list because a break-glass member's own routes still accept the rest.
+   */
+  ssoEnforced: z.boolean().optional(),
+  sso: z
+    .object({
+      connectionId: z.string(),
+      redirectUrl: z.string(),
+      /** SHA-256 of the `state` parameter. */
+      stateHash: z.string(),
+      /** PKCE verifier and OIDC nonce: needed once, for the code exchange. */
+      codeVerifier: z.string().optional(),
+      nonce: z.string().optional(),
+      /** A SAML connection's `AuthnRequest` ID: the one response accepted (instead of PKCE). */
+      requestId: z.string().optional(),
+      /** SHA-256 of the binding the starting browser was given. */
+      bindingHash: z.string(),
+      /** SHA-256 of the ticket, and when it stops being accepted (epoch milliseconds). */
+      ticketHash: z.string().optional(),
+      ticketExpiresAt: z.number().optional(),
+      /** What the identity provider vouched for, kept from the callback until the exchange. */
+      profile: z
+        .object({
+          subject: z.string(),
+          email: z.string().nullable(),
+          emailVerified: z.boolean(),
+          givenName: z.string().optional(),
+          familyName: z.string().optional(),
+          groups: z.array(z.string().max(256)).max(200).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -572,7 +620,7 @@ function stepFor(
   if (attempt.status === 'needs_first_factor') {
     return {
       status: 'needs_first_factor',
-      strategies: state.strategies ?? [],
+      strategies: state.ssoEnforced ? ['sso'] : (state.strategies ?? []),
       // The identifier as it was typed at the start, masked: it says nothing about an account.
       ...(state.prepared && {
         prepared: {
@@ -835,14 +883,24 @@ async function finish(
   }
   // Named field by field from the server's own records: the allow-list of the question
   // (`HookBeforeSessionDataSchema`). No address of the user's, no user agent, no attempt.
+  // The persisted flag is only believed for an account made no earlier than the attempt, so a
+  // future writer of it cannot make a sign-in of an old account count as a sign-up (H-083).
+  const createdHere =
+    attempt.kind === 'sign_up' ||
+    (state.accountCreated === true &&
+      ((await deps.users.findById(tenant.environmentId, userId))?.createdAt ?? new Date(0)) >=
+        attempt.createdAt)
   const clearance = await Hooks.beforeSession(deps, tenant, {
     userId,
     client: state.client,
     profile: await Sessions.profileNameFor(deps, tenant, state),
     amr: mergeAuthMethods([], state.amr ?? []),
-    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    signUp: createdHere,
     ipAddress: cleanOrigin(context).ipAddress,
   })
+  // `finish` has no ban check of its own: `Sessions.create` owns the ban and the concurrent-session
+  // rule (ADR 0028), so a ban that lands after the flow's checks still ends here. Pinned by
+  // `hardening.test.ts` (H-087); keep that check if `Sessions.create` is refactored.
   const tokens = await Sessions.create(deps, tenant, {
     userId,
     client: state.client,
@@ -853,7 +911,12 @@ async function finish(
     hookBypassed: clearance === 'bypassed',
     // Only what the attempt's start fixed: nothing of this request decides the binding.
     deviceThumbprint: state.deviceThumbprint,
+    ssoConnectionId: state.ssoConnectionId ?? null,
   })
+  // Only the factors the user holds are asked again here, not an `mfa.policy` that became
+  // `required` after this attempt started (H-090): that takes an administrator's settings
+  // change, the user has no factor this session failed to prove, and their next sign-in
+  // stops at the enrolment.
   if (
     attempt.kind !== 'sign_up' &&
     // Asked only of an attempt that did not prove a strong factor: one that did is past this.
@@ -874,6 +937,13 @@ async function finish(
     })
     throw new AuthError('flow.invalid_step')
   }
+  if (createdHere) {
+    // A verified address on an `auto_join` domain of an organization (ADR 0065, "Verified
+    // domains"): the membership, its audit entry and its event are written here, as part of
+    // the sign-up, and never for a sign-in. Cannot throw: a sign-up that has a session is
+    // never failed by an organization.
+    await OrganizationDomains.joinOnSignUp(deps, tenant, userId, systemActor(context))
+  }
   if (attempt.kind === 'sign_in') {
     // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.
     Notices.newSignIn(deps, tenant, { userId, sessionId: tokens.sessionId })
@@ -884,7 +954,7 @@ async function finish(
     // Bookkeeping only: the session exists, so failing here would throw its tokens away.
     logger.warn('could not record the sign-in time', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   return {
@@ -1008,6 +1078,8 @@ function owesNewPassword(state: Pick<State, 'expiredPasswordSetAt'>): boolean {
  *   sign-up relies on (passwords, or the email code for a sign-up without one), or
  *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
  *   allow.
+ * @throws AuthError `auth.method_disabled` when the address's domain is enforced by an organization's
+ *   single sign-on (DECISIONS 12): refused at the start, as a password sign-in there is.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -1022,6 +1094,9 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  // Domain-level, whoever asks: an account is made on an enforced domain by single sign-on
+  // alone (decision 12), and the answer says nothing about the address.
+  await Sso.requireNotEnforced(deps, tenant, identifier, 'sign_up')
   const passwordless = input.password === undefined
   if (passwordless && (await Settings.current(deps, tenant)).signUp.password !== 'optional') {
     throw new ValidationError({
@@ -1086,7 +1161,9 @@ async function issueCode(
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
     userId: options.userId,
-    ...(state.decoy && { deliver: ({ to }) => notice(deps, tenant, to) }),
+    ...(state.decoy && {
+      deliver: ({ to }) => notice(deps, tenant, to),
+    }),
     ...(options.charge && {
       onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
     }),
@@ -1115,31 +1192,61 @@ async function issueCode(
 export async function signIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
+    | 'flowAttempts'
+    | 'clock'
+    | 'ids'
+    | 'environmentSettings'
+    | 'config'
+    | 'oauthProviders'
+    | 'sms'
+    | 'ssoConnections'
+    | 'organizationDomains'
   >,
   tenant: Tenant,
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
-  const strategies = Factors.firstFactors(
-    await Settings.current(deps, tenant),
-    await OAuth.enabledProviders(deps, tenant),
-    { smsSender: deps.sms.configured }
+  // Refused by shape alone, before anything is looked up: the answer for a malformed
+  // identifier is the same whoever holds the account (TULA-157, H-032).
+  const phone = parsePhoneNumber(input.identifier)
+  const address = phone === null ? parseEmail(input.identifier, context.testAddress) : null
+  // A reserved test address is answered at the start as any address is (ADR 0058: the start
+  // looks nothing up); it is refused where an email would be asked for.
+  if (phone === null && address === null && !isTestAddress(input.identifier.trim())) {
+    throw new InvalidEmailError()
+  }
+  const strategies: FirstFactorStrategy[] = [
+    ...Factors.firstFactors(
+      await Settings.current(deps, tenant),
+      await OAuth.enabledProviders(deps, tenant),
+      { smsSender: deps.sms.configured }
+    ),
+  ]
+  // Offered by the address's domain alone, never by whether an account exists: a known and an
+  // unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
+  const connection = await Sso.offered(
+    deps,
+    tenant,
+    address?.normalized ?? normalizeEmail(input.identifier)
   )
+  if (connection !== null) {
+    strategies.push('sso')
+  }
+  const enforced = connection?.enforced === true
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
   }
-  const state: State = { ...asked(context), strategies }
+  const state: State = { ...asked(context), strategies, ...(enforced && { ssoEnforced: true }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_in',
     status:
-      strategies.length === 1 && strategies[0] === 'password'
+      !enforced && strategies.length === 1 && strategies[0] === 'password'
         ? 'needs_password'
         : 'needs_first_factor',
     // A phone number is kept in E.164 form, whatever was typed between its digits; anything
     // else is kept as an address would be. Neither is looked up here.
-    identifier: parsePhoneNumber(input.identifier) ?? normalizeEmail(input.identifier),
+    identifier: phone ?? address?.normalized ?? normalizeEmail(input.identifier),
     state,
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
@@ -1173,7 +1280,8 @@ export async function signIn(
  *   `needs_new_password` (`reason: 'expired'`), without tokens, for a password that is right
  *   and too old.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
- *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
+ *   `auth.invalid_credentials` (also for a non-member of an enforced SSO domain) or
+ *   `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
@@ -1187,6 +1295,9 @@ export async function submitPassword(
   const strategies = state.strategies ?? []
   const event = { type: 'first_factor_verified', strategy: 'password' } as const
   assertAccepts(attempt.kind, attempt.status, event, strategies)
+  // Not refused here: `auth.method_disabled` for a non-member would tell a break-glass member
+  // from anyone else. The verdict is folded into the one failure below (ADR 0067).
+  const enforcedOut = await Sso.refuses(deps, tenant, attempt.identifier, 'password')
   await requirePasswordMethod(deps, tenant)
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
@@ -1203,7 +1314,15 @@ export async function submitPassword(
   await chargeEnvironment(deps, tenant, 'password')
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
-  if (!(await Passwords.verify(found?.passwordHash ?? null, password)) || !found) {
+  if (
+    !(await Passwords.verify(
+      found?.passwordHash ?? null,
+      password,
+      found && Foreign.opener(deps, tenant.environmentId, found.user.id)
+    )) ||
+    !found ||
+    enforcedOut
+  ) {
     throw new AuthError('auth.invalid_credentials')
   }
   await deps.lockout.clear(lockKey)
@@ -1360,7 +1479,7 @@ async function completeEmailFactor(
       // can read.
       logger.warn('could not mark the email verified after an email sign-in', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -1421,6 +1540,7 @@ export async function prepareFirstFactor(
     { type: 'first_factor_verified', strategy },
     state.strategies ?? []
   )
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, strategy)
   if (strategy === 'sms_code') {
     return prepareSmsCode(deps, tenant, attempt, state, context)
   }
@@ -1525,6 +1645,7 @@ export async function attemptFirstFactor(
     { type: 'first_factor_verified', strategy: input.strategy },
     state.strategies ?? []
   )
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, input.strategy)
   if (input.strategy === 'sms_code') {
     return attemptSmsCode(deps, tenant, attempt, state, input.code, context)
   }
@@ -1766,6 +1887,10 @@ async function attemptSmsCode(
   if (!user || number === null || user.id !== token.userId) {
     throw new AuthError('auth.invalid_credentials')
   }
+  // The identifier is a number, on no domain: the holder's address is what an SSO domain binds.
+  if (user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, 'sms_code')
+  }
   await deps.lockout.clear(lockKey)
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
@@ -1830,7 +1955,7 @@ async function attemptSmsCode(
     // Bookkeeping only: the number then lapses a little earlier than it had to.
     logger.warn('could not record that a phone number was proven again', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   if (parked === null) {
@@ -1916,6 +2041,7 @@ export async function verifyEmailLink(
     throw new AuthError('verification.different_browser')
   }
   requireAllowedOrigin(state.client, context)
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'email_link')
   await Settings.requireMethod(deps, tenant, 'emailLink')
   await chargeEnvironment(deps, tenant, 'verify')
   // Single use: of two tabs opening the same link, only the first gets past this.
@@ -1933,9 +2059,6 @@ export async function verifyEmailLink(
   }
   return { status: 'verified' }
 }
-
-/** The parts of an OAuth `state`: which environment and attempt it belongs to. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * The fragment an OAuth callback sends the app's page.
@@ -2151,8 +2274,8 @@ export async function oauthCallback(
     !environmentId ||
     !attemptId ||
     !random ||
-    !UUID.test(environmentId) ||
-    !UUID.test(attemptId)
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
   ) {
     return { invalid: true }
   }
@@ -2275,7 +2398,9 @@ interface RedeemedTicket {
   attempt: FlowAttemptRecord
   /** The attempt's state without anything of the OAuth round trip. */
   state: State
-  provider: OAuthProvider
+  /** The provider that vouched, or the SSO connection (ADR 0067): exactly one of the two. */
+  provider: OAuthProvider | undefined
+  connection: SsoConnectionRecord | undefined
   profile: NonNullable<NonNullable<State['oauth']>['profile']>
   linkUserId: string | undefined
   /** The attempt's new secret: the one it was started with was lost in the navigation. */
@@ -2310,7 +2435,9 @@ async function redeemOAuthTicket(
   const attempt = await deps.flowAttempts.findById(tenant.environmentId, input.attemptId)
   const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
   const state = parsed?.success ? parsed.data : null
-  const oauth = state?.oauth
+  // An SSO round (ADR 0067) ends with the same ticket and binding as a provider's, and is
+  // redeemed here by the same rules; it is always a sign-in.
+  const oauth = state?.oauth ?? (state?.sso && { ...state.sso, intent: 'sign_in' as const })
   // Both compared in constant time, and compared even when there is nothing to compare with.
   const ticketed = timingSafeEqual(sha256Hex(input.ticket), oauth?.ticketHash ?? NO_SECRET_HASH)
   const bound = timingSafeEqual(
@@ -2337,12 +2464,17 @@ async function redeemOAuthTicket(
     throw new AuthError('oauth.different_browser')
   }
   requireAllowedOrigin(state.client, context)
-  // A provider switched off while the user was away must not complete.
-  await OAuth.credentials(deps, tenant, oauth.provider)
+  // A provider switched off, or a connection disabled, while the user was away must not complete.
+  const connection = state.sso
+    ? await Sso.requireActive(deps, tenant, state.sso.connectionId)
+    : undefined
+  if (state.oauth) {
+    await OAuth.credentials(deps, tenant, state.oauth.provider)
+  }
   await chargeEnvironment(deps, tenant, 'verify')
 
   const secret = `${ATTEMPT_SECRET_PREFIX}${randomToken()}`
-  const { oauth: _oauth, oauthPhase: _phase, ...rest } = state
+  const { oauth: _oauth, sso: _sso, oauthPhase: _phase, ...rest } = state
   const spent = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
@@ -2362,9 +2494,10 @@ async function redeemOAuthTicket(
   return {
     attempt,
     state: { ...rest, oauthPhase: 'exchanged' },
-    provider: oauth.provider,
+    provider: state.oauth?.provider,
+    connection,
     profile: oauth.profile,
-    linkUserId: oauth.linkUserId,
+    linkUserId: state.oauth?.linkUserId,
     secret,
   }
 }
@@ -2403,15 +2536,28 @@ export async function exchangeOAuth(
   context: ClientContext
 ): Promise<FlowResult> {
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
-  const result = await completeProviderSignIn(
-    deps,
-    tenant,
-    redeemed.attempt,
-    redeemed.state,
-    redeemed.provider,
-    redeemed.profile,
-    context
-  )
+  const { attempt, state, provider, connection, profile } = redeemed
+  const result = connection
+    ? await completeExternalSignIn(
+        deps,
+        tenant,
+        attempt,
+        state,
+        { connection },
+        profile,
+        context,
+        'sso'
+      )
+    : await completeExternalSignIn(
+        deps,
+        tenant,
+        attempt,
+        state,
+        provider as OAuthProvider,
+        profile,
+        context,
+        'fed'
+      )
   return result.tokens
     ? result
     : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
@@ -2421,50 +2567,70 @@ export async function exchangeOAuth(
  * Take a sign-in past a provider's word for who the user is: resolve the account and continue
  * as after any first factor.
  *
- * **The one tail of every provider sign-in**, whichever way the profile was obtained: the
- * browser's round trip ({@link exchangeOAuth}) and a native app's ID token
- * ({@link submitIdToken}, ADR 0045). So the linking table (`OAuth.resolveAccount`), the
- * `before_sign_up` hook, the ban check, `Factors.requiredFor`, the enrolment policy and
- * `fed` in `amr` cannot differ between the two.
+ * **The one tail of every externally completed sign-in**, whichever way the profile was
+ * obtained: the browser's round trip ({@link exchangeOAuth}) and a native app's ID token
+ * ({@link submitIdToken}, ADR 0045); a later kind of external sign-in joins here too. So the
+ * linking table (`OAuth.resolveAccount`), the `before_sign_up` hook, the ban check,
+ * `Factors.requiredFor`, the enrolment policy and the `amr` entry cannot differ between them.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment.
  * @param attempt - The attempt, on `needs_first_factor`.
  * @param state - Its state, with whatever proved the profile already used up.
- * @param provider - The provider that vouched.
+ * @param provider - The provider that vouched, or the SSO connection that did (ADR 0067).
  * @param profile - What it vouched for.
  * @param context - The requesting device.
+ * @param method - The `amr` value of the proof (`fed` for a provider, `sso` for a connection); becomes the session's
+ *   `authMethods`.
  * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
  * @throws AuthError as `OAuth.resolveAccount`, or `auth.user_banned`.
  */
-async function completeProviderSignIn(
+export async function completeExternalSignIn(
   deps: Deps,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
-  provider: OAuthProvider,
-  profile: OAuthProfile,
-  context: ClientContext
+  provider: OAuthProvider | { connection: SsoConnectionRecord },
+  profile: OAuthProfile & { groups?: string[] },
+  context: ClientContext,
+  method: string
 ): Promise<FlowResult> {
-  const { user, created } = await OAuth.resolveAccount(
-    deps,
-    tenant,
-    provider,
-    profile,
-    context,
-    state.client
-  )
+  // A provider's profile is refused for an enforced domain before any account is made or linked.
+  // A null profile address skips this first check on purpose (H-164): nothing is made or linked
+  // for it, and the account's own address is checked again below (the invariant the next check holds).
+  if (typeof provider === 'string' && profile.email !== null) {
+    await Sso.requireNotEnforced(deps, tenant, normalizeEmail(profile.email), provider)
+  }
+  // Which account is decided by the provider's linking table, or by the connection's
+  // matching table (ADR 0067); everything after that is the same for both.
+  const { user, created } =
+    typeof provider === 'string'
+      ? await OAuth.resolveAccount(deps, tenant, provider, profile, context, state.client)
+      : await Sso.resolveAccount(deps, tenant, provider.connection, profile, context, state.client)
+  const strategy: FirstFactorStrategy =
+    typeof provider === 'string' ? OAuth.strategyOf(provider) : 'sso'
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  // An account created a moment ago has no factor to prove, but the environment may require one.
-  const required: Requirement = created
-    ? { secondFactors: [], enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []) }
-    : await requirement(deps, tenant, user.id)
+  // The account's own address, for a new account too (H-031): one rule for both, so a path
+  // that makes an account with an address the profile did not carry is still refused. What
+  // resolution does before this point is either nothing (an identity already linked) or
+  // reachable only for the profile's address, which the check above has cleared (H-029).
+  if (typeof provider === 'string' && user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, provider)
+  }
+  // A connection that trusts its identity provider for MFA (TULA-140) skips Tula's second step,
+  // also under `mfa.policy: required`; the session records `mfa`.
+  const trusted = typeof provider !== 'string' && provider.connection.trustIdpMfa
+  const required: Requirement = trusted
+    ? { secondFactors: [], enrolmentRequired: false }
+    : created
+      ? { secondFactors: [], enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []) }
+      : await requirement(deps, tenant, user.id)
   const next = nextStatus(
     attempt.kind,
     attempt.status,
-    { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
+    { type: 'first_factor_verified', strategy },
     {
       strategies: state.strategies ?? [],
       // The provider's identity is the proof here, not the inbox: the attempt never detours
@@ -2479,14 +2645,228 @@ async function completeProviderSignIn(
     tenant,
     attempt,
     {
-      ...firstProven(state, OAuth.strategyOf(provider), 'fed'),
+      ...(trusted
+        ? firstProven(state, strategy, method, 'mfa')
+        : firstProven(state, strategy, method)),
       ...(created && { accountCreated: true }),
+      ...(typeof provider !== 'string' && { ssoConnectionId: provider.connection.id }),
     },
     user.id,
     next,
     required,
     context
   )
+}
+
+/**
+ * Start the single-sign-on step of a sign-in attempt (ADR 0067): build the identity provider's
+ * URL for the connection the attempt's address domain is bound to.
+ *
+ * The attempt already exists (`signIn` made it and offered `sso`); this keeps PKCE, `state`
+ * and a nonce on it, as {@link startOAuth} does, and hands back the URL and a one-time binding.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param input - The app's page to return to.
+ * @param context - The requesting device.
+ * @returns The attempt, the provider's URL and the binding.
+ * @throws AuthError `flow.invalid_step`, `auth.method_disabled` when the connection is gone or
+ *   off, `request.redirect_not_allowed`, `sso.provider_error` when the provider's metadata
+ *   cannot be read, `request.origin_not_allowed`.
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function startSso(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  input: SsoStartRequest,
+  context: ClientContext
+): Promise<OAuthStartResult & { client: SessionClient }> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  if (
+    attempt.status !== 'needs_first_factor' ||
+    !(state.strategies ?? []).includes('sso') ||
+    (state.oauthPhase !== undefined && state.oauthPhase !== 'started')
+  ) {
+    throw new AuthError('flow.invalid_step')
+  }
+  const connection = await Sso.offered(deps, tenant, attempt.identifier)
+  if (!connection) {
+    throw new AuthError('auth.method_disabled', { method: 'sso' })
+  }
+  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+    client: state.client,
+  })
+  await chargeEnvironment(deps, tenant, 'oauth')
+
+  const ssoState = `${tenant.environmentId}.${attempt.id}.${randomToken()}`
+  // SAML: the request's ID is what ties the response to this attempt; OIDC: PKCE and a nonce.
+  const requestId = connection.protocol === 'saml' ? `_${randomToken()}` : undefined
+  const codeVerifier = randomToken()
+  const nonce = randomToken()
+  const authorizationUrl = requestId
+    ? Sso.samlRedirectUrl(deps, connection, { requestId, relayState: ssoState })
+    : await Sso.authorizationUrl(deps, connection, { state: ssoState, nonce, codeVerifier })
+  const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
+  const started: State = {
+    ...state,
+    oauthPhase: 'started',
+    sso: {
+      connectionId: connection.id,
+      redirectUrl,
+      stateHash: sha256Hex(ssoState),
+      ...(requestId ? { requestId } : { codeVerifier, nonce }),
+      bindingHash: sha256Hex(binding),
+    },
+  }
+  const stored = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: started },
+    deps.clock.now()
+  )
+  if (!stored) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, started)),
+    authorizationUrl,
+    binding,
+    client: state.client,
+  }
+}
+
+/**
+ * Take an SSO connection's answer (ADR 0067): the OIDC redirect URI's request, with the code,
+ * `state` and possibly an error. The same rules as {@link oauthCallback}: the attempt is found
+ * by `state` alone (its hash compared in constant time) and must be this connection's; the
+ * state is used up before the code is exchanged, success or not; the answer is a 303 to the
+ * attempt's allow-listed page with a single-use ticket, or a contract code, in the fragment,
+ * or the static page when the state matches nothing. Which account it is, and whether one is
+ * created, is decided only at the exchange, by the browser that holds the binding.
+ *
+ * The connection must still be active and single sign-on still on (`auth.method_disabled`
+ * otherwise). Every failure of the provider (its discovery, the token request, the ID token's
+ * signature, issuer, audience, expiry or nonce) reaches the app as `sso.provider_error`; the
+ * log says which, by a fixed word.
+ *
+ * @param deps - All dependencies.
+ * @param connectionId - The connection named in the callback's path.
+ * @param input - What the provider sent.
+ * @returns Where to send the browser.
+ */
+export async function ssoCallback(
+  deps: Deps,
+  connectionId: string,
+  input: Omit<OAuthCallbackInput, 'user'> & { samlResponse?: string }
+): Promise<OAuthCallbackResult> {
+  const [environmentId, attemptId, random] = (input.state ?? '').split('.')
+  if (
+    !environmentId ||
+    !attemptId ||
+    !random ||
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
+  ) {
+    return { invalid: true }
+  }
+  const attempt = await deps.flowAttempts.findById(environmentId, attemptId)
+  const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
+  const state = parsed?.success ? parsed.data : null
+  const known = timingSafeEqual(
+    sha256Hex(input.state ?? ''),
+    state?.sso?.stateHash ?? NO_SECRET_HASH
+  )
+  if (!attempt || !state?.sso || !known || state.sso.connectionId !== connectionId) {
+    return { invalid: true }
+  }
+  const { sso } = state
+  const tenant: Tenant = { projectId: attempt.projectId, environmentId, apiKeyId: '' }
+  try {
+    // The URL was allowed when the attempt started; the allow-list may have changed since.
+    await Settings.requireRedirectUrl(deps, tenant, sso.redirectUrl, { client: state.client })
+  } catch {
+    return { invalid: true }
+  }
+  const failed = (code: string): OAuthCallbackResult => ({
+    redirectTo: oauthRedirect(sso.redirectUrl, attempt.id, OAUTH_ERROR_PARAM, code),
+  })
+
+  // The state is used up here, whatever happens next.
+  const consumed = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: { ...state, oauthPhase: 'returned' } },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'started' }
+  )
+  if (!consumed) {
+    return failed('oauth.state_invalid')
+  }
+  const { requestId } = sso
+  if (requestId === undefined && input.error !== undefined) {
+    return failed(input.error === 'access_denied' ? 'oauth.access_denied' : 'sso.provider_error')
+  }
+  if (
+    requestId !== undefined ? !input.samlResponse : !input.code || !sso.codeVerifier || !sso.nonce
+  ) {
+    return failed('sso.provider_error')
+  }
+  let profile: Sso.SsoProfile
+  try {
+    await chargeEnvironment(deps, tenant, 'oauth')
+    const connection = await Sso.requireActive(deps, tenant, connectionId)
+    profile =
+      requestId !== undefined
+        ? await Sso.verifySaml(deps, connection, input.samlResponse ?? '', requestId)
+        : await Sso.exchange(deps, connection, {
+            code: input.code ?? '',
+            codeVerifier: sso.codeVerifier ?? '',
+            nonce: sso.nonce ?? '',
+          })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return failed(error.code)
+    }
+    if (error instanceof RateLimitError) {
+      return failed('rate_limited')
+    }
+    // A JSON error would strand the browser on the API: the app's page shows this one.
+    logger.warn('an SSO callback failed', {
+      environmentId,
+      failure: errorName(error),
+    })
+    return failed('sso.provider_error')
+  }
+
+  const ticket = `${OAUTH_TICKET_PREFIX}${randomToken()}`
+  // The verifier and the nonce have done their job and are not kept.
+  const { codeVerifier: _verifier, nonce: _nonce, requestId: _request, ...kept } = sso
+  const proven: State = {
+    ...state,
+    oauthPhase: 'proven',
+    sso: {
+      ...kept,
+      profile,
+      ticketHash: sha256Hex(ticket),
+      ticketExpiresAt: deps.clock.now().getTime() + durationToMs(OAUTH_TICKET_TTL),
+    },
+  }
+  const stored = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: proven },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'returned' }
+  )
+  if (!stored) {
+    return failed('oauth.state_invalid')
+  }
+  return { redirectTo: oauthRedirect(sso.redirectUrl, attempt.id, OAUTH_TICKET_PARAM, ticket) }
 }
 
 /**
@@ -2595,7 +2975,7 @@ export async function startIdTokenSignIn(
  * app starts again).
  *
  * With the token accepted the sign-in continues exactly as a browser's does after its
- * ticket ({@link completeProviderSignIn}): the same account resolution, hooks, second
+ * ticket ({@link completeExternalSignIn}): the same account resolution, hooks, second
  * factor and enrolment, and `fed` in `amr`.
  *
  * @param deps - All dependencies.
@@ -2689,7 +3069,7 @@ export async function submitIdToken(
     }
     throw new AuthError('auth.invalid_credentials')
   }
-  return completeProviderSignIn(deps, tenant, attempt, rest, provider, profile, context)
+  return completeExternalSignIn(deps, tenant, attempt, rest, provider, profile, context, 'fed')
 }
 
 /**
@@ -2726,7 +3106,8 @@ export async function exchangeOAuthLink(
     throw new AuthError('oauth.ticket_invalid')
   }
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'link', context)
-  if (redeemed.linkUserId !== userId) {
+  // An SSO round is always a sign-in, so a link has its provider; checked for the compiler.
+  if (redeemed.linkUserId !== userId || redeemed.provider === undefined) {
     throw new AuthError('oauth.ticket_invalid')
   }
   return OAuth.link(deps, tenant, userId, redeemed.provider, redeemed.profile, actor)
@@ -2757,6 +3138,8 @@ export async function exchangeOAuthLink(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`; for a sign-up, the
  *   `before_sign_up` hook's `hook.denied` or `hook.unavailable` (the attempt has then ended).
+ * @throws AuthError `auth.method_disabled` for a sign-up whose domain became enforced by single
+ *   sign-on after the start: no account is made.
  */
 export async function verifyEmail(
   deps: Deps,
@@ -2770,6 +3153,10 @@ export async function verifyEmail(
   const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   assertAccepts(attempt.kind, attempt.status, event)
+  // A sign-up begun before the domain was enforced creates no account afterwards.
+  if (attempt.kind === 'sign_up') {
+    await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'sign_up')
+  }
   // A sign-in reaches this step after a password or a passkey (an email factor verifies the
   // address itself): the switch that must still be on is the one of the factor it proved.
   await requireProvenMethod(deps, tenant, attempt, state, context)
@@ -2885,7 +3272,17 @@ export async function verifyEmail(
     ...required,
     passwordExpired: false,
   })
-  return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
+  // `accountCreated` is what `finish` reads for "this attempt made the account", for every kind.
+  return advance(
+    deps,
+    tenant,
+    attempt,
+    { ...proven(state, 'email'), accountCreated: true },
+    userId,
+    next,
+    required,
+    context
+  )
 }
 
 /**
@@ -2936,7 +3333,7 @@ async function clearSignUp(
         logger.warn('could not end a sign-up attempt after its hook refused it', {
           environmentId: tenant.environmentId,
           attemptId: attempt.id,
-          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+          err: errorName(cleanup),
         })
       }
     }
@@ -2952,6 +3349,11 @@ async function clearSignUp(
  * a code nobody knows, so guesses, resends and send limits behave identically and it can never
  * complete. A banned user is sent a code like anyone else and learns of the ban only after
  * proving they own the address.
+ *
+ * An address on a domain enforced by single sign-on gets the decoy attempt of an unknown address,
+ * so the answer does not tell it apart (DECISIONS 12). So does the address of a user an identity
+ * provider manages (decision 11); a code issued before they became managed is refused later with
+ * `user.managed`.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -2978,8 +3380,24 @@ export async function startPasswordReset(
   const { email, normalized: identifier } = parsed
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'passwordReset')
-  const user = await deps.users.findByEmail(tenant.environmentId, identifier)
-  const state: State = { ...asked(context), email, ...(!user && { decoy: true }) }
+  // On an enforced domain only a break-glass member is mailed a code; everyone else gets the
+  // decoy, so the answer is the same for any address (decision 12).
+  const found = await deps.users.findByEmail(tenant.environmentId, identifier)
+  // A user an identity provider manages gets the decoy too: they cannot set a local password
+  // (decision 11), notice included, so timing and mail match an unknown address.
+  // A break-glass member keeps the reset even when the connection manages the account (ADR 0067).
+  const managed =
+    !!found &&
+    (await isManaged(deps, tenant.environmentId, found)) &&
+    !(await Sso.isBreakGlass(deps, tenant, identifier))
+  // Asked for every address, so a decoy costs the same lookup as a real account (H-078).
+  const ssoRefuses = await Sso.refuses(deps, tenant, identifier, 'password')
+  const user = found && !managed && !ssoRefuses ? found : null
+  const state: State = {
+    ...asked(context),
+    email,
+    ...(!user && { decoy: true }),
+  }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
     status: 'needs_new_password',
@@ -3024,6 +3442,8 @@ export async function startPasswordReset(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
+ * @throws AuthError `verification.invalid_code` (as for a decoy) when the account's domain became
+ *   enforced by single sign-on after the code was sent: nothing is stored.
  */
 export async function resetPassword(
   deps: Deps,
@@ -3049,7 +3469,12 @@ export async function resetPassword(
     !state.decoy && attempt.userId
       ? await deps.users.findById(tenant.environmentId, attempt.userId)
       : null
-  if (!user || user.emailNormalized !== attempt.identifier) {
+  if (
+    !user ||
+    user.emailNormalized !== attempt.identifier ||
+    // Enforcement switched on after the code was sent: only a break-glass member may finish.
+    (await Sso.refuses(deps, tenant, attempt.identifier, 'password'))
+  ) {
     // Someone guessed the decoy code of a reset for an address with no account, or the account
     // was deleted or moved to another address meanwhile: a code proves control of the address
     // it was sent to, not of the account. Answer as if the guess was wrong.
@@ -3069,8 +3494,15 @@ export async function resetPassword(
     passwordExpired: false,
   })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
-  await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
-    Verification.consume(deps, tenant, token.id)
+  await Users.resetPassword(
+    deps,
+    tenant,
+    user.id,
+    input.password,
+    actor,
+    () => Verification.consume(deps, tenant, token.id),
+    // Past the refusal above, a managed account is here only as a break-glass member.
+    await Sso.isBreakGlass(deps, tenant, attempt.identifier)
   )
   if (user.emailVerifiedAt === null) {
     try {
@@ -3089,7 +3521,7 @@ export async function resetPassword(
       // Their next sign-in asks them to verify the address instead.
       logger.warn('could not mark the email verified after a password reset', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -3645,6 +4077,9 @@ export async function submitPasskey(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
+  if (user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, 'passkey')
+  }
   // Nothing more is asked of a user who proved a passkey: no second factor, no enrolment.
   const required: Requirement = { secondFactors: [], enrolmentRequired: false }
   const { email, emailNormalized } = user
@@ -3849,28 +4284,9 @@ export async function confirmFactorEnrolment(
       { backupCodes: codes }
     )
   } catch (error) {
-    try {
-      await deps.factors.removeForUser(
-        tenant.environmentId,
-        userId,
-        Audit.entry(deps, tenant, {
-          type: 'user.mfa_disabled',
-          actor: systemActor(context),
-          target: { type: 'user', id: userId },
-          data: { method: 'enrolment_incomplete' },
-        }),
-        // Only the factor this request confirmed: if the user was reset and enrolled again
-        // meanwhile, that factor is not this request's to remove.
-        factorId
-      )
-    } catch (undo) {
-      // Both failed: the factor is on and its codes were never shown. The user signs in with
-      // the authenticator and makes new codes, or an administrator resets them.
-      logger.warn('could not undo an enrolment whose attempt did not complete', {
-        environmentId: tenant.environmentId,
-        err: undo instanceof Error ? undo.name : 'unknown',
-      })
-    }
+    // Only the factor this request confirmed: if the user was reset and enrolled again
+    // meanwhile, that factor is not this request's to remove.
+    await Mfa.undoEnrolment(deps, tenant, userId, factorId, systemActor(context))
     throw error
   }
   Notices.mfaChanged(deps, tenant, user, { change: 'enabled', at: deps.clock.now() })

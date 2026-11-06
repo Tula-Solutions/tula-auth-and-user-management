@@ -353,6 +353,7 @@ type ExecutionDeps = Pick<
   | 'config'
   | 'clock'
   | 'ids'
+  | 'verificationTokens'
 >
 
 /**
@@ -524,6 +525,58 @@ async function changeIsThere(
 }
 
 /**
+ * Reject a pending proposal: it is decided for good and nothing is carried out.
+ *
+ * The store's compare-and-set takes it out of `pending` once, so a rejection and an
+ * approval racing cannot both succeed. The refusals are the approval's.
+ *
+ * @param deps - Proposal store, environments, settings and clock.
+ * @param tenant - The environment the administrator acts in.
+ * @param id - The proposal.
+ * @param actor - The administrator, as their router built it.
+ * @returns The proposal, `rejected`.
+ * @throws NotFoundError when the proposal is not of this environment.
+ * @throws ConflictError `resource.conflict` with `already_decided` or `expired`.
+ */
+export async function reject(
+  deps: Pick<Deps, 'proposals' | 'clock' | 'ids'>,
+  tenant: Scope,
+  id: string,
+  actor: Actor
+): Promise<Proposal> {
+  const found = await deps.proposals.find(tenant.environmentId, id)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const rejected = await deps.proposals.reject(
+    tenant.environmentId,
+    id,
+    deps.clock.now(),
+    Audit.entry(deps, tenant, {
+      type: 'proposal.rejected',
+      actor,
+      target: { type: 'proposal', id },
+      data: {
+        ...proposed(found),
+        proposedBy: found.proposedBy,
+      },
+    })
+  )
+  if (!rejected) {
+    // Nothing was written. Which of the two it was is read again, for the answer only.
+    const current = await deps.proposals.find(tenant.environmentId, id)
+    if (!current) {
+      throw new NotFoundError()
+    }
+    if (current.status !== 'pending') {
+      refuseApproval('already_decided', 'This proposal was decided before.')
+    }
+    refuseApproval('expired', 'This proposal has expired. Nothing was changed.')
+  }
+  return toProposal(rejected, deps.clock.now())
+}
+
+/**
  * Approve a proposal and carry out its operation.
  *
  * The order is what makes a proposal single use: the approval is written first, by a
@@ -631,27 +684,31 @@ export async function approve(
   const outcome = await execute(deps, tenant, approved, agent, approvedBy)
   const target = { type: 'proposal', id } as const
   try {
-    const finished = await deps.proposals.finish(
-      tenant.environmentId,
-      id,
-      outcome.reason === null
-        ? { status: 'executed' }
-        : { status: 'failed', reason: outcome.reason },
-      deps.clock.now(),
-      outcome.reason === null
-        ? Audit.entry(deps, tenant, {
-            type: 'proposal.executed',
-            actor: agent,
-            target,
-            data: { ...proposed(approved), approvedBy, changed: outcome.changed },
-          })
-        : Audit.entry(deps, tenant, {
-            type: 'proposal.failed',
-            actor: agent,
-            target,
-            data: { ...proposed(approved), approvedBy, reason: outcome.reason },
-          })
-    )
+    const record = () =>
+      deps.proposals.finish(
+        tenant.environmentId,
+        id,
+        outcome.reason === null
+          ? { status: 'executed' }
+          : { status: 'failed', reason: outcome.reason },
+        deps.clock.now(),
+        outcome.reason === null
+          ? Audit.entry(deps, tenant, {
+              type: 'proposal.executed',
+              actor: agent,
+              target,
+              data: { ...proposed(approved), approvedBy, changed: outcome.changed },
+            })
+          : Audit.entry(deps, tenant, {
+              type: 'proposal.failed',
+              actor: agent,
+              target,
+              data: { ...proposed(approved), approvedBy, reason: outcome.reason },
+            })
+      )
+    // One retry (H-179): `finish` is a compare-and-set on `approved`, so it is safe to repeat,
+    // and a transient database error should not leave the proposal approved for good.
+    const finished = await record().catch(() => record())
     const answer = toProposal(finished ?? approved, deps.clock.now())
     // Said only by the request that carried it out, and only for a proposal recorded as
     // carried out: whether the target was changed, or was already so.

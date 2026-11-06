@@ -3,9 +3,6 @@
 How a signed-in user stays signed in: session profiles (lifetimes, and whether the browser
 holds tokens at all), the list of devices and signing them out, the limit on concurrent
 sessions, and what your server sees.
-The reasoning is in [ADR 0008](../adr/0008-sessions.md) and
-[ADR 0028](../adr/0028-session-profiles.md); the Next.js cookies in
-[ADR 0029](../adr/0029-nextjs-sdk.md).
 
 ## Switch it on
 
@@ -132,6 +129,11 @@ export const proxy = tulaMiddleware({
   // Everything else needs a session. /sign-in, /sign-up and /api/tula are always public.
   // The two callback pages are where a visitor arrives while still signed out.
   publicRoutes: ['/', '/auth/link', '/oauth/callback'],
+  // A page that needs a permission of the session's active organization. The check
+  // is exact and offline, on the verified claims; a signed-in visitor who lacks it is sent to
+  // /no-access, one without a session to /sign-in.
+  access: [{ routes: '/billing(.*)', permission: 'org:billing:read' }],
+  forbiddenUrl: '/no-access',
 })
 
 export const config = {
@@ -153,7 +155,7 @@ import { SessionCheckForm } from './session-check'
  * the page checks again, because a page must not depend on the proxy's matcher covering it.
  */
 export default async function Dashboard() {
-  const { isSignedIn, userId, sessionId, claims } = await auth()
+  const { isSignedIn, userId, sessionId, claims, orgId, orgRole } = await auth()
   if (!isSignedIn) {
     redirect('/sign-in?redirect_url=%2Fdashboard')
   }
@@ -173,11 +175,21 @@ export default async function Dashboard() {
         <dd data-testid='server-session-id'>{sessionId}</dd>
         <dt>Token expires</dt>
         <dd data-testid='server-token-expiry'>{new Date(claims.exp * 1000).toISOString()}</dd>
+        <dt>Organization</dt>
+        <dd data-testid='server-org-id'>{orgId ?? 'none'}</dd>
+        <dt>Role</dt>
+        <dd data-testid='server-org-role'>{orgRole ?? 'none'}</dd>
       </dl>
       <SessionCheckForm />
       <p className='row'>
         <Link href='/profile' className='button-link'>
           Manage your account
+        </Link>
+        <Link href='/organizations' className='button-link quiet'>
+          Your organizations
+        </Link>
+        <Link href='/team' className='button-link quiet'>
+          Your teams
         </Link>
       </p>
     </section>

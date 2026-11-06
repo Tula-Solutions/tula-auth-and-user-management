@@ -28,6 +28,9 @@ import type { AuditTargetType } from './audit'
  */
 export const ACTIVITY_TYPES = [
   'user.created',
+  // A user brought across by an import, instead of `user.created`: an endpoint
+  // subscribes to it deliberately, so a migration does not fire a delivery per user.
+  'user.imported',
   'user.email_verified',
   'user.banned',
   'user.unbanned',
@@ -39,22 +42,26 @@ export const ACTIVITY_TYPES = [
   'user.mfa_disabled',
   'user.backup_codes_regenerated',
   'user.backup_code_used',
-  // A provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to or disconnected from a user;
+  // A provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected
+  // to or disconnected from a user;
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
-  // An email address stored on a user who had none (ADR 0059); `method` says who did it and
+  // An account given its identity at an SSO connection: `connectionId` says which,
+  // `method` whether it was matched by address or created just in time.
+  'user.sso_linked',
+  // An email address stored on a user who had none; `method` says who did it and
   // `verified` whether its holder proved it. The address itself is never in an event.
   'user.email_added',
   'user.passkey_added',
   'user.passkey_renamed',
   'user.passkey_removed',
   'user.passkey_counter_regressed',
-  // A phone number verified and stored on a user, or taken off again (ADR 0037). The number
+  // A phone number verified and stored on a user, or taken off again. The number
   // itself, its country and its digits are never in an event.
   'user.phone_number_added',
   'user.phone_number_removed',
-  // A texted code made the user's second factor, or no longer it (ADR 0025); `method` says
+  // A texted code made the user's second factor, or no longer it; `method` says
   // how it went. Never the number.
   'user.sms_factor_enabled',
   'user.sms_factor_removed',
@@ -63,7 +70,7 @@ export const ACTIVITY_TYPES = [
   'session.reuse_detected',
   // A signed-in user proved a factor again for a session (a step-up); `methods` says which.
   'session.stepped_up',
-  // A refresh of a device-bound session came without a valid proof of its key (ADR 0043). The
+  // A refresh of a device-bound session came without a valid proof of its key. The
   // session lives on. Recorded at most once a minute per session, with a count.
   'session.refresh_proof_refused',
   'api_key.created',
@@ -86,23 +93,68 @@ export const ACTIVITY_TYPES = [
   'webhook_endpoint.secret_rotated',
   // An administrator ended that overlap early: the previous secret stopped signing at once.
   'webhook_endpoint.previous_secret_revoked',
-  // A hook registered, changed or removed (ADR 0035). `changed` lists field names; neither
+  // A hook registered, changed or removed. `changed` lists field names; neither
   // the hook's address nor its signing secret is ever in an event. `weakened` says the change
   // lets through what the hook used to stop.
   'hook.created',
   'hook.updated',
   'hook.deleted',
-  // A native app's identity registered, changed or removed (ADR 0040). The event says which
+  // A native app's identity registered, changed or removed. The event says which
   // platform and, of a change, which fields: never the bundle id, the package name, the team
   // or a fingerprint. `weakened` says the change widened which app the served files name.
   'native_app.created',
   'native_app.updated',
   'native_app.deleted',
+  // An organization's single sign-on connection. Ids, protocol, status and field
+  // names only: never the issuer, the client id or secret, or a domain.
+  'sso_connection.created',
+  'sso_connection.updated',
+  'sso_connection.deleted',
+  // A SCIM token of an organization's directory and the users the directory provisions.
+  // Ids and enums only: never a token, a user name or an address.
+  'scim_token.created',
+  'scim_token.revoked',
+  'setup_link.created',
+  'setup_link.revoked',
+  'user.scim_provisioned',
+  'user.scim_updated',
+  // A group a directory pushed. Ids and field names only: a group's name is
+  // directory data and is never in an event.
+  'scim_group.created',
+  'scim_group.updated',
+  'scim_group.deleted',
+  // An organization and its members. The events carry ids and role keys only:
+  // never the organization's name or slug, and never a member's address or name.
+  'organization.created',
+  'organization.updated',
+  'organization.deleted',
+  'organization_membership.added',
+  'organization_membership.role_changed',
+  'organization_membership.removed',
+  // A custom role of the environment's organizations. Its key, never its name.
+  'organization_role.created',
+  'organization_role.updated',
+  'organization_role.deleted',
+  // A domain of an organization. The organization's id, the
+  // domain (a bounded name of a fixed grammar) and the mode: never an address.
+  'organization_domain.claimed',
+  'organization_domain.verified',
+  'organization_domain.updated',
+  'organization_domain.removed',
+  // An invitation to join an organization. Ids and the role's key only: the
+  // invited address is never in an event. An invitation that lapses is not recorded.
+  'organization_invitation.created',
+  'organization_invitation.accepted',
+  'organization_invitation.declined',
+  'organization_invitation.revoked',
   'proposal.created',
   'proposal.approved',
+  'proposal.rejected',
   'proposal.executed',
   'proposal.failed',
-  // A sign-in test (ADR 0058): the server signed a throwaway user up and in for an agent (or
+  // An export of the audit log (TULA-137): who read the trail, with which filters, how many entries.
+  'audit.exported',
+  // A sign-in test: the server signed a throwaway user up and in for an agent (or
   // for a secret key) and deleted it. `finished` says what it came to and names the user.
   'sign_in_test.started',
   'sign_in_test.finished',
@@ -142,6 +194,7 @@ export const EVENT_SCHEMA_VERSION = 1
  */
 export const EVENT_TARGET_TYPES = {
   'user.created': 'user',
+  'user.imported': 'user',
   'user.email_verified': 'user',
   'user.banned': 'user',
   'user.unbanned': 'user',
@@ -154,6 +207,7 @@ export const EVENT_TARGET_TYPES = {
   'user.identity_linked': 'user',
   'user.email_added': 'user',
   'user.identity_unlinked': 'user',
+  'user.sso_linked': 'user',
   'user.passkey_added': 'user',
   'user.passkey_renamed': 'user',
   'user.passkey_removed': 'user',
@@ -185,10 +239,41 @@ export const EVENT_TARGET_TYPES = {
   'native_app.created': 'native_app',
   'native_app.updated': 'native_app',
   'native_app.deleted': 'native_app',
+  'sso_connection.created': 'sso_connection',
+  'sso_connection.updated': 'sso_connection',
+  'sso_connection.deleted': 'sso_connection',
+  'scim_token.created': 'scim_token',
+  'scim_token.revoked': 'scim_token',
+  'setup_link.created': 'setup_link',
+  'setup_link.revoked': 'setup_link',
+  'user.scim_provisioned': 'user',
+  'user.scim_updated': 'user',
+  'scim_group.created': 'scim_group',
+  'scim_group.updated': 'scim_group',
+  'scim_group.deleted': 'scim_group',
+  'organization.created': 'organization',
+  'organization.updated': 'organization',
+  'organization.deleted': 'organization',
+  'organization_membership.added': 'organization_membership',
+  'organization_membership.role_changed': 'organization_membership',
+  'organization_membership.removed': 'organization_membership',
+  'organization_role.created': 'organization_role',
+  'organization_role.updated': 'organization_role',
+  'organization_role.deleted': 'organization_role',
+  'organization_domain.claimed': 'organization_domain',
+  'organization_domain.verified': 'organization_domain',
+  'organization_domain.updated': 'organization_domain',
+  'organization_domain.removed': 'organization_domain',
+  'organization_invitation.created': 'organization_invitation',
+  'organization_invitation.accepted': 'organization_invitation',
+  'organization_invitation.declined': 'organization_invitation',
+  'organization_invitation.revoked': 'organization_invitation',
   'proposal.created': 'proposal',
   'proposal.approved': 'proposal',
+  'proposal.rejected': 'proposal',
   'proposal.executed': 'proposal',
   'proposal.failed': 'proposal',
+  'audit.exported': 'environment',
   'sign_in_test.started': 'environment',
   'sign_in_test.finished': 'environment',
 } as const satisfies Record<ActivityType, AuditTargetType>

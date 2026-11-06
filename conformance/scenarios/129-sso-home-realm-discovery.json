@@ -1,0 +1,555 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "sso home-realm discovery is by domain",
+  "description": "Whether a sign-in is offered single sign-on depends on the address's domain alone (ADR 0067): an address with an account and one without, on the same bound domain, get the same answer and both continue to the identity provider; an address on another domain is not offered it; and a provider that reports an address outside the connection's domains signs nobody in (sso.email_domain_mismatch).",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SSO Org",
+          "slug": "sso-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims its domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "learn the mock identity provider's issuer",
+      "sso": {
+        "captureIssuer": "issuer"
+      }
+    },
+    {
+      "name": "an administrator creates an OIDC connection, as a draft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Mock IdP",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecret": "conformance-sso-secret",
+          "domains": ["s{{suffix}}.example"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "protocol": "oidc",
+          "name": "Mock IdP",
+          "status": "draft",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecretSet": true,
+          "defaultRole": "member",
+          "domains": ["s{{suffix}}.example"],
+          "createdAt": "$any",
+          "updatedAt": "$any"
+        },
+        "bodyExcludes": ["conformance-sso-secret"]
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
+      "name": "an administrator starts a test sign-in of the connection",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests",
+        "auth": "secret",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "testId": "$any",
+          "authorizationUrl": "$any"
+        }
+      },
+      "capture": {
+        "testId": "testId",
+        "testUrl": "authorizationUrl"
+      }
+    },
+    {
+      "name": "the administrator signs in at the identity provider as someone on the domain",
+      "sso": {
+        "authorizationUrl": "{{testUrl}}",
+        "email": "tester-{{suffix}}@s{{suffix}}.example",
+        "captureTest": "returnedTest"
+      }
+    },
+    {
+      "name": "the test passed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests/{{testId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "testId": "{{testId}}",
+          "status": "passed",
+          "reason": null,
+          "message": null,
+          "attributes": "$any",
+          "groups": "$any",
+          "mapped": {
+            "email": "tester-{{suffix}}@s{{suffix}}.example",
+            "givenName": null,
+            "familyName": null,
+            "emailOnVerifiedDomain": true
+          }
+        }
+      }
+    },
+    {
+      "name": "the administrator activates it",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "name": "an employee starts a sign-in with an address on the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "ada-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor"
+          }
+        }
+      },
+      "capture": {
+        "knownId": "id",
+        "knownSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "an employee continues with single sign-on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{knownId}}/sso",
+        "client": "ios",
+        "attempt": "{{knownSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "authorizationUrl": "$any",
+          "binding": "$any",
+          "attempt": {
+            "id": "{{knownId}}"
+          }
+        }
+      },
+      "capture": {
+        "knownUrl": "authorizationUrl",
+        "knownBinding": "binding"
+      }
+    },
+    {
+      "name": "an employee signs in at the identity provider; the callback hands the app a ticket",
+      "sso": {
+        "authorizationUrl": "{{knownUrl}}",
+        "email": "ada-{{suffix}}@s{{suffix}}.example",
+        "captureTicket": "knownTicket",
+        "captureAttempt": "knownAttempt"
+      }
+    },
+    {
+      "name": "the ticket and the binding sign an employee in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{knownTicket}}",
+          "attemptId": "{{knownAttempt}}",
+          "binding": "{{knownBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "knownUserId": "step.userId",
+        "knownToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the employee starts again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "ada-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureJson": {
+        "knownStrategies": "step.strategies"
+      }
+    },
+    {
+      "name": "an address with no account on the same domain gets the same strategies",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "nobody-{{suffix}}@s{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$json": "{{knownStrategies}}"
+            }
+          }
+        }
+      },
+      "capture": {
+        "unknownId": "id",
+        "unknownSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "and continues to the identity provider too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{unknownId}}/sso",
+        "client": "ios",
+        "attempt": "{{unknownSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "authorizationUrl": "$any"
+        }
+      },
+      "capture": {
+        "unknownUrl": "authorizationUrl",
+        "unknownBinding": "binding"
+      }
+    },
+    {
+      "name": "a provider that names an address outside the connection's domains signs nobody in",
+      "sso": {
+        "authorizationUrl": "{{unknownUrl}}",
+        "email": "ada-{{suffix}}@elsewhere.example",
+        "captureTicket": "outTicket",
+        "captureAttempt": "outAttempt"
+      }
+    },
+    {
+      "name": "the exchange refuses it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{outTicket}}",
+          "attemptId": "{{outAttempt}}",
+          "binding": "{{unknownBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "sso.email_domain_mismatch"
+        }
+      }
+    },
+    {
+      "name": "an address on another domain is not offered single sign-on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "ada-{{suffix}}@other-{{suffix}}.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "otherId": "id",
+        "otherSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "so it cannot continue with single sign-on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{otherId}}/sso",
+        "client": "ios",
+        "attempt": "{{otherSecret}}",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "flow.invalid_step"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "disable the connection",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret",
+        "body": {
+          "status": "disabled"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

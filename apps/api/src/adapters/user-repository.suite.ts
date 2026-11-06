@@ -4,6 +4,7 @@ import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore } from '~/ports/factor-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
+import type { SessionStore } from '~/ports/session-store'
 import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
 import { comparable } from '~/testing/comparable'
 
@@ -22,6 +23,8 @@ export interface UserSuiteContext {
    */
   factors: FactorStore
   passkeys: PasskeyStore
+  /** The session store over the same data: a deletion cascades the user's sessions. */
+  sessions: SessionStore
   /** Reads back what the repository recorded. */
   log: ActivityLog
   a: UserSuiteTenant
@@ -72,8 +75,11 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       return {
         ...rest,
         bannedAt: null,
+        banOrigin: null,
         lastSignInAt: null,
         phoneNumber: null,
+        managedByConnectionId: null,
+        managedByDirectoryId: null,
         phoneNumberVerifiedAt: null,
         smsFactorEnabledAt: null,
       }
@@ -98,6 +104,56 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       (
         await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
       ).entries.map((entry) => entry.type)
+
+    describe('a batch lookup by id', () => {
+      test('finds the users of this environment, in one call, and skips the rest', async () => {
+        const one = user(ctx.a)
+        const two = user(ctx.a)
+        const elsewhere = user(ctx.b)
+        await ctx.users.create(one, Audit.none('fixture'))
+        await ctx.users.create(two, Audit.none('fixture'))
+        await ctx.users.create(elsewhere, Audit.none('fixture'))
+        const found = await ctx.users.findByIds(ctx.a.environmentId, [
+          one.id,
+          two.id,
+          elsewhere.id,
+          Bun.randomUUIDv7(),
+          one.id,
+        ])
+        expect(found.map((row) => row.id).sort()).toEqual([one.id, two.id].sort())
+        expect(found.find((row) => row.id === one.id)).toEqual(
+          (await ctx.users.findById(ctx.a.environmentId, one.id)) ?? undefined
+        )
+        expect(await ctx.users.findByIds(ctx.a.environmentId, [])).toEqual([])
+      })
+    })
+
+    describe('the match an import makes for a taken address (ADR 0066)', () => {
+      test('gives the id and the external id, in this environment only', async () => {
+        const withId = user(ctx.a, { externalId: 'src_1' })
+        const without = user(ctx.a)
+        await ctx.users.create(withId, Audit.none('fixture'))
+        await ctx.users.create(without, Audit.none('fixture'))
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, withId.emailNormalized)
+        ).toEqual({
+          id: withId.id,
+          externalId: 'src_1',
+        })
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, without.emailNormalized)
+        ).toEqual({
+          id: without.id,
+          externalId: null,
+        })
+        expect(
+          await ctx.users.findImportMatch(ctx.b.environmentId, withId.emailNormalized)
+        ).toBeNull()
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, 'nobody@northline.app')
+        ).toBeNull()
+      })
+    })
 
     describe('a texted code as the second factor', () => {
       const NUMBER = '+14155550100'
@@ -325,6 +381,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         ).toBe(true)
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
+          managedByDirectoryId: null,
           smsFactorEnabledAt: null,
         })
         expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
@@ -394,6 +452,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.users.create(input, Audit.none('fixture'))
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
+          managedByDirectoryId: null,
           phoneNumberVerifiedAt: null,
         })
       })
@@ -793,6 +853,17 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(results.filter(Boolean)).toHaveLength(1)
     })
 
+    test('refuses a duplicate id and leaves the first user unchanged (H-239)', async () => {
+      const first = user(ctx.a)
+      const clash = user(ctx.a, { id: first.id })
+      expect(await ctx.users.create(first, Audit.none('fixture'))).toBe(true)
+      expect(await ctx.users.create(clash, Audit.none('fixture'))).toBe(false)
+      expect((await ctx.users.findById(ctx.a.environmentId, first.id))?.emailNormalized).toBe(
+        first.emailNormalized
+      )
+      expect(await ctx.users.findByEmail(ctx.a.environmentId, clash.emailNormalized)).toBeNull()
+    })
+
     test('the same email can exist in another environment', async () => {
       const first = user(ctx.a)
       const twin = user(ctx.b, { email: first.email, emailNormalized: first.emailNormalized })
@@ -1150,15 +1221,64 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
       })
 
+      test('deleting a user reports the sessions still active that the delete cascaded', async () => {
+        const user = await seeded()
+        const at = new Date('2030-01-01T00:00:00Z')
+        const later = new Date('2030-02-01T00:00:00Z')
+        const open = async (revoked: boolean) => {
+          const id = Bun.randomUUIDv7()
+          await ctx.sessions.create(
+            {
+              id,
+              ...ctx.a,
+              userId: user.id,
+              profile: 'web',
+              client: 'web',
+              userAgent: null,
+              ipAddress: null,
+              lastActiveAt: at,
+              idleExpiresAt: later,
+              absoluteExpiresAt: later,
+              createdAt: at,
+            },
+            {
+              id: Bun.randomUUIDv7(),
+              sessionId: id,
+              tokenHash: `hash-${id}`,
+              parentId: null,
+              expiresAt: later,
+              createdAt: at,
+            },
+            Audit.none('fixture')
+          )
+          if (revoked) {
+            await ctx.sessions.revoke(
+              ctx.a.environmentId,
+              id,
+              'revoked_by_admin',
+              at,
+              Audit.none('fixture')
+            )
+          }
+          return id
+        }
+        const active = await open(false)
+        await open(true)
+        expect(await ctx.users.delete(ctx.a.environmentId, user.id, Audit.none('fixture'))).toEqual(
+          { outcome: 'deleted', endedSessionIds: [active] }
+        )
+        expect(await ctx.sessions.findById(ctx.a.environmentId, active)).toBeNull()
+      })
+
       test('deleting a user deletes their previous passwords', async () => {
         const input = await seeded()
         const other = await seeded()
         await change(ctx.a, input.id, 1)
         await change(ctx.a, input.id, 2)
         await change(ctx.a, other.id, 1)
-        expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-          true
-        )
+        expect(
+          await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))
+        ).toMatchObject({ outcome: 'deleted' })
         expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
         // Only the other user's one row is left for a purge to find.
         expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(1)
@@ -1426,6 +1546,28 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await search(`no-such-user-${tag}`)).toEqual([])
     })
 
+    test('a ban records its origin: an operator takes over a directory ban, never the reverse', async () => {
+      const input = user(ctx.a)
+      await ctx.users.create(input, Audit.none('fixture'))
+      const ban = async (at: number | null, origin?: 'operator' | 'directory') =>
+        (
+          await ctx.users.setBanned(
+            ctx.a.environmentId,
+            input.id,
+            at === null ? null : later(at),
+            later(at ?? 9_000),
+            Audit.none('fixture'),
+            origin
+          )
+        )?.banOrigin
+      expect(await ban(1_000, 'directory')).toBe('directory')
+      expect(await ban(2_000, 'directory')).toBe('directory')
+      expect(await ban(3_000)).toBe('operator')
+      expect(await ban(4_000, 'directory')).toBe('operator')
+      expect(await ban(null)).toBeNull()
+      expect(await ban(5_000)).toBe('operator')
+    })
+
     test('bans keep the first ban time, and unbans clear it', async () => {
       const input = user(ctx.a)
       await ctx.users.create(input, Audit.none('fixture'))
@@ -1476,12 +1618,13 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
     test('deletes a user and frees their email', async () => {
       const input = user(ctx.a)
       await ctx.users.create(input, Audit.none('fixture'))
-      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-        true
-      )
-      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-        false
-      )
+      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'deleted',
+        endedSessionIds: [],
+      })
+      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'not_found',
+      })
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toBeNull()
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
@@ -1508,8 +1651,57 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(
         await ctx.users.setBanned(foreign, input.id, later(1), later(1), Audit.none('fixture'))
       ).toBeNull()
-      expect(await ctx.users.delete(foreign, input.id, Audit.none('fixture'))).toBe(false)
+      expect(await ctx.users.delete(foreign, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'not_found',
+      })
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
+    })
+
+    test('releases a directory mark only for the organization that holds it', async () => {
+      const org = Bun.randomUUIDv7()
+      const input = { ...user(ctx.a), managedByDirectoryId: org }
+      await ctx.users.create(input, Audit.none('fixture'))
+      const mark = async (environmentId: string) =>
+        (await ctx.users.findById(environmentId, input.id))?.managedByDirectoryId ?? null
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, Bun.randomUUIDv7())
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.b.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBe(org)
+      await ctx.users.releaseDirectory(ctx.a.environmentId, input.id, org)
+      expect(await mark(ctx.a.environmentId)).toBeNull()
+    })
+
+    test('sets the names, and another environment, or a missing user, changes nothing', async () => {
+      const input = user(ctx.a)
+      await ctx.users.create(input, Audit.none('fixture'))
+      const names = { firstName: 'Maya', lastName: null }
+      const set = await ctx.users.setNames(
+        ctx.a.environmentId,
+        input.id,
+        names,
+        later(1),
+        Audit.none('fixture')
+      )
+      expect(set).toMatchObject(names)
+      expect(
+        await ctx.users.setNames(
+          ctx.b.environmentId,
+          input.id,
+          { firstName: 'X', lastName: 'Y' },
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(
+        await ctx.users.setNames(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          names,
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject(names)
     })
 
     test('one environment cannot read or change another’s users', async () => {
@@ -2005,6 +2197,48 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
                 (entry) => entry.provider
               )
             ).toEqual(['x'])
+          })
+
+          test('replaceEmail swaps the address, recorded once; a held address is refused', async () => {
+            const maya = user(ctx.a)
+            const nelly = user(ctx.a)
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const next = address()
+            const stored = await ctx.users.replaceEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              next,
+              later(5),
+              activity(ctx.a, 'user.scim_updated', nelly.id)
+            )
+            expect(stored).toMatchObject({ id: nelly.id, emailNormalized: next.normalized })
+            expect((await ctx.users.findByEmail(ctx.a.environmentId, next.normalized))?.id).toBe(
+              nelly.id
+            )
+            expect(
+              await ctx.users.findByEmail(ctx.a.environmentId, nelly.emailNormalized ?? '')
+            ).toBeNull()
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email ?? '', normalized: maya.emailNormalized ?? '' },
+                later(6),
+                activity(ctx.a, 'user.scim_updated', nelly.id)
+              )
+            ).toBe('taken')
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                Bun.randomUUIDv7(),
+                address(),
+                later(6),
+                Audit.none('fixture')
+              )
+            ).toBe('not_found')
           })
 
           test('an address nobody proved is stored unverified', async () => {

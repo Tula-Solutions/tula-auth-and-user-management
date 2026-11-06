@@ -729,7 +729,10 @@ therefore **shown in tests only**. Not verified:
 | What | How far it was taken |
 | --- | --- |
 | **Sign in with Apple's sheet** (`expo-apple-authentication` 57.0.2) | Never shown. That `signInAsync({ requestedScopes, nonce })` puts the given string into the token's `nonce` claim unchanged (the package hands it the SHA-256 it took, and the server compares that), that `identityToken` is the token the server accepts, that `fullName` arrives at the first sign-in only, and that a dismissal rejects with `code: 'ERR_REQUEST_CANCELED'`, are from the module's declarations and sources. A dismissal that arrives as anything else is shown as an error, not as `dismissed`. |
-| **Google's sheet** (`react-native-nitro-google-signin` 2.3.0) | Never shown. That `configure({ webClientId, iosClientId, nonce })` followed by `presentExplicitSignIn()` yields an ID token whose audience is the web client id and whose `nonce` is the string given, on both platforms; the three result types; the rejection code `SIGN_IN_CANCELLED`; and `checkPlayServices`: from the module's declarations, README and native sources. **Whether Google's iOS SDK or Credential Manager alters or hashes the nonce was not observed**; if either does, every native Google sign-in is `auth.invalid_credentials`. `noSavedCredentialFound` is read as a dismissal. |
+| **Google's sheet** (`react-native-nitro-google-signin` 2.3.0) | Never shown. That `configure({ webClientId, iosClientId, nonce })` followed by `presentExplicitSignIn()` yields an ID token whose audience is the web client id and whose `nonce` is the string given, on both platforms; the three result types; the rejection code `SIGN_IN_CANCELLED`; and `checkPlayServices`: from the module's declarations, README and native sources. **Whether Google's iOS SDK or Credential Manager alters or hashes the nonce was not observed**; if either does, every native Google sign-in is `auth.invalid_credentials`. `noSavedCredentialFound` is the outcome `no_account`, not a dismissal (TULA-157, H-321). |
+| **Swift sign-out of every undelivered token** (`TulaSession.swift`, `testANewSessionKeepsTheUndeliveredTokenAndTheNextSignOutEndsBoth`) | Never compiled and never run: the machine has Command Line Tools only, no Swift toolchain. The list of tokens a failed sign-out could not revoke (bounded at 8, kept across a new session, newest first, removed on success or a `session.*` refusal) was written to mirror `@tula-tech/core` and the Kotlin client, which were tested (TULA-157, H-315). |
+| **SwiftUI setup key and backup codes hidden from the app switcher; macOS pasteboard cleared after a minute** (`TulaAuthParts.swift`) | Never compiled and never run (no Swift toolchain). `SetupView` and `CodesView` are `.privacySensitive()` and redacted while the scene is not active; the AppKit `Pasteboard.copy` clears the board after `TulaCopyRule.lifetime` if its `changeCount` is still the one it wrote. Whether the snapshot is really redacted needs an iOS simulator or device (device, TULA-195) (TULA-157, H-311, H-319). |
+| **Android clipboard cleared after a minute** (`TulaParts.kt`, `tulaSensitiveCopy`) | Never compiled (the Android library needs an SDK) and never run. A main-looper timer clears the clip when it still holds the copied text (device, TULA-195) (TULA-157, H-320). |
 | **That importing `@tula-tech/expo/google` in Expo Go throws** | Read from the module's source (it makes its native object when imported). Not tried. The docs tell an app for Expo Go to leave the import out. |
 | **The package's own SHA-256** | Held to WebCrypto's digest and to the server's `appleNonceClaim` under Bun. Not run on Hermes or JavaScriptCore. |
 | **A key in secure hardware** (`@pagopa/io-react-native-crypto` 1.2.5) | Never made. That the iOS key is in the Secure Enclave and `WhenUnlockedThisDeviceOnly`, that the Android key is in the Keystore (StrongBox where there is one) and hardware-backed, and that neither can be exported, is from the module's native sources, not from a device. |
@@ -776,6 +779,8 @@ completes the sign-in in the app" is therefore **shown in tests only**. Not veri
 | **The integration tests and the browser tests** | `bun run test:integration` and Playwright were not run for this work (the server, `@tula-tech/core` and `@tula-tech/react` are unchanged). |
 
 ## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
+
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
 
 The client is tested in Swift, on one Mac, from the command line. **`verify` runs none of
 it**: no job of `ci.yml` has a Swift toolchain. What `verify` holds is that the journey
@@ -1170,7 +1175,7 @@ else.
 | **A person who approves without reading** | Not defended, and cannot be. The screen never says more than "approved". |
 | **PostgreSQL, a deployed server** | Not run against either: the screen added no route, query or store method. |
 | **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): there is none of the Proposals screen in `apps/dashboard/docs`. |
-| **Dismissing a proposal** | Not built (ADR 0053, "Dismissing a proposal: not built"). |
+| **Rejecting a proposal** | Built, TULA-198 (ADR 0053, "Rejecting a proposal"). |
 
 ## Step 2.17, a settings change as an edit to the config file (TULA-24, [ADR 0056](../adr/0056-mcp-settings-config-diff.md))
 
@@ -1188,6 +1193,8 @@ providers are the same before and after). Nothing else.
 | **Postgres, a deployed server** | Not run against either: the tool makes two `GET`s that the read tools already make. |
 
 ## Step 2.15, the Kotlin client (TULA-38, [ADR 0054](../adr/0054-kotlin-client.md))
+
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
 
 The client (`native/android/tula-auth`) is plain Kotlin and its tests run on a JVM. The
 `kotlin` job of `.github/workflows/ci.yml` runs them on Linux (Temurin 25) on every pull
@@ -1316,7 +1323,7 @@ Not verified:
 | **A sheet's ceiling** | Tested on a JVM with a sheet that never answers and a ceiling of 150 ms. The real ceiling is 300 seconds and was not waited for; what Credential Manager does when the coroutine that asked is cancelled was not seen. |
 | **Sign in with Apple on Android** | Goes through the browser like every provider but Google. The journeys do not sign in with Apple at all on this client (the mock's Apple is covered by the server's own scenarios); a custom scheme is refused for it by the server, so an Android app needs an app link. |
 | **An emailed link** | Not built: the client has no call that asks for one, and a step that offers only a link is `NOT_SUPPORTED`. The list says `not_built` under TULA-76 (the native clients' emailed link, Swift and Kotlin) with the reason. |
-| **Renaming a passkey, and a phone number on the account** | The rename is not built: it is a `PATCH`, which the default engine's `HttpURLConnection` cannot send (TULA-76 carries it). A phone number was not built here; TULA-61 added `client.phone` (the section on the second step and the account, below). |
+| **Renaming a passkey, and a phone number on the account** | The rename is not built: it is a `PATCH`, which the default engine has sent since TULA-130 (TULA-76 carries the call). A phone number was not built here; TULA-61 added `client.phone` (the section on the second step and the account, below). |
 | **A refused proof's worst case** | After `device.proof_invalid` the verdict's looks, the stored token's removal and the sign-out each have the refresh's timeout: about three of them (24 s at the default) inside the shared refresh when a store or the server does not answer. The number is read from the code (each of the three is handed the refresh's timeout); no test times the three in a row, and how long a real Keystore or StrongBox takes for any of them is not known. |
 | **R8, and the new libraries in an app** | No app depends on the module. Consumer rules, minification, the size the three libraries add, and a device without Play services were not looked at. No checksum or signature of the new libraries is verified (the gap the section above states). |
 | **The CI jobs** | `kotlin` and `kotlin-android` run the same Gradle tasks as before; no SDK component was added. Their run with these changes is on the pull request. |
@@ -1729,3 +1736,14 @@ wrote 22 WebP pictures (11 steps, light and dark) and a manifest.
 | **iOS** | Xcode 16.4, an iPhone 16 simulator with iOS 18.5, the status bar set to 9:41. The six capture tests passed. |
 | **Android** | The `Pixel_10` emulator on an Android 17 image (API 37), JDK 25 and Gradle 9.8.1. The six capture tests passed. The pictures are Compose's capture of the app's window, so they have no system bars: the example is not edge to edge, and the emulator draws an empty status bar. In the dark scheme a strip above the content is the example's own light window background. |
 | **Anything else** | No other simulator, device or OS version. The account screens show the fixture's fixed clock (31 December 2025). Nobody looked at the pictures in VoiceOver or TalkBack: they are pictures, with alternative text. |
+
+## Organizations in the Swift and Kotlin clients (TULA-121, [ADR 0065](../adr/0065-organizations.md))
+
+Run on 2026-10-23, by hand, on one Mac (arm64), Apple Swift 6.1.2, JDK 25, bun 1.4.3. `verify` runs none of the Swift or Kotlin tests; it holds that the journeys the sources declare and `conformance/client-journeys.json` agree.
+
+- `swift test --package-path native/swift`: 576 XCTest tests, 0 failures, as a macOS command-line test bundle. The three organization scenarios (my organizations and the active organization, organization invitations, verified domains: suggest and auto-join) are journeys against the real API served by `native/swift/fixture/server.ts`; 13 unit tests cover the claims reader, the invitation link and the session's choice of an organization. `--enable-code-coverage` then `bun run native/swift/fixture/coverage.ts`: the thresholds hold.
+- `bun run native:kotlin:test`: `tula-auth` and `tula-auth-ui` pass with Kover's bounds; `OrganizationsTest` (17 tests) and the three journeys run over HTTP against `e2e/kotlin-fixture.ts`.
+- The `swift` and `kotlin` columns of the list: the three scenarios went from `not_built` under TULA-121 to `journey`; `SWIFT_NOT_BUILT` is now `TULA-56: 1` and the Kotlin count `TULA-76: 1`.
+
+Not verified: nothing ran on iOS, in a simulator, on an emulator or on a device; no universal link or app link opened an app with an invitation, so `TulaInvitationLink` was only read from strings; no screen shows an organization (the screens are not built). The claims are read without verifying the token signature, on purpose, and are for drawing, never for deciding.
+- Swift Keychain remove retry (H-322, TULA-165): typechecked with swiftc, `KeychainTests` not run (no XCTest on the machine).

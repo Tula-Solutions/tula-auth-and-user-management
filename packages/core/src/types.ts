@@ -107,7 +107,11 @@ export type ClientKind = Schemas['SessionClient']
  * - `loading`: not known yet. Call `load()` (or `session.getToken()`) to find out.
  * - `signed-out`: nobody is signed in.
  * - `signed-in`: a session exists. `user` is `null` only until it has been fetched, or if
- *   fetching it failed; `user.get()` fetches it again.
+ *   fetching it failed; `user.get()` fetches it again. `organizationId` is the organization
+ *   the session acts in, `null` for the personal account. For a session with an
+ *   access token it is read from the token's `org_id` claim (unverified: for showing, never
+ *   for authorizing) and so follows every refresh; a browser's `stateful` session has no
+ *   token, so it is known after `organizations.list()` or `organizations.setActive()`.
  *
  * @example
  * ```ts
@@ -121,7 +125,12 @@ export type ClientKind = Schemas['SessionClient']
 export type AuthState =
   | { readonly status: 'loading' }
   | { readonly status: 'signed-out' }
-  | { readonly status: 'signed-in'; readonly sessionId: string; readonly user: User | null }
+  | {
+      readonly status: 'signed-in'
+      readonly sessionId: string
+      readonly user: User | null
+      readonly organizationId: string | null
+    }
 
 /**
  * A `fetch` the client sends every request through. The global `fetch` fits; so does a
@@ -287,3 +296,134 @@ export type EmailCodeSent = Schemas['EmailCodeSent']
  * ```
  */
 export type StepUpMethod = StepUpProof['method']
+
+/**
+ * An organization the signed-in user belongs to, with their role in it and its permission
+ * keys.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.list()
+ * const admin = data.find((org) => org.role === 'admin')
+ * ```
+ */
+export type UserOrganization = Schemas['UserOrganization']
+
+/** A page of the user's organizations, with the session's active organization's id. */
+export type UserOrganizationList = Schemas['UserOrganizationList']
+
+/** An organization the user may join because of a verified address (`organizations.suggestions()`). */
+export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
+
+/** What `organizations.suggestions()` answers: the organizations the user is offered. */
+export type OrganizationSuggestionList = Schemas['OrganizationSuggestionList']
+/**
+ * An invitation to an organization as the inviting side sees it. The token the emailed link
+ * carries is never part of it.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.invitations.list(org.id)
+ * const open = data.filter((invitation) => invitation.status === 'pending')
+ * ```
+ */
+export type OrganizationInvitation = Schemas['OrganizationInvitation']
+
+/** A page of an organization's invitations. */
+export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
+
+/**
+ * An invitation addressed to the signed-in user, as `organizations.invitations.mine()` lists it:
+ * its `id`, the organization's name, the role's key and the expiry; never a token.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.invitations.mine()
+ * await tula.organizations.invitations.acceptMine(data[0].id)
+ * ```
+ */
+export type MyOrganizationInvitation = Schemas['MyOrganizationInvitation']
+
+/** A page of the invitations addressed to the signed-in user. */
+export type MyOrganizationInvitationList = Schemas['MyOrganizationInvitationList']
+
+/** The body of `organizations.invitations.invite()`: the address, a role's key and the page the link leads to. */
+export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
+
+/** What the holder of an invitation's token may see before signing in. */
+export type InvitationPreview = Schemas['InvitationPreview']
+
+/** What accepting an invitation answers: the organization joined, with the role and its permissions. */
+export type AcceptedInvitation = Schemas['AcceptedInvitation']
+
+/**
+ * A member of an organization as another member sees them: the user's id, name and address
+ * (each `null` when they have none) and the key of their role.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.members.list(org.id)
+ * const admins = data.filter((member) => member.role === 'admin')
+ * ```
+ */
+export type OrganizationMember = Schemas['OrganizationMember']
+
+/** A page of an organization's members. */
+export type OrganizationMemberList = Schemas['OrganizationMemberList']
+
+/** A role the signed-in member may give: its key and its name. */
+export type AssignableRole = Schemas['AssignableRole']
+
+/** What `organizations.roles()` answers: the roles the member may offer. */
+export type AssignableRoleList = Schemas['AssignableRoleList']
+
+/** The body of `organizations.update()`: a new name, a new slug, or both. */
+export type UpdateOrganizationInput = Schemas['UpdateOrganizationRequest']
+
+/** A domain an organization claimed, pending a code or verified. */
+export type OrganizationDomain = Schemas['OrganizationDomain']
+
+/** An organization's domains. */
+export type OrganizationDomainList = Schemas['OrganizationDomainList']
+
+/** The body of `organizations.domains.start()`: the domain, an address on it and the mode. */
+export type StartOrganizationDomainInput = Schemas['StartOrganizationDomainRequest']
+
+/** An SSO connection of an organization, as its admins see it: never with the client secret. */
+export type OrganizationSsoConnection = Schemas['SsoConnection']
+
+/** An organization's SSO connections. */
+export type OrganizationSsoConnectionList = Schemas['SsoConnectionList']
+
+/** The body of `organizations.sso.create()`: the organization is the one of the call. */
+export type CreateOrganizationSsoConnectionInput = Schemas['CreateMySsoConnectionRequest']
+
+/** The fields `organizations.sso.update()` changes; an absent one is kept. */
+export type UpdateOrganizationSsoConnectionInput = Schemas['UpdateSsoConnectionRequest']
+
+/** An organization's IdP group to role mapping, in precedence order. */
+export type OrganizationSsoGroupRoles = Schemas['SsoGroupRoles']
+
+/** A started test sign-in: where to send the browser, and the id it returns with. */
+export type OrganizationSsoTestStart = Schemas['SsoTestStart']
+
+/** A test sign-in's result. */
+export type OrganizationSsoTestResult = Schemas['SsoTestResult']
+
+/** An SSO setup link of an organization, as listed (never its token). */
+export type OrganizationSetupLink = Schemas['SetupLink']
+
+/** The setup links of an organization. */
+export type OrganizationSetupLinkList = Schemas['SetupLinkList']
+
+/** A new setup link: the `token` and `url` are shown once. */
+export type CreatedOrganizationSetupLink = Schemas['CreatedSetupLink']
+
+/** The body of `organizations.sso.createSetupLink()`. */
+export type CreateOrganizationSetupLinkInput = Schemas['CreateMySetupLinkRequest']
+
+/** What `organizations.setActive()` answers: the session's active organization now. */
+export type ActiveOrganization = Schemas['ActiveOrganization']
+
+/** The body of `organizations.create()`: a name and a slug (lower-case letters, digits, hyphens). */
+export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']

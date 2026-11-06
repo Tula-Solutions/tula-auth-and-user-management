@@ -5,7 +5,7 @@ import type {
   ProposalTargetType,
 } from '@tula-tech/contract'
 import { apiKeys, type Database, proposals, withTenant } from '@tula-tech/db'
-import { and, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
@@ -129,7 +129,46 @@ export class PostgresProposalStore implements ProposalStore {
   async insert(record: NewProposalRecord, recorded: Recorded): Promise<ProposalRecord> {
     const activity = activityOf(recorded)
     return withTenant(this.db, record.environmentId, async (tx) => {
-      const [row] = await tx.insert(proposals).values(record).returning(columns)
+      if (record.status === 'pending') {
+        // A pending row past its expiry still holds the unique index's slot (H-177); it can
+        // no longer be approved, so it makes way.
+        await tx
+          .delete(proposals)
+          .where(
+            and(
+              eq(proposals.environmentId, record.environmentId),
+              eq(proposals.status, 'pending'),
+              lte(proposals.expiresAt, record.createdAt),
+              eq(proposals.operation, record.operation),
+              eq(proposals.targetType, record.targetType),
+              eq(proposals.targetId, record.targetId),
+              eq(proposals.proposedBy, record.proposedBy)
+            )
+          )
+      }
+      const [row] = await tx
+        .insert(proposals)
+        .values(record)
+        .onConflictDoNothing()
+        .returning(columns)
+      if (!row) {
+        // Lost the race to an identical pending proposal: hand back the winner, record nothing.
+        const [winner] = await tx
+          .select(columns)
+          .from(proposals)
+          .where(
+            and(
+              eq(proposals.environmentId, record.environmentId),
+              eq(proposals.status, 'pending'),
+              eq(proposals.operation, record.operation),
+              eq(proposals.targetType, record.targetType),
+              eq(proposals.targetId, record.targetId),
+              eq(proposals.proposedBy, record.proposedBy)
+            )
+          )
+          .limit(1)
+        return toRecord(winner as typeof proposals.$inferSelect & { proposerActive: boolean })
+      }
       await recordActivity(tx, activity ? [activity] : [])
       // An insert that did not throw returns its row.
       return toRecord(row as typeof proposals.$inferSelect & { proposerActive: boolean })
@@ -189,6 +228,33 @@ export class PostgresProposalStore implements ProposalStore {
             // And the key that asked is still an agent key. In the statement, not before
             // it: what a revoked key asked for is never approved (ADR 0053).
             proposerActive
+          )
+        )
+        .returning(columns)
+      await recordActivity(tx, row && activity ? [activity] : [])
+      return row ? toRecord(row) : null
+    })
+  }
+
+  /** @inheritdoc */
+  async reject(
+    environmentId: string,
+    id: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<ProposalRecord | null> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .update(proposals)
+        .set({ status: 'rejected', updatedAt: at })
+        .where(
+          and(
+            eq(proposals.environmentId, environmentId),
+            eq(proposals.id, id),
+            // The same compare as the approval's, so the row leaves `pending` once.
+            eq(proposals.status, 'pending'),
+            gt(proposals.expiresAt, at)
           )
         )
         .returning(columns)

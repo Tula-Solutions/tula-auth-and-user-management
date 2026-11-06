@@ -97,7 +97,7 @@ describe('artifact uploads', () => {
   })
 })
 
-// Nine packages are released to npm and two are held back (docs/releasing.md). These tests
+// Nine packages are released to npm and two are held back (docs/internal/releasing.md). These tests
 // are the tripwire around that: what may be published, by whom, with which credential and
 // from what. Changing any of it means changing a test here on purpose, in the same change.
 describe('only the released packages can be published', () => {
@@ -315,6 +315,7 @@ describe('only the released packages can be published', () => {
     expect(dryRun).not.toMatch(/\n {4}if:/)
     expect(dryRun).toContain('run: bun run release:dry-run')
     expect(dryRun).toContain('run: bun run packages:states')
+    expect(dryRun).toContain('run: bun run --filter create-tula generate:check')
     expect(dryRun).not.toMatch(/id-token|permissions:|release:publish|--publish/)
 
     const publish = job(workflow, 'publish')
@@ -332,12 +333,12 @@ describe('only the released packages can be published', () => {
       publish
         .match(/\n {6}- (?:name: [^\n]*\n {8})?run: [^\n]*/g)
         ?.map((step) => step.trim().split('run: ')[1])
-    ).toEqual(['bun install --frozen-lockfile', 'bun run release:publish'])
+    ).toEqual(['bun install --frozen-lockfile --ignore-scripts', 'bun run release:publish'])
     expect(publish).not.toMatch(/continue-on-error|\benv:/)
   })
 
   test('the runbook hands over to an environment that only main can deploy to', async () => {
-    const doc = await read('docs/releasing.md')
+    const doc = await read('docs/internal/releasing.md')
     const handOver = doc
       .slice(doc.indexOf('**Hand over to the workflow.**'))
       .replace(/[ \t]*\n[ \t]*(?!\d+\. )/g, ' ')
@@ -678,6 +679,28 @@ describe('what a packed manifest and a tarball may hold', () => {
       'a bin at the sources',
       { bin: { tula: './src/bin.ts' } },
       '@tula-tech/cli: the entry point ./src/bin.ts is not in dist/',
+    ],
+    ...[
+      'git+https://example.invalid/x.git',
+      'file:../x',
+      'link:../x',
+      'https://example.invalid/x.tgz',
+      'github:o/r',
+      'npm:other@1',
+    ].map((range): [string, Partial<Manifest>, string] => [
+      `a non-registry range ${range}`,
+      { optionalDependencies: { left: range } },
+      `@tula-tech/cli: optionalDependencies.left is "${range}", not a registry version`,
+    ]),
+    [
+      'bundled dependencies',
+      { bundledDependencies: ['left'] },
+      '@tula-tech/cli: the packed manifest has "bundledDependencies"',
+    ],
+    [
+      'the other spelling of bundled dependencies',
+      { bundleDependencies: true },
+      '@tula-tech/cli: the packed manifest has "bundleDependencies"',
     ],
   ])('%s is a problem', (_what, change, problem) => {
     expect(stagedManifestProblems({ ...sound, ...change })).toContain(problem)

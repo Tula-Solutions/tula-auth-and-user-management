@@ -524,7 +524,7 @@ class SessionTest {
     }
 
     @Test
-    fun `the undelivered token is forgotten when a new session is adopted`() = runTest {
+    fun `a new session keeps the undelivered token, and the next sign-out ends both once (H-315)`() = runTest {
         val bench = Bench()
         bench.signIn()
         bench.engine.on("POST", SIGN_OUT) { throw IOException("unreachable") }
@@ -534,9 +534,13 @@ class SessionTest {
         bench.engine.on("POST", SIGN_OUT) { answer(204, "") }
         bench.tula.session.signOut()
         bench.tula.session.signOut()
-        // The new session's token, once; never the old one's.
+        // The failed attempt, then the new session's token and the old one's, once each.
         assertEquals(
-            listOf("""{"refreshToken":"tula_rt_first"}""", """{"refreshToken":"tula_rt_second"}"""),
+            listOf(
+                """{"refreshToken":"tula_rt_first"}""",
+                """{"refreshToken":"tula_rt_second"}""",
+                """{"refreshToken":"tula_rt_first"}""",
+            ),
             bench.engine.sent(SIGN_OUT).map { it.body },
         )
     }

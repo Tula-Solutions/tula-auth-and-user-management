@@ -63,6 +63,7 @@ export const PLAYGROUND_PRESETS = [
   'oauth',
   'passkey',
   'mfa',
+  'organizations',
 ] as const
 
 /** The class of the placeholder a playground is written as (the prose rules stop at it). */

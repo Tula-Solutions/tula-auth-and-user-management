@@ -111,6 +111,39 @@ export function signInTestReport(): Record<string, unknown> {
 }
 
 /** The admin API's answers, as the real one shapes them. */
+export const TEST_SSO_CONNECTION_ID = '0198c1de-0000-7000-8000-0000000000e1'
+
+/** An SSO connection as the API answers it, with the fields a tool must not pass on. */
+const SSO_CONNECTION = {
+  id: TEST_SSO_CONNECTION_ID,
+  organizationId: '0198c1de-0000-7000-8000-0000000000d1',
+  protocol: 'saml',
+  name: 'Acme Okta',
+  status: 'active',
+  issuer: 'https://idp-issuer.example.test',
+  clientId: 'sso-client-id-canary',
+  clientSecretSet: false,
+  saml: {
+    idpEntityId: 'https://idp-entity.example.test',
+    ssoUrl: 'https://idp-sso.example.test/sso',
+    metadataUrl: 'https://idp-metadata.example.test/metadata',
+    certificates: [
+      {
+        fingerprint: 'AA:BB:CC:fingerprint-canary',
+        notAfter: '2027-01-01T00:00:00.000Z',
+        expired: false,
+      },
+    ],
+    spEntityId: 'https://auth.example.com/sp',
+    acsUrl: 'https://auth.example.com/acs',
+    spMetadataUrl: 'https://auth.example.com/sp-metadata',
+  },
+  defaultRole: 'member',
+  domains: ['acme.example'],
+  createdAt: '2026-02-01T00:00:00.000Z',
+  updatedAt: '2026-02-02T00:00:00.000Z',
+}
+
 export function defaultAnswers(): Answers {
   const user = {
     id: USER_ID,
@@ -269,6 +302,48 @@ export function defaultAnswers(): Answers {
         drifted: false,
       },
     },
+    'GET /v1/admin/organizations': {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: TEST_ORGANIZATION_ID,
+          name: 'Acme Inc',
+          slug: 'acme',
+          createdBy: USER_ID,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    },
+    [`GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/memberships`]: {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 50 },
+      data: [
+        {
+          id: '0198c1de-0000-7000-8000-0000000000d2',
+          organizationId: TEST_ORGANIZATION_ID,
+          userId: USER_ID,
+          role: 'admin',
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    },
+    'GET /v1/admin/organization-roles': {
+      data: [
+        {
+          id: '0198c1de-0000-7000-8000-0000000000d3',
+          key: 'billing',
+          name: 'Billing',
+          permissions: ['org:billing:manage', 'org:billing:read'],
+          builtIn: false,
+          version: 2,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    },
+    'GET /v1/admin/sso-connections': { connections: [SSO_CONNECTION] },
+    [`GET /v1/admin/sso-connections/${TEST_SSO_CONNECTION_ID}`]: SSO_CONNECTION,
     'GET /v1/admin/oauth-providers': {
       data: [
         {
@@ -287,6 +362,9 @@ export function defaultAnswers(): Answers {
     },
   }
 }
+
+/** The organization the fake API's organization answers are about. */
+export const TEST_ORGANIZATION_ID = '0198c1de-0000-7000-8000-0000000000d1'
 
 /** The user every default answer is about. */
 export const TEST_USER_ID = USER_ID

@@ -28,6 +28,7 @@ import {
   tokensFor,
   userByEmail,
 } from './helpers'
+import { ORGANIZATION_HANDLERS } from './organizations'
 import { matchTotp } from './totp'
 import type { SandboxAttempt, SandboxProvider, SandboxUser } from './types'
 import { newTotpSecret, normalizeEmail, SANDBOX_PASSWORD_POLICY, type World } from './world'
@@ -49,6 +50,7 @@ type Handlers = {
  */
 export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   startIdTokenSignIn: 'native ID-token sign-in needs a provider app on a phone',
+  startSsoSignIn: 'single sign-on needs an identity provider the sandbox does not have',
   submitSignInIdToken: 'native ID-token sign-in needs a provider app on a phone',
   stepUpSession: 'the sandbox never asks for a recent sign-in',
   sendStepUpEmailCode: 'the sandbox never asks for a recent sign-in',
@@ -286,6 +288,11 @@ export const HANDLERS: Handlers = {
     password: SANDBOX_PASSWORD_POLICY,
     mfa: { policy: world.settings.mfaPolicy, smsCode: false },
     phone: { enabled: false },
+    organizations: {
+      enabled: world.settings.organizations,
+      allowUserCreated: true,
+      personalAccount: true,
+    },
   }),
   getPasswordPolicy: () => SANDBOX_PASSWORD_POLICY,
 
@@ -438,6 +445,17 @@ export const HANDLERS: Handlers = {
   getSignInSecondFactorPasskeyOptions: () => unsupported('getSignInSecondFactorPasskeyOptions'),
   submitSignInNewPassword: () => unsupported('submitSignInNewPassword'),
   startIdTokenSignIn: () => unsupported('startIdTokenSignIn'),
+  startSsoSignIn: () => unsupported('startSsoSignIn'),
+  listMyOrganizationSsoConnections: () => unsupported('listMyOrganizationSsoConnections'),
+  createMyOrganizationSsoConnection: () => unsupported('createMyOrganizationSsoConnection'),
+  getMyOrganizationSsoConnection: () => unsupported('getMyOrganizationSsoConnection'),
+  updateMyOrganizationSsoConnection: () => unsupported('updateMyOrganizationSsoConnection'),
+  refreshMyOrganizationSsoMetadata: () => unsupported('refreshMyOrganizationSsoMetadata'),
+  deleteMyOrganizationSsoConnection: () => unsupported('deleteMyOrganizationSsoConnection'),
+  getMyOrganizationSsoGroupRoles: () => unsupported('getMyOrganizationSsoGroupRoles'),
+  replaceMyOrganizationSsoGroupRoles: () => unsupported('replaceMyOrganizationSsoGroupRoles'),
+  startMyOrganizationSsoConnectionTest: () => unsupported('startMyOrganizationSsoConnectionTest'),
+  getMyOrganizationSsoConnectionTest: () => unsupported('getMyOrganizationSsoConnectionTest'),
   submitSignInIdToken: () => unsupported('submitSignInIdToken'),
 
   // Passkeys -----------------------------------------------------------------------------------
@@ -915,6 +933,9 @@ export const HANDLERS: Handlers = {
   verifyPhoneNumber: () => unsupported('verifyPhoneNumber'),
   removePhoneNumber: () => unsupported('removePhoneNumber'),
 
+  // Organizations (ADR 0065) ------------------------------------------------------------------
+  ...ORGANIZATION_HANDLERS,
+
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {
     const { user } = authenticate(ctx)
@@ -984,4 +1005,7 @@ export const HANDLERS: Handlers = {
   startSmsFactorEnrolment: () => unsupported('startSmsFactorEnrolment'),
   confirmSmsFactorEnrolment: () => unsupported('confirmSmsFactorEnrolment'),
   disableSmsFactor: () => unsupported('disableSmsFactor'),
+  listMyOrganizationSetupLinks: () => unsupported('listMyOrganizationSetupLinks'),
+  createMyOrganizationSetupLink: () => unsupported('createMyOrganizationSetupLink'),
+  revokeMyOrganizationSetupLink: () => unsupported('revokeMyOrganizationSetupLink'),
 }

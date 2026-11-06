@@ -1,7 +1,8 @@
 {
   "name": "@tula-tech/expo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "Apache-2.0",
+  "author": "Tula Solutions",
   "private": true,
   "type": "module",
   "description": "Tula's headless Expo SDK: the @tula-tech/core client with its refresh token in the device's secure store, and a provider and hooks for sign-up, sign-in (a password, a code, a passkey, a provider's page or its native sheet), password reset and the session, bound to a key the device keeps. No prebuilt UI.",

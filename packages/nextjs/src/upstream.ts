@@ -1,11 +1,13 @@
 import { CLIENT_HEADER, PUBLISHABLE_KEY_HEADER } from '@tula-tech/contract/headers'
 import { appOrigin, type TulaConfig } from './config'
 import {
+  accessChunkName,
   type CookieNames,
   clearCookieLine,
   cookieNames,
   isCookieValue,
   parseCookieHeader,
+  readAccessToken,
   readUpstreamCookie,
   upstreamCookieHeader,
 } from './cookies'
@@ -109,7 +111,7 @@ export function readRequestCookies(
     names,
     superseded: evidence === 'cookie' ? cookieNames(false) : null,
     all,
-    access: all.get(names.access) || undefined,
+    access: readAccessToken(all, names.access),
     refresh: all.get(names.refresh) || undefined,
     session: all.get(names.session) || undefined,
   }
@@ -142,9 +144,34 @@ export function readRequestCookies(
  * }
  * ```
  */
-export function supersededCookieLines(cookies: Pick<RequestCookies, 'superseded'>): string[] {
+export function supersededCookieLines(
+  cookies: Pick<RequestCookies, 'superseded'> & Partial<Pick<RequestCookies, 'all'>>
+): string[] {
   // Without `Secure`: these are the cookies an http response wrote.
-  return Object.values(cookies.superseded ?? {}).map((name) => clearCookieLine(name, false))
+  return supersededNames(cookies).map((name) => clearCookieLine(name, false))
+}
+
+/**
+ * The plain-named cookies a change expires where the `__Host-` names were chosen by the
+ * cookie rule: the three, and the second part of the access token when the request has one.
+ *
+ * @param cookies - The request's cookies, from {@link readRequestCookies}.
+ * @returns The names, or none.
+ *
+ * @example
+ * ```ts
+ * supersededNames(readRequestCookies(request, config)) // ['tula_at', 'tula_rt', 'tula_session']
+ * ```
+ */
+export function supersededNames(
+  cookies: Pick<RequestCookies, 'superseded'> & Partial<Pick<RequestCookies, 'all'>>
+): string[] {
+  if (!cookies.superseded) {
+    return []
+  }
+  const names = Object.values(cookies.superseded)
+  const chunk = accessChunkName(cookies.superseded.access, 1)
+  return cookies.all?.has(chunk) ? [...names, chunk] : names
 }
 
 /**

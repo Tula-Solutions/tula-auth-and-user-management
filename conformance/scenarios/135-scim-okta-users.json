@@ -1,0 +1,561 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim users: Okta shapes, filters and a duplicate",
+  "description": "Okta provisions, reads, finds, replaces, reactivates and removes a user (ADR 0067): the create is a SCIM 201, a second create of the same userName is a SCIM 409 uniqueness, the userName and externalId filters find the user, a replace with active false removes the membership and a patch with an object value brings it back.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims and verifies a domain, so the directory may create accounts on it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "Okta creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "okta-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-okta-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "okta-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "id": "$any",
+          "userName": "okta-{{suffix}}@s{{suffix}}.example",
+          "active": true
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "and reads it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "externalId": "ext-okta-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "a filter on userName finds it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Users?filter=userName%20eq%20%22okta-{{suffix}}%40s{{suffix}}.example%22",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totalResults": 1,
+          "Resources": [
+            {
+              "id": "{{userId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a filter on externalId finds it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Users?filter=externalId%20eq%20%22ext-okta-{{suffix}}%22",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totalResults": 1,
+          "Resources": [
+            {
+              "id": "{{userId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the same userName is a conflict",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "okta-{{suffix}}@s{{suffix}}.example",
+          "externalId": "another",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "okta-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "409",
+          "scimType": "uniqueness"
+        }
+      }
+    },
+    {
+      "name": "the same externalId is a conflict",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "other-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-okta-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "other-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "409",
+          "scimType": "uniqueness"
+        }
+      }
+    },
+    {
+      "name": "the user is a member",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "Okta replaces the user with active false",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "okta-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-okta-{{suffix}}",
+          "active": false,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "okta-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "active": false
+        }
+      }
+    },
+    {
+      "name": "and is no longer a member",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "and the account is banned: the directory created it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": {
+            "$not": null
+          }
+        }
+      }
+    },
+    {
+      "name": "Okta reactivates with a patch",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            {
+              "op": "replace",
+              "value": {
+                "active": true
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "active": true
+        }
+      }
+    },
+    {
+      "name": "and the user is a member again",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "and no longer banned",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    },
+    {
+      "name": "Okta deletes the user",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Users/{{userId}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+          "status": "404"
+        }
+      }
+    },
+    {
+      "name": "with its account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

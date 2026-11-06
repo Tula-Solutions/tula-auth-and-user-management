@@ -2,8 +2,6 @@
 
 A 6-digit code sent to the user's address: as a way to sign in beside or instead of the
 password, and as the way in for accounts that signed up without a password. Off by default.
-The reasoning is in [ADR 0024](../adr/0024-email-sign-in.md) and
-[ADR 0007](../adr/0007-verification-codes.md).
 
 ## Switch it on
 

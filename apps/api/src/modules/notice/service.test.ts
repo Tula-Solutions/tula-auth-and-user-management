@@ -386,6 +386,14 @@ describe('new sign-in notice', () => {
     expect(read()).not.toMatch(/northline|rejected/i)
   })
 
+  test('one failed send does not burn the notice: it is sent again once', async () => {
+    await registered()
+    spies.push(spyOn(deps.mailer, 'send').mockRejectedValueOnce(new Error('relay hiccup')))
+    await signIn(from(FIREFOX_MAC))
+    await Notices.settled()
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+  })
+
   test('a relay that hangs does not delay the sign-in', async () => {
     await registered()
     let release = () => {}

@@ -3,7 +3,6 @@
 An authenticator app (TOTP) with ten single-use backup codes, a user's passkey as the second
 step, and **step-up**: proving who you are again before a sensitive change. The policy is
 `optional` by default: a user may turn it on.
-The reasoning is in [ADR 0025](../adr/0025-mfa.md).
 
 ## Switch it on
 

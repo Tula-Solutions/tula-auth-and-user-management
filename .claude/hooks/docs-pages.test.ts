@@ -102,7 +102,9 @@ describe('the docs site workflow', () => {
 
   test('the deploy job runs no code of the repository: it deploys the artifact and that is all', () => {
     const steps = job('deploy').steps
-    expect(steps).toEqual([{ id: 'deployment', uses: 'actions/deploy-pages@v5' }])
+    expect(steps).toHaveLength(1)
+    expect(steps[0]?.id).toBe('deployment')
+    expect(steps[0]?.uses).toMatch(/^actions\/deploy-pages@[0-9a-f]{40}$/)
     expect(job('deploy').environment).toEqual({
       name: 'github-pages',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a template
@@ -126,16 +128,16 @@ describe('the docs site workflow', () => {
     ])
   })
 
-  test('every action is pinned to a major version, as the other workflows pin theirs', () => {
+  test('every action is pinned to a commit SHA, as the other workflows pin theirs', () => {
     const uses = Object.values(workflow.jobs).flatMap((one) =>
       one.steps.map((step) => step.uses).filter((value): value is string => value !== undefined)
     )
-    expect(uses).toEqual([
-      'actions/checkout@v7',
-      'actions/checkout@v7',
-      'oven-sh/setup-bun@v2',
-      'actions/upload-pages-artifact@v5',
-      'actions/deploy-pages@v5',
+    expect(uses.map((value) => value.split('@')[0])).toEqual([
+      'actions/checkout',
+      'actions/checkout',
+      'oven-sh/setup-bun',
+      'actions/upload-pages-artifact',
+      'actions/deploy-pages',
     ])
   })
 
@@ -249,12 +251,10 @@ describe('the docs site workflow', () => {
 })
 
 describe('where the docs say the site is published', () => {
-  test.each(['apps/docs/README.md', 'docs/README.md', 'README.md'])(
-    '%s gives the address',
-    (file) => {
-      expect(read(file)).toContain(PAGES_URL)
-    }
-  )
+  // docs/README.md is a page of the site itself: a link to the site's own address fails its build.
+  test.each(['apps/docs/README.md', 'README.md'])('%s gives the address', (file) => {
+    expect(read(file)).toContain(PAGES_URL)
+  })
 
   test('the area rule says how the site is published, and no longer that nothing deploys it', () => {
     const rule = read('.claude/rules/docs-site.md').replace(/\s+/g, ' ')
@@ -266,7 +266,7 @@ describe('where the docs say the site is published', () => {
     const readme = read('apps/docs/README.md').replace(/\s+/g, ' ')
     expect(readme).toContain('push to `main`')
     expect(readme).toContain(`${PAGES_URL}next/`)
-    const releasing = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const releasing = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(releasing).toContain('.github/workflows/docs-pages.yml')
     // Not as a link: the released build checks every address of its own, and `next/` is not its file.
     expect(releasing).toContain('with `next/` added')

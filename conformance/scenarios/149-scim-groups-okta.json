@@ -1,0 +1,432 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "scim groups: Okta shapes, filters and a duplicate",
+  "description": "A group is created with members, found by displayName eq, replaced and deleted; a duplicate name is a SCIM 409 and any other filter a 400 (ADR 0067).",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SCIM Org",
+          "slug": "scim-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and claims and verifies a domain, so the directory may create accounts on it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "s{{suffix}}.example",
+          "email": "it@s{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "it@s{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "name": "and creates a SCIM token for it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/scim-tokens",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "Okta"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any"
+        }
+      },
+      "capture": {
+        "scimToken": "token",
+        "scimTokenId": "id"
+      }
+    },
+    {
+      "name": "provision a",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Users",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          "userName": "a-{{suffix}}@s{{suffix}}.example",
+          "externalId": "ext-a-{{suffix}}",
+          "active": true,
+          "name": {
+            "givenName": "Maya",
+            "familyName": "Okafor"
+          },
+          "emails": [
+            {
+              "type": "work",
+              "value": "a-{{suffix}}@s{{suffix}}.example",
+              "primary": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "aId": "id"
+      }
+    },
+    {
+      "name": "create group eng",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Groups",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          "displayName": "eng-{{suffix}}",
+          "externalId": "g-eng-{{suffix}}",
+          "members": [
+            {
+              "value": "{{aId}}"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "displayName": "eng-{{suffix}}"
+        }
+      },
+      "capture": {
+        "engGid": "id"
+      }
+    },
+    {
+      "name": "the group reads back with its member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "displayName": "eng-{{suffix}}",
+          "members": [
+            {
+              "value": "{{aId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a duplicate name is a conflict",
+      "request": {
+        "method": "POST",
+        "path": "/v1/scim/v2/Groups",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          "displayName": "eng-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "scimType": "uniqueness"
+        }
+      }
+    },
+    {
+      "name": "the displayName filter finds it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups?filter=displayName%20eq%20%22eng-{{suffix}}%22",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totalResults": 1
+        }
+      }
+    },
+    {
+      "name": "another filter is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups?filter=displayName%20co%20%22e%22",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "scimType": "invalidFilter"
+        }
+      }
+    },
+    {
+      "name": "a filter that matches nothing is empty",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups?filter=displayName%20eq%20%22none-{{suffix}}%22",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totalResults": 0,
+          "Resources": []
+        }
+      }
+    },
+    {
+      "name": "replace renames the group",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          "displayName": "eng2-{{suffix}}",
+          "members": []
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "displayName": "eng2-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "an unknown id is not found",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/00000000-0000-7000-8000-000000000000",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "delete removes it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/scim/v2/Groups/{{engGid}}",
+        "auth": "none",
+        "accessToken": "{{scimToken}}"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

@@ -17,7 +17,7 @@ import {
   type TotpEnrolment,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, NotFoundError, RateLimitError } from '~/exceptions'
+import { AuthError, NotFoundError, RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { accountLabel } from '~/lib/account-label'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import * as logger from '~/lib/logger'
@@ -26,6 +26,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -465,7 +466,50 @@ type ConfirmDeps = Pick<
   | 'config'
   | 'mailer'
   | 'rateLimiter'
+  | 'organizations'
 >
+
+/**
+ * Take back an enrolment that was confirmed but whose response (the backup codes) cannot reach
+ * the user, so nobody is left with a second factor whose codes they never saw.
+ *
+ * Recorded as `user.mfa_disabled`, `method: 'enrolment_incomplete'`, pairing the `mfa_enabled`
+ * entry the confirmation wrote. Never throws: if the undo fails too, it is logged.
+ *
+ * @param deps - Factor store, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param factorId - The factor this request confirmed; a factor enrolled since is left alone.
+ * @param actor - Who is recorded as having removed it.
+ */
+export async function undoEnrolment(
+  deps: ConfirmDeps,
+  scope: Scope,
+  userId: string,
+  factorId: string,
+  actor: Actor
+): Promise<void> {
+  try {
+    await deps.factors.removeForUser(
+      scope.environmentId,
+      userId,
+      Audit.entry(deps, scope, {
+        type: 'user.mfa_disabled',
+        actor,
+        target: { type: 'user', id: userId },
+        data: { method: 'enrolment_incomplete' },
+      }),
+      factorId
+    )
+  } catch (undo) {
+    // Both failed: the factor is on and its codes were never shown. The user signs in with
+    // the authenticator and makes new codes, or an administrator resets them.
+    logger.warn('could not undo an enrolment whose attempt did not complete', {
+      environmentId: scope.environmentId,
+      err: undo instanceof Error ? undo.name : 'unknown',
+    })
+  }
+}
 
 /**
  * Confirm a started enrolment with the code the authenticator app shows, turning two-step
@@ -513,6 +557,11 @@ export async function confirmTotp(
   if ((await Settings.current(deps, scope)).mfa.policy === 'off') {
     throw new AuthError('mfa.not_available')
   }
+  // Taken before the factor is read: a session made by a request that confirms first (TULA-155)
+  // appears only after that, so this request, if it loses, never revokes the winner's session.
+  const before = (await deps.sessions.listActiveByUser(scope.environmentId, userId, now)).map(
+    (session) => session.id
+  )
   const [factor, user] = await Promise.all([
     deps.factors.findTotp(scope.environmentId, userId),
     deps.users.findById(scope.environmentId, userId),
@@ -535,16 +584,20 @@ export async function confirmTotp(
   // (as a password reset does). If this first sweep fails, nothing has changed: the enrolment
   // is still pending and can be confirmed again. The other order could leave the factor on,
   // sessions that never proved it alive, and the backup codes lost with the failed response.
-  const sweep = () =>
+  const sweep = (onlyIds?: string[]) =>
     self.sessionId
       ? Sessions.revokeOthers(deps, scope, {
           userId,
           currentSessionId: self.sessionId,
           reason: 'mfa_changed',
           actor,
+          onlyIds,
         })
-      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
-  await sweep()
+      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor, onlyIds)
+  // Only the sessions seen before the read: if another request confirms first, this one fails
+  // below and must not have ended the session that request created. The sweep after the
+  // confirmation takes everything.
+  await sweep(before)
   const confirmed = await deps.factors.confirmTotp(scope.environmentId, factor.id, {
     step,
     at: now,
@@ -561,17 +614,22 @@ export async function confirmTotp(
     throw new AuthError('mfa.enrolment_expired')
   }
   await deps.lockout.clear(lockKey)
+  // Again, now that the factor is on: a session created between the snapshot and the
+  // confirmation (the first sweep took only the snapshot) must not outlive it. Fails closed
+  // (ADR 0016): a session that never proved the factor must not survive it being on. The
   try {
-    // Again, now that the factor is on: a session created between the first sweep and the
-    // confirmation must not outlive it. (A sign-in completing after this point checks for the
-    // factor itself: see the flow service's `finish`.)
     await sweep()
-  } catch (error) {
-    // The factor is on and the codes must still reach the user: they are shown once.
-    logger.warn('could not sweep the sessions again after turning two-step verification on', {
-      environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
-    })
+  } catch {
+    try {
+      await sweep()
+    } catch (error) {
+      // As the flow's confirmation does when its attempt cannot complete: the codes were never
+      // shown, so the factor goes again and the user enrols afresh.
+      await undoEnrolment(deps, scope, userId, factor.id, actor)
+      throw new ServiceUnavailableError({
+        internalMessage: `could not end the sessions after turning two-step verification on: ${error instanceof Error ? error.name : 'unknown'}`,
+      })
+    }
   }
   if (self.sessionId) {
     try {
@@ -1112,13 +1170,31 @@ export async function confirmSms(
     throw new AuthError('mfa.enrolment_expired')
   }
   await deps.lockout.clear(lockKey)
+  // Fails closed, as `confirmTotp` does (H-094, ADR 0016): a session that never proved the
+  // factor must not survive it being on. One retry, then the factor goes again and the user
+  // enrols afresh (`method: 'self'`: the event has no value for an incomplete enrolment, and
+  // a contract change is not worth one for this).
   try {
     await sweep()
-  } catch (error) {
-    logger.warn('could not sweep the sessions again after turning a texted second factor on', {
-      environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
-    })
+  } catch {
+    try {
+      await sweep()
+    } catch (error) {
+      await deps.users.disableSmsFactor(
+        scope.environmentId,
+        userId,
+        deps.clock.now(),
+        Audit.entry(deps, scope, {
+          type: 'user.sms_factor_removed',
+          actor,
+          target: { type: 'user', id: userId },
+          data: { method: 'self' },
+        })
+      )
+      throw new ServiceUnavailableError({
+        internalMessage: `could not end the sessions after turning a texted second factor on: ${error instanceof Error ? error.name : 'unknown'}`,
+      })
+    }
   }
   try {
     // The session that enrolled has just proven the factor. `sms`, never `mfa`.
@@ -1534,6 +1610,7 @@ type StepUpDeps = ChangeDeps &
     | 'nativeApps'
     | 'sms'
     | 'smsUsage'
+    | 'organizations'
   >
 
 /**
@@ -1737,6 +1814,12 @@ export async function stepUp(
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)
   }
+  // A revoked or expired session must not spend a proof (a backup code, a passkey challenge, an
+  // emailed or texted code, a guess of the lockout budget): check it before any is taken.
+  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  if (!current || current.userId !== userId || !isActive(current, deps.clock.now())) {
+    throw new AuthError('session.revoked')
+  }
   if (proof.method === 'password' || proof.method === 'email_code') {
     const lockKey = stepUpLockKey(scope.environmentId, userId)
     const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
@@ -1744,11 +1827,6 @@ export async function stepUp(
       throw new RateLimitError(lock.retryAfterMs)
     }
     if (proof.method === 'email_code') {
-      // A revoked or expired session must not spend the code: check it before the token.
-      const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-      if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-        throw new AuthError('session.revoked')
-      }
       const token = await Verification.verifyCode(deps, scope, {
         purpose: 'step_up',
         subject: { userId },
@@ -1765,7 +1843,14 @@ export async function stepUp(
     }
     const user = await deps.users.findById(scope.environmentId, userId)
     const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
-    if (!(await Passwords.verify(found?.passwordHash ?? null, proof.password)) || !found) {
+    if (
+      !(await Passwords.verify(
+        found?.passwordHash ?? null,
+        proof.password,
+        found && Foreign.opener(deps, scope.environmentId, found.user.id)
+      )) ||
+      !found
+    ) {
       throw new AuthError('auth.invalid_credentials')
     }
     await deps.lockout.clear(lockKey)
@@ -1779,11 +1864,6 @@ export async function stepUp(
     }
     await requireSmsFactor(deps, scope, user.phoneNumber)
     const smsLockKey = await countGuess(deps, scope, userId)
-    // A revoked or expired session must not spend the code.
-    const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-    if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-      throw new AuthError('session.revoked')
-    }
     const texted = await verifySmsCode(deps, scope, userId, {
       purpose: SMS_STEP_UP_PURPOSE,
       askedBy: { sessionId: self.sessionId },

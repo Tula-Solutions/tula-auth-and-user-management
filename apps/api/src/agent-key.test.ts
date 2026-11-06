@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import type { AppEnv } from '~/dependencies'
 import { onError } from '~/handlers'
@@ -35,6 +36,16 @@ async function setup() {
     projectId: TEST_TENANT.projectId,
     kind: 'development',
     createdAt: deps.clock.now(),
+  })
+  // Organizations are off by default and answer `organization.disabled` while they are; the
+  // walk is about credentials, so it switches them on to reach the real handlers.
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: 1,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      sso: { enabled: true },
+    },
   })
   const agent = await seedApiKey(deps, AGENT_KEY)
   await seedApiKey(deps, SECRET_KEY)
@@ -168,6 +179,25 @@ describe('an agent key reads what a secret key reads', () => {
     })
     expect(client.status).toBe(401)
   })
+
+  // H-139: a route added under /v1/agent/ without agentKey() would be open to a secret key or
+  // to no key at all; the walk reads the route table, so a new route cannot be forgotten.
+  for (const { method, path } of routes.filter((route) => route.path.startsWith('/v1/agent/'))) {
+    test(`${method} ${path} is behind agentKey(): a secret key and no key are refused`, async () => {
+      const { app } = await setup()
+      const refused: Array<Record<string, string>> = [
+        { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' },
+        { 'content-type': 'application/json' },
+      ]
+      for (const headers of refused) {
+        const res = await app.request(concrete(path), { method, headers, body: '{}' })
+        expect(res.status).toBe(401)
+        expect(await code(res)).toBe('auth.invalid_key')
+      }
+      const ok = await app.request(concrete(path), init(method, AGENT_KEY))
+      expect(ok.status).not.toBe(401)
+    })
+  }
 
   test('a secret key is not an agent key: the agent’s group refuses it', async () => {
     const { app } = await setup()

@@ -7,9 +7,40 @@ export const HIBP_TIMEOUT_MS = 2_000
 /**
  * Largest `Content-Length` we accept from the range API. Real responses are ~30 KB even with
  * padding; anything much bigger means a misconfigured proxy or base URL, so the result counts as
- * `unknown`. (A chunked body without the header is still bounded by the timeout.)
+ * `unknown`. A body without the header is
+ * counted as it streams and abandoned at the same cap ({@link readCapped}).
  */
 export const HIBP_MAX_RESPONSE_BYTES = 1024 * 1024
+
+/**
+ * Read a response body as text, stopping at {@link HIBP_MAX_RESPONSE_BYTES}.
+ *
+ * `Content-Length` is absent on a chunked body, so the bytes are counted as they arrive.
+ *
+ * @param res - The response to read.
+ * @returns The text, or `undefined` when the body is longer than the cap (the stream is cancelled).
+ */
+async function readCapped(res: Response): Promise<string | undefined> {
+  if (!res.body) {
+    return ''
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let received = 0
+  let text = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) {
+      return text + decoder.decode()
+    }
+    received += value.byteLength
+    if (received > HIBP_MAX_RESPONSE_BYTES) {
+      await reader.cancel()
+      return undefined
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+}
 
 /** Options for {@link HibpBreachChecker}. */
 export interface HibpOptions {
@@ -55,7 +86,12 @@ export class HibpBreachChecker implements BreachChecker {
         logger.warn('breach check unavailable', { status: res.status, bytes: declared })
         return 'unknown'
       }
-      for (const line of (await res.text()).split('\n')) {
+      const text = await readCapped(res)
+      if (text === undefined) {
+        logger.warn('breach check unavailable', { status: res.status, bytes: 'over cap' })
+        return 'unknown'
+      }
+      for (const line of text.split('\n')) {
         const [candidate, count] = line.trim().split(':')
         // Padding entries carry a count of 0 and are not real breaches.
         if (candidate?.toUpperCase() === suffix && Number(count) > 0) {

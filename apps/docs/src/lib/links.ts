@@ -1,5 +1,5 @@
 import { posix } from 'node:path'
-import { REPO_BRANCH, REPO_URL } from './config'
+import { EXCLUDED_DIRECTORIES, REPO_BRANCH, REPO_URL } from './config'
 
 /** What the resolver needs to know about the repository: injected, so it is tested without disk. */
 export interface LinkEnvironment {
@@ -85,6 +85,14 @@ export function resolveLink(from: string, target: string, environment: LinkEnvir
     path === '' ? from : posix.normalize(posix.join(posix.dirname(from), path)).replace(/\/$/, '')
   if (resolved.startsWith('..') || posix.isAbsolute(resolved)) {
     throw new LinkError(from, target, 'leaves the repository')
+  }
+  // A reader of the site cannot follow a link into what the site does not publish.
+  if (
+    EXCLUDED_DIRECTORIES.some(
+      (dir) => resolved === `docs/${dir}` || resolved.startsWith(`docs/${dir}/`)
+    )
+  ) {
+    throw new LinkError(from, target, 'points into a directory that is not published')
   }
   const kind = environment.kind(resolved)
   if (kind === null) {

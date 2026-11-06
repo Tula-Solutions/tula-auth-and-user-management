@@ -154,7 +154,10 @@ export function googleSheetOver(
         }
         throw new Error('Sign in with Google failed.')
       }
-      if (answer?.type === 'cancelled' || answer?.type === 'noSavedCredentialFound') {
+      if (answer?.type === 'noSavedCredentialFound') {
+        return 'no_account'
+      }
+      if (answer?.type === 'cancelled') {
         return null
       }
       const idToken = answer?.type === 'success' ? part(answer.data?.idToken) : undefined

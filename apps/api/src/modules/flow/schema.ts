@@ -31,6 +31,7 @@ export {
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
+  SsoStartRequestSchema,
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
   VerifyEmailRequestSchema,

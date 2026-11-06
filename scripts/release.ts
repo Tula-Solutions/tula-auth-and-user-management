@@ -1,4 +1,5 @@
 import { basename, dirname, resolve } from 'node:path'
+import { holdsLiteralCredential, isCredentialSetting } from './npm-config'
 import type { Manifest } from './publish-manifest'
 
 // The decisions of a release, as pure functions: what `scripts/packages.ts release` refuses,
@@ -294,6 +295,17 @@ export function registryUrl(name: string, version: string): string {
   return `${REGISTRY}/${name.replace('/', '%2F')}/${encodeURIComponent(version)}`
 }
 
+/**
+ * The address of a package's dist-tags: `{ "latest": "1.2.3" }`, or 404 for a package never
+ * published.
+ *
+ * @param name - The package's name.
+ * @returns The URL of a plain, unauthenticated GET.
+ */
+export function registryLatestUrl(name: string): string {
+  return `${REGISTRY}/-/package/${name.replace('/', '%2F')}/dist-tags`
+}
+
 /** As much of `fetch` as the registry check uses, so a test can pass its own. */
 export type Fetcher = (
   url: string,
@@ -311,6 +323,44 @@ function statedIntegrity(document: unknown): string | null {
   }
   const integrity = (dist as { integrity: unknown }).integrity
   return typeof integrity === 'string' && integrity !== '' ? integrity : null
+}
+
+/**
+ * Ask the registry what each package's `latest` dist-tag is, so that an upload can refuse to
+ * move the tag backward (H-341). Same request rules as {@link registryStates}.
+ *
+ * @param packages - The staged packages.
+ * @param fetcher - `fetch`, or a test's stand-in.
+ * @param timeoutMs - The deadline of each request.
+ * @returns Each name with its latest version, `null` for a package never published (404),
+ *   and `'unknown'` when the registry did not say.
+ */
+export async function registryLatest(
+  packages: readonly StagedPackage[],
+  fetcher: Fetcher,
+  timeoutMs = 15_000
+): Promise<Map<string, string | null>> {
+  const latest = new Map<string, string | null>()
+  for (const pkg of packages) {
+    let state: string | null = 'unknown'
+    try {
+      const response = await fetcher(registryLatestUrl(pkg.name), {
+        headers: { accept: 'application/json' },
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (response.status === 404) {
+        state = null
+      } else if (response.status === 200) {
+        const body = (await response.json()) as { latest?: unknown } | null
+        state = typeof body?.latest === 'string' ? body.latest : null
+      }
+    } catch {
+      // No answer is 'unknown', which refuses an upload.
+    }
+    latest.set(pkg.name, state)
+  }
+  return latest
 }
 
 /**
@@ -364,7 +414,7 @@ export interface Channel {
   /**
    * `bun` on a person's machine. `npm` in the release workflow, the one exception to the
    * repository's Bun-only rule: `bun publish` (1.4) has no provenance and no trusted
-   * publishing, and npm's needs npm itself (docs/releasing.md, "Which CLI uploads").
+   * publishing, and npm's needs npm itself (docs/internal/releasing.md, "Which CLI uploads").
    */
   cli: 'bun' | 'npm'
   /** Whether the upload carries a provenance attestation. */
@@ -393,11 +443,15 @@ function isSet(env: Readonly<Record<string, string | undefined>>, name: string):
  * @param env - The process's environment. Only the presence of five variables is looked at.
  * @param npmVersion - What `npm --version` printed, or `null` when npm is not there. Only
  *   read when npm is the CLI.
+ * @param configFiles - The contents of the npm configuration files npm would read (`readNpmConfigFiles`). One that holds
+ *   a literal credential is refused like a token in the environment; a `${VAR}` placeholder
+ *   (what `setup-node` writes) is not a credential. The value is never echoed.
  * @returns The CLI, whether provenance is attached, and anything that forbids the upload.
  */
 export function chooseChannel(
   env: Readonly<Record<string, string | undefined>>,
-  npmVersion: string | null
+  npmVersion: string | null,
+  configFiles: readonly string[] = []
 ): Channel {
   if (env.GITHUB_ACTIONS !== 'true') {
     return {
@@ -421,6 +475,18 @@ export function chooseChannel(
         `${name} is set: the workflow publishes through trusted publishing and must hold no long-lived token`
       )
     }
+  }
+  // npm reads any `npm_config_*` variable as a setting, so a token can come in under a
+  // name other than the two above (`npm_config__authToken`, a registry-scoped key).
+  for (const key of Object.keys(env)) {
+    if (isCredentialSetting(key) && isSet(env, key)) {
+      problems.push(`${key} is set: the workflow must hold no long-lived npm credential`)
+    }
+  }
+  if (configFiles.some(holdsLiteralCredential)) {
+    problems.push(
+      'an npm configuration file holds a literal npm credential: the workflow must hold no long-lived token'
+    )
   }
   if (npmVersion === null) {
     problems.push('npm is not installed in this job')
@@ -543,13 +609,17 @@ export interface ReleasePlan {
  * @param states - What the registry said of each.
  * @param channel - How the upload is done.
  * @param reasons - The refusals found so far ({@link refusals}).
+ * @param latest - Each package's `latest` dist-tag ({@link registryLatest}). A version about
+ *   to be uploaded below it is refused (it would move `latest` backward), as is a package
+ *   whose latest is unknown. Omitted: not checked.
  * @returns The plan.
  */
 export function planRelease(
   packages: readonly StagedPackage[],
   states: ReadonlyMap<string, RegistryState>,
   channel: Channel,
-  reasons: readonly string[]
+  reasons: readonly string[],
+  latest?: ReadonlyMap<string, string | null>
 ): ReleasePlan {
   const planned = packages.map((pkg): PlannedPackage => {
     const registry = states.get(pkg.name) ?? 'unknown'
@@ -562,12 +632,30 @@ export function planRelease(
     return { pkg, registry, action }
   })
   const unknown = planned.filter((entry) => entry.registry === 'unknown')
+  const backward = latest
+    ? planned
+        .filter((entry) => entry.action === 'publish')
+        .flatMap((entry) => {
+          // null is "never published"; a name missing from the map is an unanswered question.
+          const current = latest.has(entry.pkg.name) ? latest.get(entry.pkg.name) : 'unknown'
+          const id = `${entry.pkg.name}@${entry.pkg.version}`
+          if (current === 'unknown') {
+            return [`the registry did not say which version of ${entry.pkg.name} is latest`]
+          }
+          return current !== null && current !== undefined && !atLeast(entry.pkg.version, current)
+            ? [
+                `${id} is below the registry's latest ${current}: publishing it under "${DIST_TAG}" would move the tag backward`,
+              ]
+            : []
+        })
+    : []
   return {
     packages: planned,
     channel,
     refusals: [
       ...reasons,
       ...channel.problems,
+      ...backward,
       ...planned
         .filter((entry) => entry.action === 'refuse')
         .map((entry) =>
@@ -668,7 +756,7 @@ export function releaseReport(
   const count = plan.packages.filter((entry) => entry.action === 'publish').length
   if (!args.publish) {
     lines.push(
-      `DRY RUN: nothing was published. ${count} package${count === 1 ? '' : 's'} would be; uploading takes \`bun run release:publish\` (docs/releasing.md).`
+      `DRY RUN: nothing was published. ${count} package${count === 1 ? '' : 's'} would be; uploading takes \`bun run release:publish\` (docs/internal/releasing.md).`
     )
   } else if (plan.refusals.length > 0) {
     lines.push('RELEASE: nothing was published.')

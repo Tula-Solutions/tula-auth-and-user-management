@@ -150,7 +150,13 @@ export function buildItem(item: ItemDefinition, options: BuildOptions): Record<s
       })),
     }),
     ...(item.docs && { docs: item.docs }),
-    meta: { tula: { version: ITEM_VERSION, minReact: MIN_REACT, security: false } },
+    meta: {
+      tula: {
+        version: item.version ?? ITEM_VERSION,
+        minReact: item.minReact ?? MIN_REACT,
+        security: false,
+      },
+    },
   }
 }
 

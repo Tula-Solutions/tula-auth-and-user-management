@@ -21,7 +21,7 @@
 > Until someone checks with a real personal account, assume that **personal accounts may
 > not be able to sign up at all**, and test it before you offer `consumers` or `common`.
 
-What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)). It covers
+What an operator does once per environment. It covers
 Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
@@ -118,7 +118,7 @@ statement that the owner of the address's domain was verified.
 | A new account, `xms_edov` absent or not `true` | `oauth.email_unverified`: no user is created and nothing is linked. |
 | A new account with no `email` claim | `oauth.email_missing`. |
 
-The last two rows are the same for every provider (ADR 0026): a provider address that is not
+The last two rows are the same for every provider: a provider address that is not
 asserted as verified is refused before any account is looked up, so the answer does not say
 whether the address has an account. For Microsoft that means the operator has to add the
 `xms_edov` claim (step 4) before anyone can sign up with it. The message a user sees for

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, index, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { check, index, jsonb, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -25,6 +25,11 @@ export const users = tula.table(
     firstName: text('first_name'),
     lastName: text('last_name'),
     bannedAt: timestamp('banned_at', { withTimezone: true }),
+    /**
+     * Who placed the ban: `operator` or `directory` (a SCIM deactivation, ADR 0067). A
+     * directory's reactivation lifts only a `directory` ban. `NULL` exactly when `banned_at` is.
+     */
+    banOrigin: text('ban_origin').$type<'operator' | 'directory'>(),
     lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true }),
     /**
      * The account's phone number in E.164 form, set only once the user proved it with a code
@@ -43,6 +48,17 @@ export const users = tula.table(
      * and the check below refuses a factor with no number.
      */
     smsFactorEnabledAt: timestamp('sms_factor_enabled_at', { withTimezone: true }),
+    /**
+     * The user's id in the system an import brought them from (ADR 0066), for the operator to
+     * match rows by. Not unique and not a way to sign in; `NULL` for every other user.
+     */
+    externalId: text('external_id'),
+    /** What an import kept with the user (at most 4 KiB as JSON); `{}` for every other user. */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    /** The SSO connection that provisioned and manages this account (ADR 0067); null for every other user. */
+    managedByConnectionId: uuid('managed_by_connection_id'),
+    /** The organization whose SCIM directory provisioned and manages this account (ADR 0067); null for every other user. */
+    managedByDirectoryId: uuid('managed_by_directory_id'),
     ...timestamps(),
   },
   (t) => [
@@ -52,6 +68,16 @@ export const users = tula.table(
     check(
       'users_email_whole',
       sql`(${t.email} IS NULL) = (${t.emailNormalized} IS NULL) AND (${t.email} IS NOT NULL OR ${t.emailVerifiedAt} IS NULL)`
+    ),
+    // A ban has an origin and nothing else has one.
+    check(
+      'users_ban_origin_whole',
+      sql`(${t.bannedAt} IS NULL) = (${t.banOrigin} IS NULL) AND (${t.banOrigin} IS NULL OR ${t.banOrigin} IN ('operator', 'directory'))`
+    ),
+    // What an import keeps with a user is an object of at most 4 KiB of its text.
+    check(
+      'users_metadata_bounds',
+      sql`jsonb_typeof(${t.metadata}) = 'object' AND octet_length(${t.metadata}::text) <= 4096`
     ),
     // A number is there exactly when its verification time is: neither half alone.
     check(

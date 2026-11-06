@@ -1,14 +1,18 @@
 import {
   type ActivityType,
   type AuditActorType,
+  type AuditExportFormat,
   type AuditLog,
   type AuditLogList,
   DEFAULT_PAGE_SIZE,
   type EventData,
   type EventTargetType,
+  MAX_AUDIT_EXPORT_ROWS,
+  parseAuditExportCursor,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
+import { allowedFields } from '~/lib/event-payload'
 import {
   type Activity,
   type AuditEntry,
@@ -100,6 +104,18 @@ export function none(reason: UnrecordedReason): Unrecorded {
   return unrecordedFor(reason)
 }
 
+/**
+ * The entry's data limited to the keys its type's contract schema names, the same allow-list
+ * an event payload uses: a key added at a call site without a decision in the contract is
+ * stored but never listed or exported (H-172). Keys only: values were checked when written.
+ */
+function allowedMetadata(record: AuditEntry): Record<string, unknown> {
+  const fields = allowedFields(record.type as ActivityType)
+  return Object.fromEntries(
+    Object.entries(record.data).filter(([key]) => Object.hasOwn(fields, key))
+  )
+}
+
 function toAuditLog(record: AuditEntry): AuditLog {
   return {
     id: record.id,
@@ -108,7 +124,7 @@ function toAuditLog(record: AuditEntry): AuditLog {
     target: record.target,
     ipAddress: record.ipAddress,
     userAgent: record.userAgent,
-    metadata: record.data,
+    metadata: allowedMetadata(record),
     occurredAt: record.occurredAt.toISOString(),
   }
 }
@@ -156,5 +172,160 @@ export async function list(
   return {
     meta: { totalCount, totalPages: Math.ceil(totalCount / perPage), page, perPage },
     data: entries.map(toAuditLog),
+  }
+}
+
+/** What an export is asked for: the list's filters, an organization, a format and a cursor. */
+export interface ExportInput extends Omit<ListInput, 'page' | 'size'> {
+  /** Only entries about this organization. */
+  organizationId?: string
+  format: AuditExportFormat
+  /** A cursor from an earlier export: write the entries after it. */
+  after?: string
+}
+
+/** The entries read from the store at a time while an export streams. */
+const EXPORT_PAGE = 1000
+
+/** The columns of a CSV export: the list's fields, with `actor`, `target` and `metadata` flattened. */
+export const EXPORT_CSV_COLUMNS = [
+  'id',
+  'occurredAt',
+  'action',
+  'actorType',
+  'actorId',
+  'targetType',
+  'targetId',
+  'ipAddress',
+  'userAgent',
+  'metadata',
+] as const
+
+/**
+ * A formula trigger, after any run of white space, zero-width or byte-order characters:
+ * spreadsheets skip a leading space and read the full-width forms of `=+-@` as the ASCII ones.
+ */
+const FORMULA_START = /^[\s\u00a0\u200b-\u200d\u2060\ufeff]*[=+\-@\t\r\uff1d\uff0b\uff0d\uff20]/
+
+/**
+ * One CSV cell.
+ *
+ * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return (or those after white
+ * space or a lookalike full-width form) is prefixed with `'`:
+ * a spreadsheet would run it as a formula, and the user agent and the metadata are text a
+ * stranger chose (OWASP "CSV injection"). Quoting follows RFC 4180.
+ *
+ * @param value - The cell's text, or `null` for an empty one.
+ * @returns The cell as written to the file.
+ */
+export function csvCell(value: string | null): string {
+  if (value === null || value === '') {
+    return ''
+  }
+  const safe = FORMULA_START.test(value) ? `'${value}` : value
+  return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
+}
+
+function csvRow(log: AuditLog): string {
+  return `${[
+    log.id,
+    log.occurredAt,
+    log.action,
+    log.actor.type,
+    log.actor.id,
+    log.target?.type ?? null,
+    log.target?.id ?? null,
+    log.ipAddress,
+    log.userAgent,
+    JSON.stringify(log.metadata),
+  ]
+    .map(csvCell)
+    .join(',')}\r\n`
+}
+
+/**
+ * Stream an environment's audit log, oldest first, as NDJSON or CSV, and record the export.
+ *
+ * Keyset-paged on `(occurredAt, id)`, so memory stays at one page whatever the length and a
+ * resume with the last entry's cursor (`auditExportCursor`) continues with no gap and no
+ * duplicate. One request writes at most `MAX_AUDIT_EXPORT_ROWS` entries. An `audit.exported`
+ * entry (`phase: 'started'`, no rows) is written before the first byte, and a second
+ * (`phase: 'finished'`) when the stream ends, **also when the reader stops early**, with the
+ * number of rows actually written: the log shows what left the system. A response cannot
+ * carry a trailer, so the first entry is the one a crash leaves.
+ *
+ * @param deps - Activity log, ids and clock.
+ * @param scope - The project and environment.
+ * @param actor - Who asked.
+ * @param input - Filters, format and optional cursor.
+ * @returns Chunks of text to write to the response, in order.
+ */
+export async function* exportEntries(
+  deps: Pick<Deps, 'activityLog' | 'ids' | 'clock'>,
+  scope: Pick<Tenant, 'projectId' | 'environmentId'>,
+  actor: Actor,
+  input: ExportInput
+): AsyncGenerator<string> {
+  const cursor = input.after ? parseAuditExportCursor(input.after) : null
+  let after = cursor ? { occurredAt: new Date(cursor.occurredAt), id: cursor.id } : null
+  const criteria = {
+    action: input.action,
+    actorId: input.actorId,
+    targetId: input.targetId,
+    actorType: input.actorType,
+    organizationId: input.organizationId,
+    from: input.from ? new Date(input.from) : undefined,
+    to: input.to ? new Date(input.to) : undefined,
+  }
+  const record = async (phase: 'started' | 'finished', rowCount: number) => {
+    const activity = entry(deps, scope, {
+      type: 'audit.exported',
+      actor,
+      target: { type: 'environment', id: scope.environmentId },
+      data: {
+        phase,
+        format: input.format,
+        rowCount,
+        resumed: cursor !== null,
+        ...(input.action && { action: input.action }),
+        ...(input.actorId && { actorId: input.actorId }),
+        ...(input.actorType && { actorType: input.actorType }),
+        ...(input.targetId && { targetId: input.targetId }),
+        ...(input.organizationId && { organizationId: input.organizationId }),
+        ...(input.from && { from: input.from }),
+        ...(input.to && { to: input.to }),
+      },
+    })
+    await deps.activityLog.append(activity)
+    return activity.id
+  }
+  // Written before a byte leaves: a stream that dies, or a reader that never returns, still
+  // leaves the filters on record. The log is append-only, so the end is a second entry.
+  const startedId = await record('started', 0)
+  let rows = 0
+  try {
+    if (input.format === 'csv') {
+      yield `${EXPORT_CSV_COLUMNS.join(',')}\r\n`
+    }
+    while (rows < MAX_AUDIT_EXPORT_ROWS) {
+      const want = Math.min(EXPORT_PAGE, MAX_AUDIT_EXPORT_ROWS - rows)
+      const page = await deps.activityLog.listAuditAfter(scope.environmentId, criteria, after, want)
+      for (const record of page) {
+        // The export's own started entry is not part of what it exports.
+        if (record.id === startedId) {
+          continue
+        }
+        const log = toAuditLog(record)
+        rows += 1
+        yield input.format === 'csv' ? csvRow(log) : `${JSON.stringify(log)}\n`
+      }
+      const last = page.at(-1)
+      if (!last || page.length < want) {
+        break
+      }
+      after = { occurredAt: last.occurredAt, id: last.id }
+    }
+  } finally {
+    await record('finished', rows)
   }
 }

@@ -19,7 +19,7 @@ public enum AuthState: Hashable, Sendable {
 
 /// The session of a client: the tokens, their refresh and the sign-out.
 ///
-/// It behaves as `@tula-tech/core`'s session manager does (ADR 0021, ADR 0051); the rules are the
+/// It behaves as `@tula-tech/core`'s session manager does; the rules are the
 /// same and are all held here:
 ///
 /// - The access token lives in memory only. The refresh token is in memory and in the
@@ -34,7 +34,7 @@ public enum AuthState: Hashable, Sendable {
 ///   the same single flight. It is the only request the client repeats by itself, and it is
 ///   safe because the server answers a token re-presented inside its grace window with the
 ///   same next token. An HTTP answer of any status is never repeated.
-/// - **A `device.*` answer never ends the session** (ADR 0043), with one exception: a
+/// - **A `device.*` answer never ends the session**, with one exception: a
 ///   refresh refused for its proof (`device.proof_invalid`) when the device key store says,
 ///   without failing, that there is no key. That session can never be refreshed again, so it
 ///   is ended here and the server is told. A store that failed, and a key that is there and
@@ -98,9 +98,11 @@ public actor TulaSession: TulaRedacted {
     /// A refresh token issued to a refresh that lost to a sign-out, kept so that the sign-out
     /// can revoke it.
     private var orphan: String?
-    /// The refresh token of a sign-out the server was never told of. Memory only; nothing but
-    /// `signOut()` reads it, and no refresh presents it.
-    private var undelivered: String?
+    /// The refresh tokens of sign-outs the server was never told of, oldest first, at most
+    /// `maxUndelivered`. Memory only; nothing but `signOut()` reads them, no refresh presents
+    /// one, and a new session does not forget them.
+    private var undelivered: [String] = []
+    private static let maxUndelivered = 8
     private var listeners: [Int: AsyncStream<AuthState>.Continuation] = [:]
     private var listenerIds = 0
 
@@ -422,7 +424,8 @@ public actor TulaSession: TulaRedacted {
         } catch {
             let code = (error as? TulaError)?.code ?? ""
             if generation == mine, !code.hasPrefix("session.") {
-                undelivered = presented
+                undelivered = Array((undelivered.filter { $0 != presented } + [presented])
+                    .suffix(Self.maxUndelivered))
             }
         }
     }
@@ -434,8 +437,6 @@ public actor TulaSession: TulaRedacted {
         guard lifetime(of: issued) != nil else {
             throw TulaError.client(TulaClientErrorCode.responseInvalid)
         }
-        // A new session: an earlier one's sign-out is no longer this client's to retry.
-        undelivered = nil
         let installed = commit(issued)
         let failure = await persist(issued)
         await settle(installed)
@@ -497,26 +498,32 @@ public actor TulaSession: TulaRedacted {
                 failure = TulaError.client(TulaClientErrorCode.storageFailed)
             }
         }
-        let newest = orphan ?? presented ?? undelivered
+        // Every token this client never managed to revoke, the newest first: a new sign-in
+        // must not leave an earlier session alive on the server.
+        var owed: [String] = []
+        for token in [orphan ?? presented].compactMap({ $0 }) + undelivered.reversed()
+        where !owed.contains(token) {
+            owed.append(token)
+        }
         orphan = nil
-        if let newest {
+        var kept: [String] = []
+        for token in owed {
             do {
                 _ = try await transport.call(
                     TulaOperations.signOut,
-                    body: RefreshTokenRequest(refreshToken: newest),
+                    body: RefreshTokenRequest(refreshToken: token),
                     as: NoAnswer.self
                 )
-                undelivered = nil
             } catch {
                 let refusal = error as? TulaError ?? TulaError.client(TulaClientErrorCode.networkFailed)
-                failure = refusal
-                // The token was just dropped, so it is held for the retry, unless the API
-                // said the session is over or a sign-in finished meanwhile.
-                if generation == mine {
-                    undelivered = refusal.code.hasPrefix("session.") ? nil : newest
+                failure = failure ?? refusal
+                // Held for the retry, unless the API said that session is over.
+                if !refusal.code.hasPrefix("session.") {
+                    kept.append(token)
                 }
             }
         }
+        undelivered = Array(kept.prefix(Self.maxUndelivered).reversed())
         // A device key that cannot be had would fail the next sign-in too: with nobody
         // signed in here, what the store keeps of it is removed.
         if generation == mine, let proofs = transport.proofs {
@@ -657,6 +664,53 @@ public actor TulaSession: TulaRedacted {
         guard tokens?.sessionId == answer.sessionId, try await sharedRefresh(explicit: true) != nil else {
             throw TulaError(code: "auth.unauthenticated", status: 401)
         }
+    }
+
+    /// Make an organization the one the session acts in (`PUT /v1/client/me/organizations/active`),
+    /// and take the access token that carries it.
+    ///
+    /// As a step-up does, it installs only the access token of the answer: choosing does not
+    /// rotate the refresh token, and a refresh token a misbehaving server put in the answer is
+    /// ignored. When the session's token was replaced while the call was on its way, or a
+    /// refresh is running, the answer's token is not installed (it is a result for an older
+    /// generation): one refresh, started after the choice was accepted, carries it.
+    ///
+    /// - Parameter organizationId: The organization, or `nil` for the personal account.
+    /// - Returns: The answer: the session's id and the organization it acts in now.
+    /// - Throws: `TulaError`: what the API refused with; `response.invalid` for an answer that
+    ///   is not the choice that was asked for; `auth.unauthenticated` when the client was
+    ///   signed out, or signed in as someone else, while the call was in flight.
+    func setActiveOrganization(_ organizationId: String?) async throws -> ActiveOrganization {
+        // A refresh already in flight would otherwise hand the choice a token about to be replaced.
+        await idle()
+        let (answer, left) = try await sent(
+            TulaOperations.setActiveOrganization, body: SetActiveOrganizationRequest(organizationId: organizationId),
+            as: ActiveOrganization.self)
+        let issued = SessionTokens(
+            sessionId: answer.sessionId, accessToken: answer.accessToken,
+            accessTokenExpiresAt: answer.accessTokenExpiresAt)
+        // A 200 is not proof of talking to the API: the answer must name the choice and carry
+        // a token this client can install (a stateful session's answer has none, and is not a
+        // session for this client).
+        guard lifetime(of: issued) != nil, answer.organizationId == organizationId,
+            organizationId?.isEmpty != true
+        else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        // Signed out, or signed in as someone else, while the call was in flight: the answer
+        // is about a session this client no longer has.
+        guard state != .signedOut, tokens?.sessionId == answer.sessionId else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
+        }
+        if generation == left, refreshing == nil {
+            await settle(commit(issued))
+            return answer
+        }
+        await idle()
+        guard tokens?.sessionId == answer.sessionId, try await sharedRefresh(explicit: true) != nil else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
+        }
+        return answer
     }
 
     /// The signed-in user's sessions, this one marked `current`.

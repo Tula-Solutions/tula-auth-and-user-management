@@ -70,6 +70,15 @@ describe('EnvironmentSettingsSchema', () => {
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      sso: { enabled: false },
+      organizations: {
+        enabled: false,
+        allowUserCreated: false,
+        maxCreatedPerUser: 5,
+        creatorRole: 'admin',
+        defaultRole: 'member',
+        personalAccount: true,
+      },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -167,6 +176,15 @@ describe('EnvironmentSettingsSchema', () => {
     expect(accepts({ app: { supportEmail: 'help@acme.test' } })).toBe(true)
     expect(accepts({ app: { supportEmail: null } })).toBe(true)
     expect(issuePaths({ app: { supportEmail: 'not an address' } })).toEqual(['app.supportEmail'])
+    // The plain-text email puts supportEmail in unescaped; only this validation keeps a line
+    // break out of it (TULA-182, H-226).
+    for (const injected of [
+      'help@acme.test\nBcc: x@evil.test',
+      'help@acme.test\r\n',
+      ' help@acme.test',
+    ]) {
+      expect(accepts({ app: { supportEmail: injected } })).toBe(false)
+    }
   })
 
   test('the password section is a whole password policy', () => {
@@ -266,6 +284,12 @@ describe('WebOriginSchema', () => {
     ['another scheme', 'ftp://app.example.com', false],
     ['the literal null origin', 'null', false],
     ['an empty string', '', false],
+    ['brackets around no address at all', 'https://[::::::::]', false],
+    ['brackets around dots', 'https://[....]', false],
+    ['brackets around a lone colon pair of hex junk', 'https://[abcde::1]', false],
+    ['brackets with a single colon', 'https://[a:b]', false],
+    ['brackets around an IPv4 address', 'https://[1.2.3.4]', false],
+    ['a compressed IPv6 host', 'https://[fe80::1]:8443', true],
   ])('%s', (_, origin, ok) => {
     expect(WebOriginSchema.safeParse(origin).success).toBe(ok)
   })
@@ -434,6 +458,15 @@ describe('EnvironmentSettingsInputSchema', () => {
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      sso: { enabled: false },
+      organizations: {
+        enabled: false,
+        allowUserCreated: false,
+        maxCreatedPerUser: 5,
+        creatorRole: 'admin',
+        defaultRole: 'member',
+        personalAccount: true,
+      },
       notifications: {
         passwordChanged: true,
         newSignIn: true,

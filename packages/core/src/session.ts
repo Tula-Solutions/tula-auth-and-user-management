@@ -3,7 +3,7 @@ import { clientError, formatMessage, isTulaError, type Messages, TulaError } fro
 import type { Operations, Schemas } from './generated/api.gen'
 import type { TokenStorage } from './storage'
 import type { CallInput, OperationId, Transport } from './transport'
-import type { AuthState, ClientKind, User } from './types'
+import type { ActiveOrganization, AuthState, ClientKind, User } from './types'
 
 /**
  * How long before an access token expires the client stops using it and refreshes instead.
@@ -62,6 +62,9 @@ export const REFRESH_TIMEOUT_MS = 8_000
 export const REFRESH_RETRY_WINDOW_MS = 10_000
 
 /** The least time the retry of a refresh is given, however long the first try took. */
+/** How many tokens a failed sign-out remembers for the next one (H-315). */
+const MAX_UNDELIVERED = 8
+
 const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
 
 /**
@@ -113,10 +116,16 @@ type SessionTokens = Schemas['SessionTokens']
 interface Tokens {
   /**
    * The access token, or `null` for a session of a `stateful` profile: the browser then holds
-   * only an httpOnly cookie, and there is no token for JavaScript to keep (ADR 0028).
+   * only an httpOnly cookie, and there is no token for JavaScript to keep.
    */
   readonly accessToken: string | null
   readonly sessionId: string
+  /**
+   * The organization the session acts in: the access token's `org_id`, read for showing and
+   * never for authorizing (the client does not verify tokens), or, for a `stateful` session
+   * with no token, what the last `setActiveOrganization` or list said.
+   */
+  readonly organizationId: string | null
   /** When the token expires. */
   readonly expiresAt: number
   /** When the client stops handing it out: `expiresAt` minus the skew. */
@@ -175,6 +184,10 @@ export interface SessionManager {
   /**
    * Ends the session here, in other tabs and on the server. When the server could not be told
    * it throws, the client is signed out all the same, and calling it again tells the server.
+   * A non-browser client holds the undelivered tokens (up to eight) in memory only (persisting it
+   * would put a
+   * token in storage after sign-out), so an app restart before the retry loses them and the
+   * server's sessions live until it expires.
    */
   signOut(): Promise<void>
   /** @param issued - Tokens a completed flow returned. */
@@ -194,6 +207,38 @@ export interface SessionManager {
    *   not session tokens, `auth.unauthenticated` when the session ended meanwhile.
    */
   stepUp(proof: Schemas['StepUpRequest']): Promise<void>
+  /**
+   * Makes an organization the one the session acts in (or clears it) and installs the access
+   * token the API answers with, which carries the organization's claims. The refresh token is
+   * left as it is.
+   *
+   * An answer that belongs to an older session generation (the session was refreshed,
+   * replaced or ended while the call was in flight) is **never installed**: one refresh, made
+   * after the choice was accepted, fetches a token that reflects it.
+   *
+   * @param organizationId - The organization, or `null` for the personal account.
+   * @returns The API's answer.
+   * @throws TulaError whatever the API refuses with, `response.invalid` for an answer that is
+   *   not what was asked for, `auth.unauthenticated` when the session ended meanwhile.
+   */
+  setActiveOrganization(organizationId: string | null): Promise<ActiveOrganization>
+  /**
+   * Tells the state which organization the session acts in, when a list says so. Only for a
+   * session without an access token (a `stateful` one), whose state cannot read it from a
+   * token; ignored for any other, and when `sessionId` is not the current session.
+   *
+   * @param sessionId - The session the list was fetched with.
+   * @param organizationId - The list's `activeOrganizationId`.
+   * @param epoch - What {@link organizationEpoch} said before the list was asked for; a
+   *   choice made meanwhile makes the list's answer older than the state, and it is dropped.
+   */
+  noteActiveOrganization(sessionId: string, organizationId: string | null, epoch: number): void
+  /**
+   * A number that moves whenever this client chooses an organization.
+   *
+   * @returns The current value, to be handed back to {@link noteActiveOrganization}.
+   */
+  organizationEpoch(): number
   /**
    * Stops handing out the access token in memory without a refresh first: the next
    * `getToken()` asks for a new one (and falls back to this one while it is valid if that
@@ -231,6 +276,42 @@ function jwtLifetimeMs(token: string): number | undefined {
     // Not a JWT this client can read: the caller falls back to the expiry sent alongside it.
   }
   return undefined
+}
+
+/**
+ * The organization an access token says its session acts in: its `org_id` claim, or `null`.
+ *
+ * Read without verifying the signature, as the lifetime is: it is for the state a UI shows,
+ * and every server checks the token itself. A claim that is not a non-empty string is none.
+ */
+function organizationIdOf(token: string): string | null {
+  try {
+    const payload = token.split('.')[1] ?? ''
+    const claims: unknown = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    if (isRecord(claims) && typeof claims.org_id === 'string' && claims.org_id !== '') {
+      return claims.org_id
+    }
+  } catch {
+    // Not a JWT this client can read: no organization is shown.
+  }
+  return null
+}
+
+/** Whether a value is the API's answer to `setActiveOrganization`. */
+function isActiveOrganization(value: unknown): value is ActiveOrganization {
+  return (
+    isRecord(value) &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId !== '' &&
+    (value.organizationId === null ||
+      (typeof value.organizationId === 'string' && value.organizationId !== '')) &&
+    (value.accessToken === undefined ||
+      (typeof value.accessToken === 'string' &&
+        value.accessToken !== '' &&
+        (jwtLifetimeMs(value.accessToken) !== undefined ||
+          (typeof value.accessTokenExpiresAt === 'string' &&
+            !Number.isNaN(Date.parse(value.accessTokenExpiresAt))))))
+  )
 }
 
 /**
@@ -280,7 +361,7 @@ export function isSessionTokens(value: unknown): value is SessionTokens {
 /**
  * Whether a value is the answer of a session of a `stateful` profile: a session id and **no
  * token of any kind**. The browser was given an httpOnly cookie instead, which this client
- * never sees (ADR 0028).
+ * never sees.
  *
  * Only a `web` client accepts such an answer: every other kind has no cookie jar, so for it a
  * token-less answer is not a session at all.
@@ -382,11 +463,13 @@ export function createSessionManager(options: SessionOptions): SessionManager {
    * a retry would find nothing, ask nothing and report a session ended that the server still
    * holds. Memory only: never storage, a cross-tab message, an error, a log line or a
    * `toJSON`, and nothing but `signOut()` reads it (no refresh presents it). Forgotten once
-   * delivered, when the API answers that the session is over, and when a new session is
-   * adopted. It has no timer: the token is exactly as live on the server whether this client
+   * delivered and when the API answers that the session is over; a new session being adopted
+   * does not forget it (H-315), so every token that never reached the server is sent by a later
+   * `signOut()`, up to `MAX_UNDELIVERED`. It has no timer: the token is exactly as live on the
+   * server whether this client
    * remembers it or not, and forgetting it would only take away the one way to revoke it.
    */
-  let undelivered: string | null = null
+  let undelivered: string[] = []
   let channel: ChannelLike | undefined
   let channelOpened = false
   /**
@@ -404,7 +487,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       (next.status !== 'signed-in' ||
         (state.status === 'signed-in' &&
           next.sessionId === state.sessionId &&
-          next.user === state.user))
+          next.user === state.user &&
+          next.organizationId === state.organizationId))
     if (same) {
       return
     }
@@ -476,7 +560,12 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     if (generation !== mine) {
       return
     }
-    setState({ status: 'signed-in', sessionId: current.sessionId, user })
+    setState({
+      status: 'signed-in',
+      sessionId: current.sessionId,
+      user,
+      organizationId: current.organizationId,
+    })
   }
 
   /** Install freshly issued tokens in memory and share the access token with other tabs. */
@@ -491,6 +580,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       tokens = {
         accessToken: null,
         sessionId: issued.sessionId,
+        // The same session keeps what it was told; a different one starts with none.
+        organizationId: tokens?.sessionId === issued.sessionId ? tokens.organizationId : null,
         expiresAt: Number.MAX_SAFE_INTEGER,
         refreshAt: Number.MAX_SAFE_INTEGER,
       }
@@ -499,6 +590,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       tokens = {
         accessToken,
         sessionId: issued.sessionId,
+        organizationId: organizationIdOf(accessToken),
         expiresAt: now + lifetime,
         refreshAt: now + lifetime - Math.min(ACCESS_TOKEN_EXPIRY_SKEW_MS, lifetime / 2),
       }
@@ -578,6 +670,10 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       tokens = {
         accessToken: data.accessToken,
         sessionId: data.sessionId,
+        organizationId:
+          typeof data.organizationId === 'string' && data.organizationId !== ''
+            ? data.organizationId
+            : null,
         expiresAt: data.expiresAt,
         refreshAt: data.refreshAt,
       }
@@ -714,6 +810,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function runRefresh(explicit: boolean): Promise<string | null> {
+    // A sign-out is ending the session: a browser's cookie is still valid until its request
+    // lands, so a refresh now would bring the session back. Nothing is asked.
+    if (signingOut > 0) {
+      return null
+    }
     // An explicit `refresh()` is the application (or the user) asking now: it always asks,
     // and gets the fresh answer. Only the implicit refreshes wait out a `Retry-After`.
     if (!explicit && backoff && environment.now() < backoff.until) {
@@ -777,8 +878,6 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       throw clientError('response.invalid', options.messages())
     }
     openChannel()
-    // A new session: an earlier one's sign-out is no longer this client's to retry.
-    undelivered = null
     const installed = commit(issued)
     const failure = await persist(issued)
     await settle(installed)
@@ -823,26 +922,33 @@ export function createSessionManager(options: SessionOptions): SessionManager {
         failure = clientError('storage.failed', options.messages(), cause)
       }
     }
-    const newest = orphan ?? presented ?? undelivered
+    const newest = orphan ?? presented
     orphan = null
-    if (web || newest) {
+    // Every distinct token this client still owes the server a revoke for, newest first.
+    const owed = [...new Set([newest, ...undelivered].filter((t): t is string => !!t))]
+    if (web) {
       try {
-        await withLock(() =>
-          transport.call('signOut', { body: newest ? { refreshToken: newest } : {} })
-        )
-        undelivered = null
+        await withLock(() => transport.call('signOut', { body: {} }))
       } catch (error) {
         // The server may still hold the session (and a browser its cookie): the caller must
-        // know, even though this client is signed out.
+        // know, even though this client is signed out. A browser's retry sends its cookie again.
         failure = error
-        // A browser's retry sends its cookie again. Any other client has just dropped the
-        // token, so it is held for the retry, unless the API said the session is over or a
-        // sign-in finished meanwhile (whose own token the next sign-out presents).
-        if (!web && generation === mine) {
+      }
+    } else {
+      const kept: string[] = []
+      for (const token of owed) {
+        try {
+          await withLock(() => transport.call('signOut', { body: { refreshToken: token } }))
+        } catch (error) {
+          failure = failure ?? error
+          // Held for the retry, unless the API said the session is over.
           const over = isTulaError(error) && error.code.startsWith('session.')
-          undelivered = over ? null : newest
+          if (!over) {
+            kept.push(token)
+          }
         }
       }
+      undelivered = kept.slice(0, MAX_UNDELIVERED)
     }
     if (failure) {
       throw failure
@@ -979,6 +1085,56 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     }
   }
 
+  let organizationEpoch = 0
+
+  async function setActiveOrganization(organizationId: string | null): Promise<ActiveOrganization> {
+    openChannel()
+    organizationEpoch += 1
+    // A refresh already in flight would otherwise hand the choice a token about to be replaced.
+    await refreshing?.catch(ignore)
+    const { answer, sent } = await send('setActiveOrganization', { body: { organizationId } })
+    if (!isActiveOrganization(answer)) {
+      throw clientError('response.invalid', options.messages())
+    }
+    // Signed out, or signed in as someone else, while the call was in flight: the answer is
+    // about a session this client no longer has. Choosing never changes whose session it is.
+    if (state.status === 'signed-out' || tokens?.sessionId !== answer.sessionId) {
+      throw unauthenticated()
+    }
+    if (answer.accessToken === undefined) {
+      // Stateful: the choice is on the session itself; there is no token to install.
+      if (generation === sent && !refreshing && tokens) {
+        tokens = { ...tokens, organizationId: answer.organizationId }
+        post({ type: 'session', ...tokens })
+        if (state.status === 'signed-in') {
+          setState({ ...state, organizationId: answer.organizationId })
+        }
+      }
+      return answer
+    }
+    if (generation === sent && !refreshing) {
+      // Only the access token: choosing does not rotate the refresh token, and one that a
+      // misbehaving server put in the answer must not replace the real one.
+      await settle(
+        commit({
+          sessionId: answer.sessionId,
+          accessToken: answer.accessToken,
+          accessTokenExpiresAt: answer.accessTokenExpiresAt,
+        })
+      )
+      return answer
+    }
+    // The session's token was replaced while the call was in flight (a refresh here or in
+    // another tab), or a refresh is running now. Installing this answer over it would be
+    // installing a result for an older generation. So it is not installed: one refresh,
+    // started now, is certainly issued after the choice was accepted and carries it.
+    await refreshing?.catch(ignore)
+    if (tokens?.sessionId !== answer.sessionId || !(await refresh(true))) {
+      throw unauthenticated()
+    }
+    return answer
+  }
+
   return {
     state: () => state,
     subscribe(listener) {
@@ -1003,6 +1159,23 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     },
     authorized,
     stepUp,
+    setActiveOrganization,
+    organizationEpoch: () => organizationEpoch,
+    noteActiveOrganization(sessionId, organizationId, epoch) {
+      // Only where the token cannot say: a session with a token reads it from the token. And
+      // not when a choice was made while the list was on its way: the list is the older fact.
+      if (
+        epoch === organizationEpoch &&
+        tokens &&
+        tokens.accessToken === null &&
+        tokens.sessionId === sessionId
+      ) {
+        tokens = { ...tokens, organizationId }
+        if (state.status === 'signed-in' && state.sessionId === sessionId) {
+          setState({ ...state, organizationId })
+        }
+      }
+    },
     expire() {
       if (tokens) {
         tokens = { ...tokens, refreshAt: 0 }

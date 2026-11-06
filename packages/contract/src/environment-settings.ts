@@ -5,6 +5,7 @@ import {
   readStoredEmailTemplates,
 } from './email-template'
 import { EmailSettingsSchema } from './email-template-schema'
+import { RoleKeySchema } from './organization'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
 import {
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
@@ -43,7 +44,7 @@ export const MAX_AUDIT_RETENTION_DAYS = 3650
 const UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]/u
 
 const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
-const HOST = `(?:${LABEL}(?:\\.${LABEL})*|\\[[0-9a-f:.]{2,45}\\])`
+const HOST = `(?:${LABEL}(?:\\.${LABEL})*|\\[(?!.*:::)(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\\])`
 const PORT = '(?::([1-9][0-9]{0,4}))?'
 const HTTPS_ORIGIN = new RegExp(`^https://${HOST}${PORT}$`)
 const LOOPBACK_ORIGIN = new RegExp(`^http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])${PORT}$`)
@@ -79,7 +80,7 @@ export const WebOriginSchema = z
   .meta({ ref: 'WebOrigin' })
 
 /**
- * A URL a flow may send the user back to ({@link redirectUrlKind}, ADR 0044): an absolute
+ * A URL a flow may send the user back to ({@link redirectUrlKind}): an absolute
  * `https://` URL (a web page or an app link), `http://` for `localhost`, `127.0.0.1` and
  * `[::1]`, or a custom scheme in reverse-domain form (`com.example.app:/oauth`). No
  * credentials, no fragment and no wildcard in any of them; a custom-scheme URL has no query
@@ -114,7 +115,7 @@ const App = z.object({
 
 // The name as it may be **set**: also without the characters no email template may hold
 // (a text-direction control, a private-use or unassigned code point, half a surrogate
-// pair), because the name is put into every subject and body (ADR 0039). On input only: a
+// pair), because the name is put into every subject and body. On input only: a
 // name saved before the rule is still read and still answered, and `displayName` cleans
 // what it always cleaned. Joiners and variation selectors are allowed, and a name may be a
 // domain name: the link rule of templates is not applied to it.
@@ -131,15 +132,15 @@ const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 
 /**
  * The sign-in methods no account can be created with, so that none of them may be an
- * environment's only way in: `smsCode`. A phone number is added to an account that exists
- * (ADR 0037); there is no sign-up by phone number.
+ * environment's only way in: `smsCode`. A phone number is added to an account that exists;
+ * there is no sign-up by phone number.
  */
 export const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[] = ['smsCode']
 
 /**
  * What a settings document is refused with when it would leave an environment with no way to
  * sign in. The rule is the server's, not this schema's: an environment whose only method is an
- * OAuth provider (ADR 0026) switches every method below off, and whether a provider is enabled
+ * OAuth provider switches every method below off, and whether a provider is enabled
  * is not part of this document.
  */
 export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must stay enabled'
@@ -151,7 +152,7 @@ export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must sta
  *
  * **The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
  * with a phone number, so an environment whose only method is `smsCode` would let nobody in
- * who is not in already (ADR 0037).
+ * who is not in already.
  *
  * @param settings - The document, or just its `signIn` section.
  * @returns `true` when any such method is enabled.
@@ -224,9 +225,9 @@ const Urls = z.object({
   /**
    * URLs a flow may send the user to: an emailed sign-in link and a provider sign-in lead only
    * to a URL listed here, matched exactly: no prefix, no wildcard. An `https` URL may be an
-   * app link of a registered native app (ADR 0040); a custom scheme
+   * app link of a registered native app; a custom scheme
    * (`com.example.app:/oauth`) is accepted for a provider sign-in from a native client with
-   * a provider that binds its code with PKCE, and listing one is a weakening (ADR 0044).
+   * a provider that binds its code with PKCE, and listing one is a weakening.
    */
   allowedRedirectUrls: z
     .array(RedirectUrlSchema)
@@ -239,7 +240,7 @@ const Audit = z.object({
   /**
    * Days an audit entry is kept; `null` (the default) keeps entries for ever. With a number
    * set, the server's retention job deletes the environment's entries older than that,
-   * permanently (ADR 0017). **Saving a period, or a shorter one, deletes the older entries
+   * permanently. **Saving a period, or a shorter one, deletes the older entries
    * for good**, starting with the server's next retention run (they run every ten minutes; a
    * large backlog takes several), which is why `settingsWeakenings` lists it.
    */
@@ -248,7 +249,7 @@ const Audit = z.object({
 
 const Agents = z.object({
   /**
-   * Whether a **production** environment accepts proposals from an AI agent (ADR 0053):
+   * Whether a **production** environment accepts proposals from an AI agent:
    * `false` (the default) refuses every one, when it is asked for and again when it is
    * approved, so switching this off also stops what was asked for and nobody has approved.
    * It says nothing about an environment that is not a production one: there an agent key
@@ -259,7 +260,7 @@ const Agents = z.object({
    */
   proposalsInProduction: z.boolean().default(false),
   /**
-   * Whether an AI agent may run a sign-in test in this environment (ADR 0058): the server
+   * Whether an AI agent may run a sign-in test in this environment: the server
    * signs a throwaway user up and in through the real flow, asks the environment's hooks,
    * records and delivers its events, and deletes the user. `true` allows it, `false` does
    * not, and `null` (the default) is what the environment's kind does: **allowed in a
@@ -271,6 +272,59 @@ const Agents = z.object({
   testSignIn: z.boolean().nullable().default(null),
 })
 
+const Sso = z.object({
+  /**
+   * Whether the environment has enterprise single sign-on. **Off by default**. Off,
+   * the admin routes for connections answer `sso.disabled`, no identifier is offered the `sso`
+   * first factor and a connection's callback signs nobody in; nothing stored is deleted.
+   */
+  enabled: z.boolean().default(false),
+})
+
+/** Most organizations one user may create unless the environment sets another cap. */
+export const DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER = 5
+
+/** Highest `organizations.maxCreatedPerUser` that can be set. */
+export const MAX_ORGANIZATIONS_CREATED_PER_USER = 1000
+
+const Organizations = z.object({
+  /**
+   * Whether the environment has organizations. **Off by default**: a consumer app
+   * is not affected. Off, every organization route answers `organization.disabled` and
+   * access tokens carry no organization claims; nothing stored is deleted, so switching it
+   * back on restores every organization and membership. Switching it off is a weakening
+   * (`settingsWeakenings`): an application that authorizes on the organization claims and
+   * reads a missing claim as permission would open up.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * Whether a signed-in user may create an organization themselves. `false` (the default)
+   * reserves creation for the operator's backend and the dashboard. Switching it on is a
+   * weakening. The client route that creates an organization reads this switch.
+   */
+  allowUserCreated: z.boolean().default(false),
+  /**
+   * How many organizations one user may have created, or `null` for no cap. Applies to user
+   * created organizations only. Raising it, or removing it, is a weakening.
+   */
+  maxCreatedPerUser: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_ORGANIZATIONS_CREATED_PER_USER)
+    .nullable()
+    .default(DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER),
+  /** The key of the role a user gets in the organization they create. */
+  creatorRole: RoleKeySchema.default('admin'),
+  /** The key of the role a member gets when no other is chosen (an invitation, a domain). */
+  defaultRole: RoleKeySchema.default('member'),
+  /**
+   * Whether a session may have no active organization (the user's personal account). `true`
+   * by default. `false` makes a client choose an organization before it can work.
+   */
+  personalAccount: z.boolean().default(true),
+})
+
 const Notifications = z.object({
   /**
    * Email the account's address when its password is changed, reset, set by an administrator or
@@ -279,18 +333,19 @@ const Notifications = z.object({
   passwordChanged: z.boolean().default(true),
   /**
    * Email the account's address when it is signed in to from a device family none of its other
-   * sessions has (ADR 0023). On by default; turning it off is recorded as a weakening.
+   * sessions has. On by default; turning it off is recorded as a weakening.
    */
   newSignIn: z.boolean().default(true),
   /**
    * Email the account's address when its two-step verification is turned on, turned off or
    * reset by an administrator, when its backup codes are replaced, and when one is used to sign
-   * in (ADR 0025). On by default; turning it off is recorded as a weakening.
+   * in. On by default; turning it off is recorded as a weakening.
    */
   mfaChanged: z.boolean().default(true),
   /**
-   * Email the account's address when a provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) is connected
-   * to it or disconnected from it (ADR 0026). On by default; turning it off is recorded as a
+   * Email the account's address when a provider account (Google, GitHub, Apple, Microsoft, Discord,
+   * LinkedIn, X, Facebook) is connected
+   * to it or disconnected from it. On by default; turning it off is recorded as a
    * weakening.
    */
   identityChanged: z.boolean().default(true),
@@ -315,8 +370,8 @@ const Mfa = z.object({
    */
   policy: MfaPolicySchema.default('optional'),
   /**
-   * A code texted to the account's phone number as a second factor (ADR 0025, "A texted code
-   * as a second factor"). **Off by default.** On: a user who has proven a phone number, and
+   * A code texted to the account's phone number as a second factor. **Off by default.** On: a user
+   * who has proven a phone number, and
    * has neither an authenticator app nor a passkey, may make a texted code their second
    * step. It is the weakest second factor there is, and it is never used beside a stronger
    * one: a user with an authenticator app or a passkey is never offered it, at a sign-in or
@@ -442,13 +497,13 @@ const Sms = z.object({
    * no order. **Empty (the default) means nothing is sent**, whatever `enabled` says. A
    * number is matched by the longest calling prefix the contract's table has for it, and
    * countries that share a prefix count as one destination: listing `US` also allows
-   * Canadian numbers (ADR 0037).
+   * Canadian numbers.
    */
   allowedCountries: SmsCountries.default([]),
   /**
    * The most text messages the server sends for this environment in one day (UTC, from
    * midnight). Once it is reached nothing more is sent until the next day: it is the fixed
-   * maximum an attack on the environment can cost (ADR 0037). On by default
+   * maximum an attack on the environment can cost. On by default
    * ({@link DEFAULT_SMS_DAILY_MESSAGE_LIMIT}), and there is no value that switches it off.
    * The hourly limits per environment and per destination prefix are shares of it, so this
    * one number scales them all.
@@ -460,7 +515,7 @@ const Sms = z.object({
     .max(MAX_SMS_DAILY_MESSAGE_LIMIT)
     .default(DEFAULT_SMS_DAILY_MESSAGE_LIMIT),
   /**
-   * The environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042),
+   * The environment's own sentence for each kind of text message (`SmsTemplates`),
    * as plain text on one line with `{{name}}` placeholders. Empty by default: every message
    * is the built-in text. The origin-bound last line is the server's and is in no template.
    */
@@ -507,9 +562,9 @@ const minLengthFloor = {
  *   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
  *   too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
  *   texted to the phone number an account has proven; offered only while `sms` is on with a
- *   country, in a deployment that can send text messages; ADR 0037). At least one of the
+ *   country, in a deployment that can send text messages). At least one of the
  *   first four must stay enabled, unless an OAuth provider is (the server checks: providers
- *   are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+ *   are configured apart from this document). `smsCode` does not count: nobody
  *   signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
@@ -517,25 +572,31 @@ const minLengthFloor = {
  * - `audit.retentionDays`: how many days audit entries are kept before the server deletes
  *   them for good; `null` (the default) keeps them for ever.
  * - `agents.proposalsInProduction`: whether a production environment accepts proposals from
- *   an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
+ *   an AI agent (`false` by default). Switching it on is a weakening.
+ * - `organizations`: whether the environment has organizations (`enabled`, off by default), whether
+ *   users may create them (`allowUserCreated`), how many each may
+ *   (`maxCreatedPerUser`), the role a creator and a new member get (`creatorRole`,
+ *   `defaultRole`) and whether a session may have no active organization (`personalAccount`).
+ *   Switching it off, or letting users create organizations, is a weakening.
  * - `notifications`: which security notices are emailed to an account's owner
- *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
+ *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched
+ *   off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
  *   `required`.
  * - `mfa.smsCode`: whether a texted code may be a user's second factor (`enabled`, off by
- *   default). Never beside an authenticator app or a passkey (ADR 0025).
- * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
+ *   default). Never beside an authenticator app or a passkey.
+ * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to.
  * - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
- *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
+ *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings`.
  * - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
  *   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
- *   most (`dailyMessageLimit`, 500 by default). See ADR 0037. `sms.templates` is the
- *   environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042);
+ *   most (`dailyMessageLimit`, 500 by default). `sms.templates` is the
+ *   environment's own sentence for each kind of text message (`SmsTemplates`);
  *   empty by default: every message is the built-in text.
  * - `emails.templates`: the environment's own subject and body for each kind of email, as
  *   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
- *   message is the built-in copy. See ADR 0039.
- * - `agents.testSignIn`: whether an AI agent may run a sign-in test here (ADR 0058): `true`,
+ *   message is the built-in copy.
+ * - `agents.testSignIn`: whether an AI agent may run a sign-in test here: `true`,
  *   `false`, or `null` (the default) for "in a development environment yes, in a production
  *   one no".
  */
@@ -549,6 +610,8 @@ export const EnvironmentSettingsSchema = z
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
+    organizations: Organizations.strict().prefault({}),
+    sso: Sso.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -602,6 +665,8 @@ export const EnvironmentSettingsInputSchema = z
       .prefault({}),
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
+    organizations: Organizations.strict().prefault({}),
+    sso: Sso.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -647,6 +712,8 @@ const Stored = z.object({
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
   agents: Agents.prefault({}),
+  organizations: Organizations.prefault({}),
+  sso: Sso.prefault({}),
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),
@@ -814,8 +881,7 @@ export const CONFIG_TOOL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,31}$/
 export const CONFIG_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
 
 /**
- * Which tool manages an environment's settings from a config file, as the admin API returns it
- * (ADR 0030).
+ * Which tool manages an environment's settings from a config file, as the admin API returns it.
  *
  * - `tool`: the tool that last applied a config (`tula-apply`).
  * - `configHash`: the fingerprint of the config it applied.
@@ -846,9 +912,11 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  *
  * - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
  *   email already shows it. It is `null` when none is set.
- * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
+ * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`,
+ *   `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
  *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
- * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+ * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`,
+ *   `passkey`, `smsCode`;
  *   `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
  *   country is allowed and the deployment has a sender). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps
@@ -864,7 +932,14 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
- * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
+ * - `organizations` says whether organizations are on at all, whether users may create their
+ *   own and whether the personal account (no organization) is allowed, so that an
+ *   organization switcher draws "Create organization" and "Personal account" only where the
+ *   server would accept them. Optional in the schema, so a client reading an older server's
+ *   answer treats a missing one as organizations off. The server still decides: every
+ *   organization route checks the setting itself.
+ * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates
+ *   (`emails`), the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
  */
@@ -879,6 +954,13 @@ export const ClientConfigSchema = z
     password: PasswordPolicySchema,
     mfa: z.object({ policy: MfaPolicySchema, smsCode: z.boolean().optional() }).optional(),
     phone: z.object({ enabled: z.boolean() }).optional(),
+    organizations: z
+      .object({
+        enabled: z.boolean(),
+        allowUserCreated: z.boolean(),
+        personalAccount: z.boolean(),
+      })
+      .optional(),
   })
   .meta({ ref: 'ClientConfig' })
 

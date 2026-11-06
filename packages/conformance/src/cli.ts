@@ -26,6 +26,10 @@ import { devSmsCodes, devSmsTexts } from './sms-inbox'
  *   Each instance has its own inbox, so name the instances themselves, never a proxy in
  *   front of them. The server must run with `SMS_PROVIDER=dev`. Without it the scenarios
  *   marked `needsSmsInbox` are skipped.
+ * - `CONFORMANCE_SSO_ISSUER` (optional): the mock enterprise identity provider's issuer as the
+ *   *server* reaches it, when that is not its `PUBLIC_URL` (a server in a container reaches
+ *   itself at `http://localhost:3003/v1/dev/sso`, not at the port published on the host).
+ *   Without it the issuer is the public URL's `/v1/dev/sso`.
  *
  * - `CONFORMANCE_ENVIRONMENTS` (optional): more environments of the same server, as
  *   `publishableKey:secretKey` pairs separated by commas. The scenarios then run at the same
@@ -86,6 +90,9 @@ const target: Target = {
   publishableKey,
   secretKey: process.env.CONFORMANCE_SECRET_KEY || undefined,
   fetch: (request) => fetch(request),
+  ssoIssuer: process.env.CONFORMANCE_SSO_ISSUER
+    ? async () => process.env.CONFORMANCE_SSO_ISSUER?.replace(/\/+$/, '') ?? ''
+    : undefined,
   emailCode: mailpitCodes(mailpit),
   emailLink: mailpitLinks(mailpit),
   emailMessage: mailpitMessages(mailpit),

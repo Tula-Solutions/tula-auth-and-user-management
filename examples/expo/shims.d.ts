@@ -7,6 +7,9 @@
 // checked against the real declarations (`app/tsconfig.json`); `README.md` says when that
 // was last done.
 
+/** React Native's development flag (`false` in a release build). */
+declare const __DEV__: boolean
+
 declare module 'react-native' {
   import type { ComponentType, ReactNode } from 'react'
 

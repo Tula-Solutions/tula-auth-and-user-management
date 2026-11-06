@@ -4,7 +4,7 @@ import { PasskeyAssertionCredentialSchema, PasskeyRequestOptionsSchema } from '.
 /**
  * Second-factor methods a flow can ask for.
  *
- * `sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+ * `sms_code` is a 6-digit code texted to the account's proven phone number. It is
  * the weakest of them and is listed **alone or not at all**: a user who has an authenticator
  * app or a passkey is never offered it.
  */
@@ -41,6 +41,7 @@ export const FirstFactorStrategySchema = z
     'oauth_linkedin',
     'oauth_x',
     'oauth_facebook',
+    'sso',
   ])
   .meta({ ref: 'FirstFactorStrategy' })
 
@@ -58,7 +59,7 @@ export const EmailVerificationStrategySchema = z
 /**
  * The first factors that are proven with a code (or link) the server sends first: the two
  * email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
- * started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+ * started with. They are asked for with `first-factor/prepare` and proven with
  * `first-factor/attempt`.
  */
 export const PreparedFirstFactorStrategySchema = z
@@ -67,7 +68,7 @@ export const PreparedFirstFactorStrategySchema = z
 
 /**
  * Why a sign-in stops to ask for a new password. `expired`: the password is older than the
- * environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+ * environment's `password.expiryDays`. A closed list that may grow.
  */
 export const NewPasswordReasonSchema = z.enum(['expired']).meta({ ref: 'NewPasswordReason' })
 
@@ -117,7 +118,7 @@ export const FlowStepSchema = z
          *
          * **An expired password** (an attempt of kind `sign_in`; `reason: 'expired'`): the
          * password just typed was right and is older than the environment's
-         * `password.expiryDays` allows (ADR 0041). Everything else the sign-in needed is proven
+         * `password.expiryDays` allows. Everything else the sign-in needed is proven
          * by now, a second factor included; submit a new password
          * (`sign-ins/:attemptId/new-password`) and the sign-in completes. No session exists
          * and no tokens are returned until then. Nothing was emailed: `strategies` is empty.
@@ -187,8 +188,8 @@ export const FlowKindSchema = z
  * `refreshToken` is only present for native/server clients. Browsers receive it as an httpOnly
  * cookie and never see it in JavaScript.
  *
- * `accessToken` and `accessTokenExpiresAt` are absent for a session of a `stateful` profile
- * (ADR 0028): the browser holds only an httpOnly session cookie, there is nothing for
+ * `accessToken` and `accessTokenExpiresAt` are absent for a session of a `stateful` profile:
+ * the browser holds only an httpOnly session cookie, there is nothing for
  * JavaScript to keep, and requests are authenticated by sending that cookie
  * (`credentials: 'include'`). Every `hybrid` session carries both.
  */
@@ -210,7 +211,8 @@ export const FlowAttemptSchema = z
     step: FlowStepSchema,
     /**
      * The attempt's secret. Present **only** in the response that starts the attempt, never
-     * again: keep it in memory and send it as `FLOW_ATTEMPT_HEADER` (`x-tula-attempt`) on every later call.
+     * again: keep it in memory and send it as `FLOW_ATTEMPT_HEADER` (`x-tula-attempt`) on every
+     * later call.
      */
     attemptSecret: z.string().optional(),
     /**
@@ -252,7 +254,7 @@ export const SignUpRequestSchema = z
 
 /**
  * Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
- * code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+ * code (`sms_code`), a phone number in international form (`+14155550100`; spaces,
  * hyphens and parentheses are ignored).
  */
 export const SignInStartRequestSchema = z
@@ -341,7 +343,7 @@ const MAX_BACKUP_CODE_INPUT_LENGTH = 64
  * - `totp`: the 6-digit code the authenticator app shows now.
  * - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
  *   Each works once.
- * - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+ * - `passkey`: an assertion for the options of `…/second-factor/passkey/options`.
  * - `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
  */
 export const SecondFactorRequestSchema = z
@@ -387,7 +389,7 @@ export const PasswordResetRequestSchema = z
 
 /**
  * Submit the password that replaces an expired one, for a sign-in attempt on
- * `needs_new_password` (ADR 0041). The expired password itself is never accepted.
+ * `needs_new_password`. The expired password itself is never accepted.
  */
 export const NewPasswordRequestSchema = z
   .object({ password: z.string().max(1024) })

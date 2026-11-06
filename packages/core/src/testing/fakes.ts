@@ -129,12 +129,19 @@ function base64Url(value: string): string {
  *
  * @param label - Makes the token unique and recognisable in assertions.
  * @param lifetimeSeconds - `exp - iat`.
+ * @param claims - More claims for the payload, e.g. `{ org_id }`.
  * @returns The token.
  */
-export function accessToken(label: string, lifetimeSeconds = 60): string {
+export function accessToken(
+  label: string,
+  lifetimeSeconds = 60,
+  claims: Record<string, unknown> = {}
+): string {
   const iat = 1_900_000_000
   const header = base64Url(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' }))
-  const payload = base64Url(JSON.stringify({ sub: 'user_1', iat, exp: iat + lifetimeSeconds }))
+  const payload = base64Url(
+    JSON.stringify({ sub: 'user_1', iat, exp: iat + lifetimeSeconds, ...claims })
+  )
   return `${header}.${payload}.${label}`
 }
 

@@ -19,6 +19,15 @@ import { documentAgentReads, documentation, eventSchemas, hookSchemas } from '~/
  */
 export const MAX_BODY_BYTES = 64 * 1024
 
+/** Where a bulk user import is posted (ADR 0066): the one route with a larger body. */
+export const IMPORT_PATH = '/v1/admin/users/import'
+
+/**
+ * Largest body of {@link IMPORT_PATH}: 500 rows, each with a hash and up to 4 KiB of metadata.
+ * It is the same ceiling the socket gets, so the socket's cap is never the one that answers.
+ */
+export const MAX_IMPORT_BODY_BYTES = 4 * 1024 * 1024
+
 /** Where the OpenAPI document is served. */
 export const OPENAPI_PATH = '/v1/openapi.json'
 
@@ -42,7 +51,27 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/email-address/router')).default],
   ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
   ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
+  ['/v1/admin/organizations', (await import('~/modules/organization/router')).default],
+  ['/v1/admin/organization-roles', (await import('~/modules/organization-role/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/organization/me-router')).default],
+  ['/v1/admin/organizations', (await import('~/modules/organization-domain/router')).default],
+  [
+    '/v1/client/me/organizations',
+    (await import('~/modules/organization-domain/me-router')).default,
+  ],
+  ['/v1/admin/organizations', (await import('~/modules/organization/invitation-router')).default],
+  ['/v1/client', (await import('~/modules/organization/invitation-me-router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/organization/member-router')).default],
+  ['/v1/admin/users', (await import('~/modules/organization/user-router')).default],
   ['/v1', (await import('~/modules/native-app/router')).default],
+  ['/v1/admin/sso-connections', (await import('~/modules/sso-connection/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/sso-connection/member-router')).default],
+  ['/v1/admin/scim-tokens', (await import('~/modules/scim-token/router')).default],
+  ['/v1/admin/setup-links', (await import('~/modules/setup-link/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/setup-link/me-router')).default],
+  ['/v1/setup', (await import('~/modules/setup-link/portal-router')).default],
+  ['/v1/scim/v2', (await import('~/modules/scim/router')).default],
+  ['/v1', (await import('~/modules/sso/router')).default],
   ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
   ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
   ['/v1', (await import('~/modules/proposal/router')).default],
@@ -54,6 +83,8 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
 // `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
 const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
+// The mock enterprise identity provider (ADR 0067), behind the same gate.
+const devSsoRouter = (await import('~/modules/sso/dev-router')).default
 
 // Mounted only where the deployment has the development SMS inbox (`ENVIRONMENT=local` with
 // `SMS_PROVIDER=dev`): in every other deployment the path does not exist.
@@ -90,14 +121,19 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.use(secureHeaders())
   app.use(cors(deps))
   // After cors() so a 413 still carries CORS headers and browsers can read the error code.
-  app.use(
+  const limits = [MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES].map((maxSize) =>
     bodyLimit({
-      maxSize: MAX_BODY_BYTES,
+      maxSize,
       onError: () => {
         throw new ServiceException('request.too_large')
       },
     })
   )
+  app.use((c, next) => {
+    const [normal, bulk] = limits
+    const limit = c.req.method === 'POST' && c.req.path === IMPORT_PATH ? bulk : normal
+    return limit ? limit(c, next) : next()
+  })
   app.use(async (c, next) => {
     c.set('deps', deps)
     await next()
@@ -119,6 +155,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   }
   if (deps.config.oauthMock && deps.config.tier === 'local') {
     app.route('/v1/dev/oauth', devOAuthRouter)
+    app.route('/v1/dev/sso', devSsoRouter)
   }
   if (deps.smsInbox !== null && deps.config.tier === 'local') {
     app.route('/v1/dev/sms', devSmsRouter)

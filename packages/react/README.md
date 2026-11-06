@@ -456,6 +456,28 @@ Flow actions never reject: they resolve with the next step, or `null` with the r
 `error`. A second action while one is pending resolves `null` and sends nothing. Treat a status
 you do not know as "unsupported", as the components do.
 
+### Organizations
+
+Where the environment has organizations ([ADR 0065](../../docs/adr/0065-organizations.md)),
+two hooks read and change the organization the session acts in.
+
+```tsx
+const { organizationId, organization, role, permissions, has, isLoaded } = useOrganization()
+has({ permission: 'org:billing:read' })   // true or false: exact match, no wildcard
+has({ role: 'admin' })                    // one check at a time: a permission or a role
+
+const { organizations, activeOrganizationId, setActive, create } = useOrganizationList()
+await setActive(organizations[0].id)      // null: back to the personal account
+await create({ name: 'Acme', slug: 'acme' })
+```
+
+`role`, `permissions` and `has` come from the access token's claims, so they follow the session
+and change at its next refresh: a removal or a demotion takes effect then, not at once.
+`has()` is `false` while nothing is active and while the answer belongs to an earlier session; a
+list asked for under one session is never shown under another. **`has()` decides what to
+draw, never what to allow**: your server checks the same permission
+(`@tula-tech/nextjs`'s `auth().has()` and the middleware's `access` rules do).
+
 ## Accessibility
 
 Built to WCAG 2.2 AA and checked by axe in a real browser on every screen and state, in both

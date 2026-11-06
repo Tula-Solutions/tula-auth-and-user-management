@@ -362,8 +362,8 @@ bound to. Making it throw that for some exception is a decision to record here, 
 sentence of Android's documentation that justifies it.
 
 **Not built**, each said in the list or the docs: an emailed link (below; TULA-76); renaming
-a passkey, which is a `PATCH` and `HttpURLConnection` has none (an app's own `HttpEngine`
-could send one; the default engine is not replaced for it, and TULA-76 carries the call); a
+a passkey, which is a `PATCH` (the default engine sends one since TULA-130; TULA-76 carries
+the call); a
 phone number on the account (TULA-61).
 
 **An email address for an account without one** ([ADR 0059](0059-email-for-accounts-without-one.md))
@@ -420,3 +420,13 @@ client's state takes the address from that answer, with no second request.
 - Two things are care and not checks: the JVM module's use of Java APIs that Android has,
   and that the client's rules stay those of `@tula/core` beyond the one constant a test
   holds equal. A change to `@tula/core`'s session rules is made here in the same change.
+
+## Decisions (TULA-157)
+
+- **Decision (TULA-157, H-323): record, do not yet expose, whether the Android device key is
+  StrongBox-backed.** `KeystoreDeviceKeyStore` falls back from StrongBox to the software-backed
+  Keystore without saying which. Recommendation: read `KeyInfo.isInsideSecureHardware` after
+  generation and offer it to the app as a property of the store, never to the server (a client's
+  claim about its hardware is worth nothing without Key Attestation, see ADR 0043, H-316).
+  Not changed: `KeyInfo` behaves differently by device and OS version and can only be checked on
+  one (device, TULA-195).

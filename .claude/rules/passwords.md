@@ -141,6 +141,12 @@ new one is stored. `null` is off.
   signs in again with the new password. The same holds, with the sessions ended, when
   `finish` fails after the store (a hook that refuses, a session limit). A stored "sweep
   owed" marker was decided against (ADR 0041); adding one is a decision. Tests pin the cost.
+- **Decision (TULA-157, H-166): no stored "sweep owed" marker; recommendation, code left alone.**
+  A marker needs a column (a migration), a store method in both adapters and the shared suite,
+  and a job or a sign-in check that pays the debt: more than a hardening ticket's size, for a
+  window that needs a database outage between two statements. The 503, the logged line and the
+  administrator's `DELETE /v1/admin/users/:userId/sessions` stay the remedy. Revisit if the
+  line ever shows up in production.
 - **The step calls `requireProvenMethod`** like every parked step, and the hooks are asked
   where they always are (`finish`, `Sessions.create`): after the password is stored.
 - **`expiryDays` is not a weakening**, set, shortened or removed (`settingsWeakenings`).
@@ -148,6 +154,37 @@ new one is stored. `null` is off.
 - **A scenario that needs more than ten minutes to pass sets `needsTestClock`** and runs in
   process only; a live target skips it and CI's `self-host` job lists it by name. Never add
   a route or a setting that ages a password on a running server.
+
+## Imported password hashes (`modules/password/foreign-hash.ts`, `Users.importUsers`, see ADR 0066)
+
+`POST /v1/admin/users/import` stores another system's hash as the user's current password.
+
+- **A hash is judged by `Foreign.parse` before it is stored** and refused row by row with an
+  `import.*` code: bcrypt cost 10 to 14, argon2 at least 19 MiB and 2 passes and at most
+  256 MiB, 10 passes and 8 lanes, version 19, a salt of 8 bytes and a digest of 16, and the
+  declared algorithm equal to the hash's own prefix. Raising a floor is a new row in the
+  parser's table and an ADR 0066 line; never accept a hash the parser does not read.
+- **Verification is one call, `Bun.password.verify`, which dispatches on the stored hash.**
+  Never add a second verifier path that an unknown user does not also run: the dummy hash
+  and the count of verifications stay the same for every kind of account
+  (`password/service.test.ts` counts them). That is equal work in kind, **not equal time**:
+  until its first sign-in an imported account verifies in the time of its own hash, so
+  timing can tell "imported, not signed in yet" from "no such account". This is an accepted,
+  bounded exposure (ADR 0066): the parameter floors and ceilings keep the difference to a
+  small factor, it ends at the first sign-in, and it reveals the migration, not a password.
+  Do not widen the band without measuring again; do not claim the times are equal. A stored
+  hash that cannot be read matches nothing and never throws.
+- **Metadata and names of an import are checked as the database stores them**: the
+  pre-check counts the `jsonb` rendering (a byte for each structural `:` and `,`), refuses an
+  exponent number and any NUL or lone surrogate, and the Postgres `create` turns the store's
+  own refusal (`InvalidUserDataError`) into a refusal of that one row, never a failed call.
+- **The first sign-in replaces the hash through `needsRehash` and `upgradePasswordHash`,
+  and nothing else does.** An imported password's age is the import's time and it has no
+  history (ADR 0066); the rehash moves neither.
+- **An import records `user.imported`, never `user.created`** (a migration must not fire
+  sign-up deliveries), with booleans and the closed `passwordAlgorithm` only, in the user's
+  own transaction. The route has its own per-environment limit and the one larger body
+  limit (`MAX_IMPORT_BODY_BYTES`); no other route gets either.
 
 ## What to test
 

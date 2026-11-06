@@ -12,6 +12,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Dashboard app (`apps/dashboard`, see ADR 0032)
 
+- **The one exception is the setup portal** (`features/setup`, route `/setup`): a page with no
+  account that calls `/v1/setup/*` with the link's token in memory through `setupRequest`
+  (`setup-api.ts`), never a generated hook, never `dashboardFetch`, and never storing the token.
 - **Every API call goes through an Orval-generated hook and `dashboardFetch`**
   (`src/api/mutator.ts`): `x-tula-dashboard: 1`, the cookie, never `Authorization`, the
   selected environment on admin calls, and one error type (`ApiError`). A 401
@@ -146,6 +149,46 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   "the last 24 hours". `words.test.ts` has the row of a failed last call 23 hours old.
   The row says what the counts are not.
   A hook is never called a webhook in its words (`features/hooks/words.test.ts`).
+- **The organization screens** (`features/organizations`, ADR 0065, `organizations.md`) are
+  the dashboard's side of `/v1/admin/organizations`, `/v1/admin/organization-roles` and
+  `GET /v1/admin/users/:userId/organizations`; every route answers `organization.disabled`
+  while the environment has them off, and every screen says so (`OrganizationsOff`) with a
+  link to Organization settings, never "not allowed". **What is asked about first is the
+  contract's**: a role gaining a permission (`organizationRoleWeakenings`, through
+  `WeakeningQuestion`), the three organizations settings (`settingsWeakenings`, said by
+  `describeWeakening`) and, for a domain, `auto_join` (`autoJoinSentences`, the server
+  records `weakened: true`). **A role's change carries the version it was listed at**
+  (`If-Match`), a 412 is "changed since you opened it" with a load of the current role and
+  never a retry, and a role changed after the dialog opened is never saved over. **The
+  server's refusals are the dashboard's own sentences** (`organizationMessageFor`; the words
+  test walks the contract's codes). A name an operator typed (an organization's, a role's)
+  goes through `printableName`, which keeps ordinary spaces; slugs, keys, domains and
+  addresses through `printable`. The list searches the page it holds, because the API has
+  no `q` for organizations: say so, never imply a search of every organization. A user's
+  deletion refused with `user.last_organization_manager` names each organization with a link.
+  The fake (`src/testing/fake-organizations.ts`) is held to the contract and the service's
+  refusals by `fake-organizations.test.ts`.
+- **The SSO section** (`features/sso`, TULA-146) is part of the organization screen, over
+  `/v1/admin/sso-connections`; every route answers `sso.disabled` while the environment has
+  single sign-on off, and the section says so with a link to Organization settings. **The
+  client secret is write-only**: `clientSecretSet` is all the API returns, the field is
+  empty on edit, cleared when the dialog closes, and sent only when typed. **What is asked
+  about first mirrors the server's `weakens()`** (`modules/sso-connection/service.ts`) as
+  `weakeningSentences` in `words.ts`, because the contract has no list of them: activation,
+  any content change to an active connection, enforcement going off, trusting the identity
+  provider for two-step verification, and a new break-glass role (said as "keeps password
+  sign-in", never more). A change to `weakens()` changes that function and its table in
+  `words.test.ts`. A certificate ending within 30 days is a warning and an ended one an
+  alert (`certificateStanding`). The fake (`src/testing/fake-sso.ts`) is held to the
+  contract by `fake-sso.test.ts`.
+- **The SCIM section** (`features/scim`, on the organization's page, `/v1/admin/scim-tokens`)
+  follows the one-time-secret rules above: the token is shown once in its dialog with the
+  base URL, and gone after it closes or the environment changes; revoking asks first
+  (`ConfirmDialog`, the token's name typed in production); the list says last used ("Never")
+  and revoked-at. The base URL is `window.location.origin` + `/v1/scim/v2` (the dashboard
+  has no `PUBLIC_URL`; behind a proxy that differs, the operator reads the right one from
+  their identity provider's setup). The fake (`src/testing/fake-scim.ts`) is held to the
+  contract by `fake-scim.test.ts`.
 - **The proposals screen** (`features/proposals`, [ADR 0053](../../docs/adr/0053-proposals.md),
   "The dashboard's Proposals screen") lists what an agent asked for and approves with the
   dashboard's session. **It approves what it showed**: the request's operation and target
@@ -166,9 +209,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   and never "nothing was changed", and a failure that is no refusal of the proposal says
   the approval may have been taken. **Never "human verified", "reviewed" or any word that
   says a person looked** (a test scans the sources), and nothing an agent wrote is shown:
-  a proposal holds none. **There is no dismissal**, on the screen or in the API (ADR 0053,
-  "Dismissing a proposal: not built"); the screen says a proposal expires by itself and
-  that revoking the key ends its proposals. The fake's routes
+  a proposal holds none. **Reject** is a button with a confirmation (the id typed in
+  production, as for Approve) and sends once; a refresh after it is started, not awaited
+  (ADR 0053, "Rejecting a proposal"). There is no agent-side withdrawal; the screen says
+  that revoking the key ends all its proposals. The fake's routes
   (`src/testing/fake-proposals.ts`) are held to the contract and to the service's order of
   refusals by `fake-proposals.test.ts`: a change to `Proposals.approve`'s refusals or to
   `NOTHING_WHEN_ALREADY_SO` changes the fake.

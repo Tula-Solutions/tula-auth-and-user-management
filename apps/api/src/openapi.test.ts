@@ -182,7 +182,12 @@ describe('the event payloads in the OpenAPI document', () => {
       .components.schemas as Record<string, unknown>
     const shared = Object.keys(fromEvents).filter((name) => name in fromRoutes)
     // Today: the enums an event's data reuses. The check is not vacuous.
-    expect(shared.sort()).toEqual(['OAuthProvider', 'ProposalApprover', 'SessionClient'])
+    expect(shared.sort()).toEqual([
+      'OAuthProvider',
+      'OrganizationRoleKey',
+      'ProposalApprover',
+      'SessionClient',
+    ])
     expect(conflicts(fromEvents, fromRoutes)).toEqual([])
     // And the routes alone bring no event component: these names are the events' own.
     expect(Object.keys(fromRoutes).filter((name) => /Event(Data|Actor)?$/.test(name))).toEqual([])
@@ -190,6 +195,19 @@ describe('the event payloads in the OpenAPI document', () => {
     expect(conflicts({ A: { type: 'string' }, B: 1 }, { A: { type: 'number' }, B: 1 })).toEqual([
       'A',
     ])
+  })
+
+  test('rejecting a proposal takes no body and says nothing of a reason', async () => {
+    // A reason is free text, and free text may not reach an event payload (ADR 0053).
+    const res = await createApp(createTestDeps()).request(OPENAPI_PATH)
+    const document = (await res.json()) as {
+      paths: Record<string, Record<string, { operationId?: string; description?: string }>>
+    }
+    const operation = document.paths['/v1/admin/proposals/{id}/reject']?.post
+    expect(operation?.operationId).toBe('rejectProposal')
+    expect(operation).not.toHaveProperty('requestBody')
+    // `params.reason` is the conflict's error parameter, not a note the caller sends.
+    expect((operation?.description ?? '').replaceAll('params.reason', '')).not.toMatch(/reason/i)
   })
 
   test('the document is built once and served again', async () => {

@@ -119,6 +119,7 @@ describe('FlowStep', () => {
       'oauth_linkedin',
       'oauth_x',
       'oauth_facebook',
+      'sso',
     ])
   })
 

@@ -3,7 +3,6 @@
 Signing in with a fingerprint, face or screen lock (WebAuthn): from a button, from the
 address field's autofill, as the second step after a password, and as a step-up. Users add,
 rename and remove passkeys in the account page. Off by default.
-The reasoning is in [ADR 0027](../adr/0027-passkeys.md).
 
 > **Tested with a virtual authenticator only** (Chromium's, through the DevTools protocol).
 > No physical authenticator, platform passkey manager or other browser has been exercised.
@@ -99,8 +98,7 @@ described below.
   app's). The comparison is exact, and nothing in a body chooses the origin or the relying
   party.
 - The server refuses what a phone reports as another app; it cannot prove that a request
-  came from an app. Neither platform's origin has been seen from a device
-  ([ADR 0027](../adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31)).
+  came from an app. Neither platform's origin has been checked from a device.
 - A challenge is 32 random bytes, used once, valid five minutes.
 - A passkey sign-in satisfies two-step verification by itself.
 - A passkey sign-in by a user whose address is unverified asks for the emailed code
@@ -266,7 +264,7 @@ tula.passkeys.add(name = "Pixel") // signed in, after a step-up
 ```
 <!-- /snippet -->
 
-Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No passkey sheet has been shown by either client.
+Neither client has been tested on a physical device: no passkey sheet has been shown by either.
 
 Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
 [`@tula-tech/expo`](../reference/expo.md).

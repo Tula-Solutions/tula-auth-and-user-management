@@ -1,0 +1,7 @@
+id,first_name,last_name,username,primary_email_address,primary_phone_number,verified_email_addresses,unverified_email_addresses,verified_phone_numbers,unverified_phone_numbers,totp_secret,password_digest,password_hasher
+user_2aaa,Maya,Chen,maya,maya@northline.app,,maya@northline.app,,,,,$2b$10$NDhuqUZcBQ/LFla5qSAXXezYn7yAR/RITInkyddwtdh1ANBpFw7hS,bcrypt
+user_2bbb,Jon,Okafor,,jon@northline.app,,"jon@northline.app,j.okafor@northline.app",,,,,"$argon2id$v=19$m=19456,t=2,p=1$iI8Ban7fgchVjZM1+J9xhQbqmkz4L5QxGH/j3AU4W7E$Q8fKmap7lTXp0XXYOFWSchrvG18e7+vYI3aUAVL3zaQ",argon2id
+user_2ccc,Priya,,,priya@northline.app,,,priya@northline.app,,,JBSWY3DPEHPK3PXP,,
+user_2ddd,Old,Hasher,,old@northline.app,,old@northline.app,,,,,5f4dcc3b5aa765d61d8327deb882cf99,md5
+user_2eee,No,Email,,,,,,,,,,
+user_2fff,Maya,Again,,Maya@Northline.app,,Maya@Northline.app,,,,,$2b$10$ntnGMZCfePahIenQf0nNa.qYftiSFBTsq/8pUkvKDJ8P6VtT08V0G,bcrypt
