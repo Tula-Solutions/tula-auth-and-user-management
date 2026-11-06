@@ -5,7 +5,7 @@
 > URI and the scopes below are what the code sends; the console steps are written from the
 > provider's documentation and have not been clicked through.
 
-What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)). Needs a paid
+What an operator does once per environment. Needs a paid
 Apple Developer account.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
@@ -45,9 +45,7 @@ offer Sign in with Apple as well.
 
 > **Not verified against Apple.** No test makes a request to Apple, no token Apple signed
 > was ever checked here, and no iOS app has been run against this. What follows is what
-> the server checks and what Apple's documentation says the sheet sends;
-> [ADR 0047](../adr/0047-native-apple-sign-in.md) lists what is documented, what is a
-> convention and what is unconfirmed.
+> the server checks and what Apple's documentation says the sheet sends.
 
 An iOS app can sign in with the system's Sign in with Apple sheet instead of a browser
 tab. The sheet hands the app an **identity token**; the app hands it to Tula, which

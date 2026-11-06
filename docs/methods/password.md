@@ -2,11 +2,6 @@
 
 An email address and a password: sign-up with an emailed verification code, sign-in, "forgot
 password" and changing it in the account page. It is on by default.
-The reasoning is in [ADR 0006](../adr/0006-passwords.md) (hashing and policy),
-[ADR 0038](../adr/0038-password-history.md) (password history),
-[ADR 0041](../adr/0041-password-expiry.md) (password expiry),
-[ADR 0015](../adr/0015-password-reset.md) (reset) and
-[ADR 0011](../adr/0011-rate-limits-and-lockout.md) (limits and lockout).
 
 ## Switch it on
 

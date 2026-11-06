@@ -7,8 +7,7 @@ that was sent to someone else.
 
 Invitations are part of organizations, so they exist only while an environment has
 [`organizations.enabled`](organizations.md#turn-organizations-on) on. While it is off every route
-below answers `organization.disabled` (403). The design and its reasons are in
-[ADR 0065](adr/0065-organizations.md).
+below answers `organization.disabled` (403).
 
 ## How an invitation works
 
@@ -189,7 +188,7 @@ After that its link answers `organization.invitation_expired`. Inviting an addre
 invitation has lapsed replaces it in the same transaction; inviting one whose invitation is still
 pending is `organization.invitation_exists`. At most one invitation per organization and address
 is pending at a time. The retention job deletes an invitation seven days after it expired,
-whatever became of it, because the row holds an address ([retention](adr/0017-retention.md)).
+whatever became of it, because the row holds an address.
 
 ## A role that was deleted
 
@@ -290,4 +289,3 @@ reaches the default wording safely escaped, and no text the inviter typed does.
 - [Verified domains](verified-domains.md): the other way to join an organization, by the address
   you sign up with.
 - [Organizations](organizations.md) and [Roles and permissions](roles-and-permissions.md).
-- [ADR 0065](adr/0065-organizations.md): the decisions behind all of this.

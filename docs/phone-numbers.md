@@ -5,9 +5,6 @@ code sent by text message (SMS). The number is contact data. Where an environmen
 the [texted sign-in code](methods/sms-code.md) on, which is off by default, it is also a
 way to sign in to that account.
 
-The reasoning, and what was left out on purpose, is in
-[ADR 0037](adr/0037-phone-numbers-and-sms.md).
-
 ## Switch it on
 
 Two things must both be true before a message is sent: the **deployment** has a way to send
@@ -440,7 +437,9 @@ it:
 | `rate_limited` | 429 | A code was asked for too soon or too often (by this user, for this number, from this address, to this destination or by the whole environment), the environment's daily limit is reached, or too many wrong codes in a row; `Retry-After` says when. The server's log names the limit. |
 | `service.unavailable` | 503 | A limit could not be counted. Nothing was sent. |
 
-## Not built yet
+## Limits
+
+What the feature does not do:
 
 - Signing up with a phone number; a texted code as a recovery (on purpose: it is never one).
 - Turning a texted code on as the second step inside a sign-in, where the policy is

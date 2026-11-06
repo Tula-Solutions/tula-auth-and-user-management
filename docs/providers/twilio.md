@@ -5,11 +5,9 @@
 > network, and **no message has been delivered to a real handset**. The request below is what
 > the code sends. Twilio's rules are written from Twilio's documentation as read on
 > 2026-10-09 (the pages are linked where they are used) and the Console steps have not been
-> clicked through. What could not be confirmed is listed in
-> [the unverified list](../plans/phase-2-unverified.md).
+> clicked through. What could not be confirmed is noted where it applies.
 
-Twilio is the one sender that really sends ([ADR 0037](../adr/0037-phone-numbers-and-sms.md),
-"Twilio"). It is a setting of the **deployment** (environment variables of the API), not of
+Twilio is the one sender that really sends. It is a setting of the **deployment** (environment variables of the API), not of
 an environment: every environment that has text messages switched on sends through the same
 Twilio account. What a number is for, and how an environment switches text messages on, is
 in [Phone numbers](../phone-numbers.md).

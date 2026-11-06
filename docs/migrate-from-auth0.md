@@ -60,8 +60,8 @@ A user may also carry Auth0's own import field, `custom_password_hash`, in the u
 | --- | --- |
 | `email`, `email_verified` | `email`, `emailVerified` |
 | `name`, else `given_name` and `family_name` | `name` |
-| `user_id` | `externalId` (stored, not yet returned by the user routes) |
-| `user_metadata`, `app_metadata`, `username` | `metadata.auth0` (stored, not yet returned), left out if it would pass 4 KiB |
+| `user_id` | `externalId` (stored, not returned by the user routes) |
+| `user_metadata`, `app_metadata`, `username` | `metadata.auth0` (stored, not returned), left out if it would pass 4 KiB |
 | bcrypt `passwordHash` | the password; the first sign-in replaces it with argon2id |
 
 ## What is refused, and what is not carried

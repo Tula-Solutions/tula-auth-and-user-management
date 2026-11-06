@@ -11,7 +11,7 @@
 [No email address](#no-email-address) before you switch this provider on: it says what such
 an account cannot do.
 
-What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)).
+What an operator does once per environment.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
    exactly `PUBLIC_URL/v1/oauth/callback/facebook`.
@@ -141,8 +141,7 @@ What an account with no address cannot do, today:
   after signing in (the session profile's `stepUpAfter`), and after that needs a fresh
   sign-in, or the passkey or authenticator once one exists.
 - **There is no way to add an address to it.** No route, of the client API or the admin API,
-  changes a user's email address today. That is a gap in the product, listed for its owner
-  in [what was not verified](../plans/phase-2-unverified.md), not a property of Facebook.
+  changes a user's email address today. That is a gap in the product, not a property of Facebook.
 
 A hook on `before_sign_up` is asked about such a sign-up with `email: null`
 ([hooks](../hooks.md)); a hook that reads the address has to allow for that. A JWT template
@@ -156,8 +155,7 @@ claim taken from the address (`user.email`) or from whether it is proven
 > not refuse.
 
 Tula refuses a change that would leave the **environment** with no way to sign in. A change
-that leaves some **users** with none is not refused: it is counted, shown and recorded
-([ADR 0059](../adr/0059-email-for-accounts-without-one.md)):
+that leaves some **users** with none is not refused: it is counted, shown and recorded:
 
 - the dashboard reads the count before it saves and asks you to confirm, with the number;
 - `tula diff` prints the count, and `tula apply --yes` refuses the plan without

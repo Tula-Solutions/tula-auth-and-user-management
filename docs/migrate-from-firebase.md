@@ -70,8 +70,8 @@ control and delete it when the import is done. See
 | --- | --- |
 | `email`, `emailVerified` | `email`, `emailVerified` |
 | `displayName` | `name` |
-| `localId` | `externalId` (stored, not yet returned by the user routes) |
-| `customAttributes` | `metadata.firebase` (stored, not yet returned), left out if it would pass 4 KiB |
+| `localId` | `externalId` (stored, not returned by the user routes) |
+| `customAttributes` | `metadata.firebase` (stored, not returned), left out if it would pass 4 KiB |
 | `passwordHash` and `salt` | the password, as `firebase_scrypt`; the first sign-in replaces it with argon2id |
 
 ## What is refused, and what is not carried

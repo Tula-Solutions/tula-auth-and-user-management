@@ -54,8 +54,8 @@ address and no hash.
 | --- | --- |
 | `email`, `emailVerified` | `email`, `emailVerified` |
 | `name` | `name` |
-| `id` | `externalId` (stored, not yet returned by the user routes) |
-| `username`, `role` | `metadata.betterAuth` (stored, not yet returned) |
+| `id` | `externalId` (stored, not returned by the user routes) |
+| `username`, `role` | `metadata.betterAuth` (stored, not returned) |
 | a credential `password` that is bcrypt (`$2a$`, `$2b$`, `$2y$`) or argon2 (`$argon2id$`, `$argon2i$`) | the password; the first sign-in replaces it with argon2id |
 
 ## What is refused, and what is not carried

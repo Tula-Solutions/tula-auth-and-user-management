@@ -15,8 +15,7 @@ in [Importing users](user-import.md); every option of the command is in [the CLI
   the Backend API's `email_addresses` and `public_metadata`.
 - **A secret key** of the environment you are importing into, and the server's address, as for
   every `tula` command ([credentials](cli.md#credentials-are-never-arguments)).
-- **For organizations**, switch them on in the environment first (`organizations.enabled`,
-  [ADR 0065](adr/0065-organizations.md)).
+- **For organizations**, switch them on in the environment first (`organizations.enabled`).
 
 Clerk's screens change; if a column or a menu is not where this page says, the formats above are
 what the command reads.
@@ -48,8 +47,8 @@ counts, codes and ids, never an address or a hash, and it can be deleted when yo
 | --- | --- |
 | `primary_email_address` | `email`; it is `emailVerified` only when it is in `verified_email_addresses` |
 | `first_name`, `last_name` | `name` |
-| `id` | `externalId` (stored, not yet returned by the user routes) |
-| `username`, public, private and unsafe metadata | `metadata.clerk` (stored, not yet returned), left out if it would pass 4 KiB |
+| `id` | `externalId` (stored, not returned by the user routes) |
+| `username`, public, private and unsafe metadata | `metadata.clerk` (stored, not returned), left out if it would pass 4 KiB |
 | `password_digest` with `password_hasher` `bcrypt`, `argon2id`, `argon2i`, `pbkdf2_sha256` | the password; the first sign-in replaces it with argon2id |
 
 ## What is refused, and what is not carried
@@ -95,7 +94,7 @@ The users are imported first, then the organizations, then the members:
 - A member is found by the user's address in the users file, or by the id of the user created in
   this run. The Clerk role `org:admin` becomes `admin`, and `org:member` becomes `member`; any
   other `org:<key>` becomes the role `<key>`, which must exist in the environment
-  ([custom roles](adr/0065-organizations.md)). A role that does not exist makes that
+  ([custom roles](roles-and-permissions.md)). A role that does not exist makes that
   membership fail with `organization.role_unknown`, and the report lists it.
 - A user who was refused is not a member of anything, and the membership is reported.
 

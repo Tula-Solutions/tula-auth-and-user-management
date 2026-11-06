@@ -1,8 +1,7 @@
 # SCIM provisioning
 
 An organization's identity provider (Okta, Microsoft Entra ID, and any other that speaks SCIM
-2.0) can create, update, deactivate and delete its people in Tula by itself. The design and its
-reasons are in [ADR 0067](adr/0067-enterprise-sso.md). SCIM provisions for one
+2.0) can create, update, deactivate and delete its people in Tula by itself. SCIM provisions for one
 [organization](organizations.md), so it exists only while the environment has
 `organizations.enabled` on; while it is off every SCIM route answers 403.
 
@@ -51,7 +50,7 @@ duplicate `userName` is 409 with `scimType: "uniqueness"`.
 | --- | --- |
 | `userName` (else the primary of `emails`) | The user's email address. It must be an address; it is **never changed** by SCIM afterwards, and a managed user cannot change it from a client. A managed user cannot change their password from a client either (`user.managed`, 403) while the directory has a live token; administrators still can. |
 | `externalId` | The directory's own id, kept to find the user again (`filter=externalId eq "…"`). |
-| `name.givenName`, `name.familyName` | First and last name (at most 100 characters each). For a user the directory manages, a `PUT` or `PATCH` updates them (TULA-150); for anyone else they are left alone. |
+| `name.givenName`, `name.familyName` | First and last name (at most 100 characters each). For a user the directory manages, a `PUT` or `PATCH` updates them; for anyone else they are left alone. |
 | `name.givenName`, `name.familyName` (note) | The managed-account lock (`user.managed`) guards only the address and the password. A managed user can still change their name from a client, and the directory overwrites it on its next sync of that user. |
 | `active` | `false` deactivates (below), `true` restores. |
 | Any other attribute | Accepted and ignored. |
@@ -83,7 +82,7 @@ carries ids and flags only.
 ## Identity provider notes
 
 > [!NOTE]
-> The console wording is **not verified** against a live console (TULA-152); what follows is the values
+> The console wording is **not verified** against a live console; what follows is the values
 > Tula expects and what its code accepts.
 
 ### Okta

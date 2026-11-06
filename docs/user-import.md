@@ -4,7 +4,7 @@ Moving from another provider should not make anyone reset a password. `POST
 /v1/admin/users/import` creates up to **500 users per call** and takes, for each, the
 password hash they have in the system they come from. The user signs in with their old
 password; the first successful sign-in **replaces the foreign hash with Tula's argon2id**,
-and nobody notices. The reasoning is in [ADR 0066](adr/0066-user-import.md).
+and nobody notices.
 
 To move users from Clerk, Auth0, Firebase, Supabase or better-auth, you do not call the route
 yourself: [`tula import`](cli.md#tula-import) reads the provider's export, reports what it would
