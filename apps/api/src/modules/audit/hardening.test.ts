@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import { createInstanceTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -104,5 +106,103 @@ describe('concurrent exports (H-168)', () => {
     expect(again.status).toBe(200)
     await again.body?.cancel()
     await open[1]?.body?.cancel()
+  })
+
+  const start = () =>
+    app.request('/v1/admin/audit-logs/export', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${SK}` },
+      body: JSON.stringify({ format: 'ndjson' }),
+    })
+  const seed = async () => {
+    await deps.activityLog.append(
+      Audit.entry(deps, TEST_TENANT, {
+        type: 'user.deleted',
+        actor: ACTOR,
+        target: { type: 'user', id: ACTOR.id },
+      })
+    )
+  }
+
+  test('slots another instance holds count: the shared lease store decides', async () => {
+    const env = TEST_TENANT.environmentId
+    await deps.exportLeases.acquire(env, 2, 60_000)
+    await deps.exportLeases.acquire(env, 2, 60_000)
+    expect((await start()).status).toBe(429)
+  })
+
+  test('a client that disconnects frees its slot', async () => {
+    await seed()
+    const open = [await start(), await start()]
+    await open[0]?.body?.cancel()
+    const again = await start()
+    expect(again.status).toBe(200)
+    await again.body?.cancel()
+    await open[1]?.body?.cancel()
+  })
+
+  test('a stream that fails frees its slot', async () => {
+    await seed()
+    const release = spyOn(deps.exportLeases, 'release')
+    spyOn(deps.activityLog, 'listAuditAfter' as never).mockImplementation((() => {
+      throw new Error('db down')
+    }) as never)
+    const res = await start()
+    await res.text().catch(() => null)
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  test('a lease store that cannot answer refuses the export with 503', async () => {
+    spyOn(deps.exportLeases, 'acquire').mockRejectedValue(new ServiceUnavailableError())
+    const res = await start()
+    expect(res.status).toBe(503)
+  })
+
+  test('a long export renews its lease while it streams', async () => {
+    await seed()
+    const renew = spyOn(deps.exportLeases, 'renew')
+    const res = await start()
+    deps.clock.advance(11 * 60_000)
+    await res.text()
+    expect(renew).toHaveBeenCalled()
+  })
+
+  test('a renewal the store refuses is logged with ids only', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'renew').mockResolvedValue(false)
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const res = await start()
+      deps.clock.advance(11 * 60_000)
+      await res.text()
+      expect(warn).toHaveBeenCalledWith('audit export lease lost', {
+        environmentId: TEST_TENANT.environmentId,
+      })
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test('a release the store cannot make still ends the export whole', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'release').mockRejectedValue(new ServiceUnavailableError())
+    const res = await start()
+    expect(res.status).toBe(200)
+    expect((await res.text()).length).toBeGreaterThan(0)
+  })
+
+  test('a renewal that cannot reach the store is retried, not reported as lost', async () => {
+    await seed()
+    spyOn(deps.exportLeases, 'renew').mockRejectedValue(new ServiceUnavailableError())
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const res = await start()
+      deps.clock.advance(11 * 60_000)
+      expect(res.status).toBe(200)
+      await res.text()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

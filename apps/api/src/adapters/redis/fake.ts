@@ -1,4 +1,9 @@
 import type { RedisCommands } from '~/adapters/redis/commands'
+import {
+  LEASE_ACQUIRE_SCRIPT,
+  LEASE_RELEASE_SCRIPT,
+  LEASE_RENEW_SCRIPT,
+} from '~/adapters/redis/export-leases'
 import { LOCKOUT_SCRIPT } from '~/adapters/redis/lockout'
 import { RATE_LIMIT_SCRIPT } from '~/adapters/redis/rate-limiter'
 import { REVOKE_SCRIPT } from '~/adapters/redis/revoked-sessions'
@@ -148,6 +153,15 @@ export class FakeRedis implements RedisCommands {
     if (script === REVOKE_SCRIPT) {
       return this.#revoke(key, argv)
     }
+    if (script === LEASE_ACQUIRE_SCRIPT) {
+      return this.#leaseAcquire(key, argv)
+    }
+    if (script === LEASE_RENEW_SCRIPT) {
+      return this.#leaseRenew(key, argv)
+    }
+    if (script === LEASE_RELEASE_SCRIPT) {
+      return this.#leaseRelease(key, argv)
+    }
     throw redisError('ERR_REDIS_SERVER_ERROR', 'ERR FakeRedis does not know this script')
   }
 
@@ -216,6 +230,44 @@ export class FakeRedis implements RedisCommands {
       return [0]
     }
     this.#write(key, until, Number(lifetime))
+    return [1]
+  }
+
+  /** Mirrors `LEASE_ACQUIRE_SCRIPT`. */
+  #leaseAcquire(key: string, [now = '', limit = '', ttl = '', id = '']: string[]): number[] {
+    const leases = this.#hash(key)
+    for (const [lease, expiry] of leases) {
+      if (Number(expiry) <= Number(now)) {
+        leases.delete(lease)
+      }
+    }
+    if (leases.size >= Number(limit)) {
+      return [0]
+    }
+    leases.set(id, String(Number(now) + Number(ttl)))
+    this.#write(key, leases, Number(ttl))
+    return [1]
+  }
+
+  /** Mirrors `LEASE_RENEW_SCRIPT`. */
+  #leaseRenew(key: string, [now = '', ttl = '', id = '']: string[]): number[] {
+    const leases = this.#hash(key)
+    const expiry = toNumber(leases.get(id))
+    if (expiry === undefined || expiry <= Number(now)) {
+      return [0]
+    }
+    leases.set(id, String(Number(now) + Number(ttl)))
+    this.#write(key, leases, Number(ttl))
+    return [1]
+  }
+
+  /** Mirrors `LEASE_RELEASE_SCRIPT`. */
+  #leaseRelease(key: string, [id = '']: string[]): number[] {
+    const leases = this.#hash(key)
+    leases.delete(id)
+    if (leases.size === 0) {
+      this.#items.delete(key)
+    }
     return [1]
   }
 }

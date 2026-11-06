@@ -5,6 +5,7 @@ import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { SmtpMailer } from '~/adapters/mail/smtp'
+import { MemoryExportLeases } from '~/adapters/memory/export-leases'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
@@ -47,6 +48,7 @@ import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
 import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
+import { RedisExportLeases } from '~/adapters/redis/export-leases'
 import { RedisLockout } from '~/adapters/redis/lockout'
 import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
@@ -284,6 +286,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     proofReplay: redis
       ? new RedisProofReplayGuard(redis, clock)
       : new MemoryProofReplayGuard(clock),
+    exportLeases: redis ? new RedisExportLeases(redis, clock) : new MemoryExportLeases(clock),
     mailer,
     sms,
     smsInbox,

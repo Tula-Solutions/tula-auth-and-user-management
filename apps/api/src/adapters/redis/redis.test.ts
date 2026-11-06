@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { describeExportLeases } from '~/adapters/export-leases.suite'
 import { describeLockout, SUITE_LOCKOUT_POLICY } from '~/adapters/lockout.suite'
 import { FixedClock } from '~/adapters/memory/clock'
 import { describeProofReplayGuard } from '~/adapters/proof-replay.suite'
@@ -11,6 +12,7 @@ import {
   type RedisCommands,
   redisErrorReason,
 } from '~/adapters/redis/commands'
+import { RedisExportLeases } from '~/adapters/redis/export-leases'
 import { FakeRedis } from '~/adapters/redis/fake'
 import { lockoutSchedule, RedisLockout } from '~/adapters/redis/lockout'
 import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
@@ -78,6 +80,38 @@ describeProofReplayGuard('redis (fake server)', async () => {
     allowanceMs: CLOCK_SKEW_ALLOWANCE_MS,
     movesTime: true,
   }
+})
+
+describeExportLeases('redis (fake server)', async () => {
+  const { clock, redis } = setup()
+  return {
+    leases: new RedisExportLeases(redis, clock),
+    peer: new RedisExportLeases(redis, clock),
+    clock,
+    movesTime: true,
+  }
+})
+
+describe('export leases on Redis', () => {
+  test('the key holds the environment id only', async () => {
+    const { clock, redis } = setup()
+    await new RedisExportLeases(redis, clock).acquire('env-1', 2, 60_000)
+    expect(redis.keys()).toEqual(['tula:export:env-1'])
+  })
+
+  test('an outage refuses acquire, renew and release', async () => {
+    const { clock, redis } = setup()
+    const leases = new RedisExportLeases(redis, clock)
+    const id = await leases.acquire('e1', 2, 60_000)
+    redis.fail()
+    await refusal(leases.acquire('e1', 2, 60_000))
+    await refusal(leases.renew('e1', id as string, 60_000))
+    await refusal(leases.release('e1', id as string))
+  })
+
+  test('an unexpected reply is a refusal', async () => {
+    await refusal(new RedisExportLeases(replying('OK'), new FixedClock()).acquire('e1', 2, 1_000))
+  })
 })
 
 describe('when Redis is unreachable', () => {
