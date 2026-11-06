@@ -2,8 +2,7 @@
 
 A company signs its people in through its own identity provider (Okta, Entra ID, Google Workspace,
 any OpenID Connect provider). An operator registers one **connection** per organization; people whose
-email is on one of its domains are sent to the provider. The reasoning (the SAML and OIDC split, the
-matching table, why discovery is by domain) is in [ADR 0067](../adr/0067-enterprise-sso.md). This page
+email is on one of its domains are sent to the provider. This page
 covers OIDC first and SAML [below](#saml). The path through the whole feature (enforcement, break-glass,
 the setup portal, the test sign-in) is [Enterprise single sign-on: the guide](../enterprise-sso.md), and each provider has a
 page with the values to paste, from [Okta](../sso-providers/okta.md) to [Ping](../sso-providers/ping.md).
@@ -82,8 +81,7 @@ holds `sso` and its token carries the `sso_conn` claim.
 `POST /v1/client/sign-ins/:attemptId/sso`, which returns `authorizationUrl` and a binding. In
 `@tula-tech/core` it is `flow.startSso({ redirectUrl })`: it keeps the binding in the tab's session
 storage (the OAuth round trip's own key and rules) and navigates to the provider, and the page at
-`redirectUrl` finishes with `signIn.handleOAuthCallback()`. The Swift, Kotlin and Expo clients arrive with
-TULA-142. `<SignIn>` offers "Continue with SSO" when the step offers `sso`, and shows only that (no password
+`redirectUrl` finishes with `signIn.handleOAuthCallback()`. The Swift, Kotlin and Expo clients do not support it. `<SignIn>` offers "Continue with SSO" when the step offers `sso`, and shows only that (no password
 field) when it is the only strategy; `oauthCallbackUrl` on the provider names the return page, as for
 a provider sign-in, and `@tula-tech/nextjs` needs nothing more than its callback page. The words are
 `signIn.sso` (the button and the title) and `signIn.ssoPrompt` (the line under the title) in the

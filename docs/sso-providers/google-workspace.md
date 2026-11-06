@@ -3,7 +3,7 @@
 > **Not verified against the live console.** Nothing in this repository has a Google Workspace
 > tenant. The values Tula gives Google and the attribute names Tula reads are what the code does,
 > tested against the built-in mock provider. The steps in the Google Admin console are **not
-> verified** until TULA-152.
+> verified**.
 
 <!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):
      Set up your own custom SAML application: https://support.google.com/a/answer/6087519 -->

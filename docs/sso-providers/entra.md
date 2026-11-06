@@ -2,7 +2,7 @@
 
 > **Not verified against the live console.** Nothing in this repository has an Entra tenant. The
 > values Tula gives Entra and the claim names Tula reads are what the code does, tested against
-> the built-in mock provider. Entra's portal steps are **not verified** until TULA-152.
+> the built-in mock provider. Entra's portal steps are **not verified**.
 
 <!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):
      Single sign-on for an enterprise application: https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/add-application-portal-setup-sso
