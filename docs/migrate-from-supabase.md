@@ -50,8 +50,8 @@ no address and no hash.
 | --- | --- |
 | `email` | `email`; it is `emailVerified` when `email_confirmed_at` is set |
 | `raw_user_meta_data` `full_name`, else `name` | `name` |
-| `id` | `externalId` (stored, not yet returned by the user routes) |
-| `raw_user_meta_data`, `raw_app_meta_data` | `metadata.supabase` (stored, not yet returned), left out if it would pass 4 KiB |
+| `id` | `externalId` (stored, not returned by the user routes) |
+| `raw_user_meta_data`, `raw_app_meta_data` | `metadata.supabase` (stored, not returned), left out if it would pass 4 KiB |
 | `encrypted_password` (bcrypt, `$2a$`) | the password; the first sign-in replaces it with argon2id |
 
 A user with no `encrypted_password` (a magic-link or OAuth user) is imported without a password.

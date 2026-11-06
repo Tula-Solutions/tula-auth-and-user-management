@@ -22,7 +22,7 @@ export const FactorsSchema = z
     totp: z.object({ enabled: z.boolean(), confirmedAt: z.iso.datetime().nullable() }),
     backupCodes: z.object({ remaining: z.number().int().min(0) }),
     /**
-     * A texted code as the second factor (ADR 0025). Optional in the schema, so a client
+     * A texted code as the second factor. Optional in the schema, so a client
      * reading an older server's answer treats a missing one as "not offered".
      *
      * - `enabled`: the user has enrolled it. `enabledAt` says since when.
@@ -95,7 +95,7 @@ export const BackupCodesSchema = z
  * `email_code` is a 6-digit code emailed on request
  * (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
  * email address and **no** second factor. `passkey` is an assertion for the options of
- * `POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey (ADR 0027).
+ * `POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey.
  * `sms_code` is a 6-digit code texted on request
  * (`POST /v1/client/sessions/step-up/sms-code`); it exists only for a user whose **only**
  * second factor is a texted code, never beside an authenticator app or a passkey.
@@ -109,7 +109,8 @@ export const StepUpMethodSchema = z
  *
  * A user with two-step verification must use `totp`, `backup_code` or a `passkey` (or, where a
  * texted code is their only second factor, the `sms_code` they asked for from this session): their
- * password alone is refused. A user without it uses `password`, or an `email_code` they asked for from this
+ * password alone is refused. A user without it uses `password`, or an `email_code` they asked for
+ * from this
  * session.
  */
 export const StepUpRequestSchema = z

@@ -62,7 +62,7 @@ function isKnown(type: string): type is ActivityType {
 _constant_, defined in `packages/contract/src/tokens.ts`
 
 Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
-server (ADR 0053). It reads what a secret key reads and can ask for a change as a
+server. It reads what a secret key reads and can ask for a change as a
 proposal; every route that changes anything refuses it.
 
 ```ts
@@ -73,8 +73,7 @@ const AGENT_KEY_PREFIX: "tula_ak_"
 
 _constant_, defined in `packages/contract/src/native-app.ts`
 
-What every origin an Android app presents for a passkey starts with (ADR 0027, "Passkeys
-from a native app").
+What every origin an Android app presents for a passkey starts with.
 
 ```ts
 const ANDROID_APK_KEY_HASH_PREFIX: "android:apk-key-hash:"
@@ -127,8 +126,8 @@ APP_LINK_PATH_PATTERN.test('/oauth/*') // false
 
 _constant_, defined in `packages/contract/src/native-app.ts`
 
-The relation an Android app is served **only when it has at least one app-link path**
-(ADR 0044): `handle_all_urls`, which lets the app open links of the domain the file is
+The relation an Android app is served **only when it has at least one app-link path**:
+`handle_all_urls`, which lets the app open links of the domain the file is
 served from. The file has no way to say which links; the app's manifest names the paths
 it takes. So this hands the app every link of the domain, and is off until an operator
 lists a path for that app.
@@ -147,7 +146,7 @@ ASSET_LINKS_APP_LINK_RELATION // 'delegate_permission/common.handle_all_urls'
 
 _constant_, defined in `packages/contract/src/native-app.ts`
 
-The Digital Asset Links relations every registered Android app is served with (ADR 0040).
+The Digital Asset Links relations every registered Android app is served with.
 
 One: `get_login_creds`, which lets the app use the credentials (passkeys, saved passwords)
 of the domain the file is served from. An app with app-link paths is served
@@ -169,7 +168,7 @@ _constant_, defined in `packages/contract/src/environment-settings.ts`
 
 What a settings document is refused with when it would leave an environment with no way to
 sign in. The rule is the server's, not this schema's: an environment whose only method is an
-OAuth provider (ADR 0026) switches every method below off, and whether a provider is enabled
+OAuth provider switches every method below off, and whether a provider is enabled
 is not part of this document.
 
 ```ts
@@ -183,7 +182,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
 key's), the `system` itself, an AI `agent` acting through the MCP server (an agent key; the
 id is the key's. It asks for changes as proposals, and what a human approved is recorded
-with the agent as the actor and the approving human beside it: ADR 0053), or the
+with the agent as the actor and the approving human beside it), or the
 `instance_admin`: the operator of the deployment, through the dashboard (the id is the
 dashboard session's) or with the instance admin token itself (no id).
 
@@ -220,14 +219,14 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
 - `pwd`: the password.
 - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
   password reset's code).
-- `sms`: a code texted to the account's phone number: as a sign-in's first factor
-  (ADR 0037), or as the second factor of a user who has nothing stronger (ADR 0025). It
+- `sms`: a code texted to the account's phone number: as a sign-in's first factor,
+or as the second factor of a user who has nothing stronger. It
   **never brings `mfa`**: an application that wants an authenticator app or a passkey
   tests for `mfa`, and one that accepts a texted second step tests for `sms` beside
   another value. `sms` alone is never a recent authentication.
 - `otp`: a code from an authenticator app (TOTP).
 - `backup_code`: a single-use backup code.
-- `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
+- `hwk` / `swk`: a passkey, proven with user verification. `hwk` for a credential
   bound to one device, `swk` for one its authenticator reports as eligible for backup (a
   synced passkey). Always beside `user`.
 - `user`: the authenticator tested that the user was present and verified them.
@@ -354,7 +353,7 @@ const AddOrganizationMemberRequestSchema: z.ZodObject<{ userId: z.ZodUUID; role:
 _constant_, defined in `packages/contract/src/oauth.ts`
 
 The client ids, beside a provider's own `clientId`, whose **ID tokens** the server accepts
-in a native sign-in (ADR 0045): for Google, the Android and iOS OAuth client ids of the
+in a native sign-in: for Google, the Android and iOS OAuth client ids of the
 operator's apps. Not secrets. A set: an id is written once, and the order says nothing.
 
 Each entry widens who can mint a token the server takes as a sign-in, which is why it is
@@ -630,7 +629,8 @@ _constant_, defined in `packages/contract/src/audit.ts`
 
 One audit log entry.
 
-`action`, `actor.type` and `target.type` are plain strings, not enums, so a client built against this
+`action`, `actor.type` and `target.type` are plain strings, not enums, so a client built against
+this
 version keeps working when a later server records new kinds of action.
 
 ```ts
@@ -671,7 +671,7 @@ const BACKUP_CODE_COUNT: 10
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The two roles every environment has (ADR 0065): `admin` holds every system permission,
+The two roles every environment has: `admin` holds every system permission,
 `member` may read the member list. They cannot be deleted, renamed or given other
 permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
 membership refers to a role the way it does to a custom one.
@@ -872,7 +872,7 @@ settings from a config file (`tula-apply`), or `none` to hand them back.
 Sent together with {@link CONFIG_HASH_HEADER}. The API records both with the settings and
 returns them as `managedBy`, so a dashboard can say "these settings come from a config file"
 and warn when they were changed around it. A replace without the header keeps the record,
-which then shows as drifted. See ADR 0030.
+which then shows as drifted.
 
 ```ts
 const CONFIG_MANAGED_BY_HEADER: "x-tula-managed-by"
@@ -936,7 +936,7 @@ const COUNTRY_CALLING_PREFIXES: Readonly<Record<string, readonly string[]>>
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The one top-level claim every custom claim is nested under (ADR 0036).
+The one top-level claim every custom claim is nested under.
 
 An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
 with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
@@ -1014,9 +1014,11 @@ nothing an operator would not put on that screen.
 
 - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
   email already shows it. It is `null` when none is set.
-- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
+- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`,
+  `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
-- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`,
+  `passkey`, `smsCode`;
   `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
   country is allowed and the deployment has a sender). It
   is an array of plain strings, not an enum, so a client built against this version keeps
@@ -1038,7 +1040,8 @@ nothing an operator would not put on that screen.
   server would accept them. Optional in the schema, so a client reading an older server's
   answer treats a missing one as organizations off. The server still decides: every
   organization route checks the setting itself.
-- The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
+- The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates
+  (`emails`), the notice switches (`notifications`) and
   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
   absent: a client learns how its session is held from the response that starts it.
 
@@ -1446,7 +1449,7 @@ export type CustomSchemeRedirectRefusal = (typeof CUSTOM_SCHEME_REDIRECT_REFUSAL
 _constant_, defined in `packages/contract/src/headers.ts`
 
 Request header every call the dashboard makes with its session cookie must carry, with the
-value {@link DASHBOARD_HEADER_VALUE} (ADR 0032).
+value {@link DASHBOARD_HEADER_VALUE}.
 
 A browser attaches a cookie whoever wrote the page. This header is what a form cannot send
 and what a cross-origin `fetch` may send only after a preflight, which the API answers for
@@ -1566,7 +1569,7 @@ _constant_, defined in `packages/contract/src/phone.ts`
 
 How many text messages an environment sends in one day (UTC) unless it says otherwise: the
 default of `sms.dailyMessageLimit`. The limit is on by default, so that an attack on an
-environment that has just switched SMS on has a fixed maximum cost (ADR 0037).
+environment that has just switched SMS on has a fixed maximum cost.
 
 ```ts
 const DEFAULT_SMS_DAILY_MESSAGE_LIMIT: 500
@@ -1587,7 +1590,7 @@ const DEFAULT_SPECIAL_CHARS: "!@#$%^&*()-_=+[]{};:,.?/\\|'\"`~<>"
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
 How recent a session's last proof must be on a route that requires recent authentication,
-for a profile that sets no `stepUpAfter` (ADR 0025).
+for a profile that sets no `stepUpAfter`.
 
 ```ts
 const DEFAULT_STEP_UP_AFTER: Duration
@@ -1629,7 +1632,7 @@ const DEFAULT_WEB_SESSION_PROFILE: SessionProfile
 _constant_, defined in `packages/contract/src/oauth.ts`
 
 The most accounts of one provider the server looks at when it counts the ones that depend
-on it ({@link OAuthProviderDependentsSchema}; ADR 0059). The count is a read an operator
+on it ({@link OAuthProviderDependentsSchema}). The count is a read an operator
 waits for, so its work is bounded: past this many accounts the answer says `more`.
 
 ```ts
@@ -1641,7 +1644,7 @@ const DEPENDENT_ACCOUNTS_SCAN_LIMIT: 1000
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member claim, verify, change and remove the organization's
-domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+domains through the client routes. Read from the member's
 role at the time of the request, never from a token.
 
 ```ts
@@ -1662,7 +1665,8 @@ is the bracketed IPv6 form).
 `bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
 the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
 ({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
-{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap,
+so its work is bounded.
 
 ```ts
 const DOMAIN_PATTERN: {}
@@ -1705,7 +1709,7 @@ const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
 
 _constant_, defined in `packages/contract/src/organization-domain-rules.ts`
 
-How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+How long a verification of a domain lasts, in days.
 A domain can be lost and registered again by someone else, and nothing tells Tula, so a
 claim is only believed for this long: past it the domain matches nobody (no auto-join, no
 suggestion) until a manager proves it again with a new emailed code. Counted from the day
@@ -1799,7 +1803,7 @@ export type DeviceBindingPolicy = z.infer<typeof DeviceBindingPolicySchema>
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+How strictly a profile's sessions are bound to a device key: what a sign-in of a
 client that is **not a browser** is held to when it starts.
 
 - `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
@@ -2051,20 +2055,21 @@ EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS.includes('time') // true
 
 _constant_, defined in `packages/contract/src/email-template.ts`
 
-Every email whose wording an environment can change (ADR 0039): one kind per message the
+Every email whose wording an environment can change: one kind per message the
 server sends, so that a template never has to say two different things.
 
-- `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+- `email_verification`, `password_reset`, `sign_in`, `step_up`,
+  `organization_domain_verification`:
   the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
-  the code that shows an organization controls a domain (ADR 0065).
+  the code that shows an organization controls a domain.
 - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
-  account (ADR 0059) answer alike for every address.
-- `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+  account answer alike for every address.
+- `organization_domain_expiring`: the reminder, 30 and 7 days ahead, that a
   verified domain of an organization will stop matching unless it is verified again.
-- `organization_invitation` (ADR 0065): an invitation to join an organization, with the
+- `organization_invitation`: an invitation to join an organization, with the
   server's link and no code.
-- the rest: security notices (ADR 0023), one per thing that can have happened.
+- the rest: security notices, one per thing that can have happened.
 
 A closed list. Later servers may add kinds: additive.
 
@@ -2293,7 +2298,7 @@ export type EmailAddressRequest = z.infer<typeof EmailAddressRequestSchema>
 _constant_, defined in `packages/contract/src/user.ts`
 
 Ask for a code to be emailed to an address the signed-in user wants on their account
-(`POST /v1/client/me/email`; ADR 0059). Only for an account that has **no** address: one
+(`POST /v1/client/me/email`). Only for an account that has **no** address: one
 made by a first sign-in with a provider Tula takes no address from (X, Facebook).
 
 ```ts
@@ -2356,7 +2361,8 @@ const EmailCodeSentSchema: z.ZodObject<{ destination: z.ZodString; expiresAt: z.
 **Example**
 
 ```ts
-EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z' })
+EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z'
+})
 ```
 
 ### `EmailLinkRequest`
@@ -2535,7 +2541,7 @@ export interface EmailTemplateRules {
   /**
    * `code`: the message exists to carry a code. `notice`: it carries none, its template can
    * name no code and no link, and its subject does not lead with a digit. `invitation`: it
-   * carries the server's link and no code (an invitation to an organization, ADR 0065), and
+   * carries the server's link and no code (an invitation to an organization), and
    * its subject does not lead with a digit either, so that it is never taken for a code. No
    * kind of any category can hold something that reads as a link.
    */
@@ -2551,7 +2557,7 @@ export interface EmailTemplateRules {
 
 _constant_, defined in `packages/contract/src/email-template-schema.ts`
 
-An environment's wording for one kind of email (ADR 0039): a subject, a body, or both. The
+An environment's wording for one kind of email: a subject, a body, or both. The
 part left out is the server's built-in copy.
 
 Both are **plain text with `{{name}}` placeholders and nothing else**: no HTML, no
@@ -2693,9 +2699,9 @@ otherwise silently reset the password policy to its default.
   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
   too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
   texted to the phone number an account has proven; offered only while `sms` is on with a
-  country, in a deployment that can send text messages; ADR 0037). At least one of the
+  country, in a deployment that can send text messages). At least one of the
   first four must stay enabled, unless an OAuth provider is (the server checks: providers
-  are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+  are configured apart from this document). `smsCode` does not count: nobody
   signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
 - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
   may leave it out (`optional`, which needs `emailCode`).
@@ -2703,30 +2709,31 @@ otherwise silently reset the password policy to its default.
 - `audit.retentionDays`: how many days audit entries are kept before the server deletes
   them for good; `null` (the default) keeps them for ever.
 - `agents.proposalsInProduction`: whether a production environment accepts proposals from
-  an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
-- `organizations`: whether the environment has organizations (`enabled`, off by default;
-  ADR 0065), whether users may create them (`allowUserCreated`), how many each may
+  an AI agent (`false` by default). Switching it on is a weakening.
+- `organizations`: whether the environment has organizations (`enabled`, off by default), whether
+  users may create them (`allowUserCreated`), how many each may
   (`maxCreatedPerUser`), the role a creator and a new member get (`creatorRole`,
   `defaultRole`) and whether a session may have no active organization (`personalAccount`).
   Switching it off, or letting users create organizations, is a weakening.
 - `notifications`: which security notices are emailed to an account's owner
-  (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
+  (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched
+  off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
   `required`.
 - `mfa.smsCode`: whether a texted code may be a user's second factor (`enabled`, off by
-  default). Never beside an authenticator app or a passkey (ADR 0025).
-- `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
+  default). Never beside an authenticator app or a passkey.
+- `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to.
 - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
-  concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
+  concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings`.
 - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
-  most (`dailyMessageLimit`, 500 by default). See ADR 0037. `sms.templates` is the
-  environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042);
+  most (`dailyMessageLimit`, 500 by default). `sms.templates` is the
+  environment's own sentence for each kind of text message (`SmsTemplates`);
   empty by default: every message is the built-in text.
 - `emails.templates`: the environment's own subject and body for each kind of email, as
   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
-  message is the built-in copy. See ADR 0039.
-- `agents.testSignIn`: whether an AI agent may run a sign-in test here (ADR 0058): `true`,
+  message is the built-in copy.
+- `agents.testSignIn`: whether an AI agent may run a sign-in test here: `true`,
   `false`, or `null` (the default) for "in a development environment yes, in a production
   one no".
 
@@ -2986,7 +2993,7 @@ export type FirebaseScryptParams = z.infer<typeof FirebaseScryptParamsSchema>
 _constant_, defined in `packages/contract/src/user.ts`
 
 A Firebase project's password hash parameters, from `firebase auth:export` or the console's
-"password hash parameters" (ADR 0066). Given once per call and used by every row whose
+"password hash parameters". Given once per call and used by every row whose
 algorithm is `firebase_scrypt`. All four are secrets of the source project: the signer key
 above all. They are sealed where stored, and never returned, logged or recorded.
 
@@ -3310,8 +3317,8 @@ deadlineMs >= HOOK_MIN_DEADLINE_MS
 
 _constant_, defined in `packages/contract/src/hook.ts`
 
-What a call of a hook came to, as a hook's `recentOutcomes` counts it (ADR 0035, "Recent
-outcomes"). A closed list, and all the server keeps of a call:
+What a call of a hook came to, as a hook's `recentOutcomes` counts it. A closed list, and all the
+server keeps of a call:
 
 - `allowed`: the hook answered as its point's contract says and did not refuse. For
   `before_token`, which cannot refuse, every usable answer is this one.
@@ -3537,7 +3544,7 @@ question by being passed along.
   an account is unique by. The address has been **proven** by the time the question is
   asked (an emailed code, or a provider that asserts it verified). **`null` when the
   account would have no address**: a first sign-in with a provider Tula takes none from
-  (`oauth_x`, `oauth_facebook`; ADR 0026). The key is always there; a receiver that
+  (`oauth_x`, `oauth_facebook`). The key is always there; a receiver that
   decides by the address decides what an account without one gets.
 - `method`: one of {@link HOOK_SIGN_UP_METHODS}.
 - `client`: the kind of client the sign-up was started from.
@@ -3812,7 +3819,7 @@ ID_TOKEN_CLIENT_KINDS.apple // ['ios']
 _constant_, defined in `packages/contract/src/oauth.ts`
 
 The providers whose **ID token** a native app may hand to the server for a sign-in, with no
-browser redirect (ADR 0045): the app shows the system's own account sheet, the provider
+browser redirect: the app shows the system's own account sheet, the provider
 gives the app an ID token, and the server verifies it.
 
 A closed list in the contract, as a fact about what the server can verify and not a
@@ -3824,7 +3831,7 @@ issuer, expiry, audience and nonce.
 - `apple`: the system's Sign in with Apple sheet, on Apple's platforms only
   ({@link ID_TOKEN_CLIENT_KINDS}). The accepted audiences are the bundle ids of the
   environment's registered iOS apps, and the token's `nonce` is the SHA-256 of the
-  server's ({@link IdTokenStartSchema}; ADR 0047).
+  server's ({@link IdTokenStartSchema}).
 
 ```ts
 const ID_TOKEN_PROVIDERS: ["google", "apple"]
@@ -3841,7 +3848,7 @@ ID_TOKEN_PROVIDERS.includes('google') // true
 _constant_, defined in `packages/contract/src/audit.ts`
 
 What the instance audit log records: what the operator of a deployment did outside any one
-environment (ADR 0032). Signing in to the dashboard (and failing to), signing out, and every
+environment. Signing in to the dashboard (and failing to), signing out, and every
 change to workspaces, projects and environments.
 
 ```ts
@@ -3863,7 +3870,7 @@ const INSTANCE_AUDIT_TARGET_TYPES: readonly ["workspace", "project", "environmen
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member invite people to the organization and withdraw
-invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+invitations. Checked on the server from the membership as it is now,
 never from a token's claims alone.
 
 ```ts
@@ -3976,7 +3983,7 @@ export type IdTokenStartRequest = z.infer<typeof IdTokenStartRequestSchema>
 
 _constant_, defined in `packages/contract/src/oauth.ts`
 
-Start a native sign-in with a provider's ID token (ADR 0045). The body names the provider
+Start a native sign-in with a provider's ID token. The body names the provider
 and nothing else: there is no redirect URL, because there is no browser.
 
 ```ts
@@ -3997,7 +4004,7 @@ The answer to starting a native ID-token sign-in.
   - **Apple**: the **lowercase hexadecimal SHA-256 of the nonce's UTF-8 bytes** (64
     characters), as `ASAuthorizationAppleIDRequest.nonce`. Apple puts the string it was
     given into the token, so the token's `nonce` claim must be that hash; a token that
-    carries the nonce itself is refused (ADR 0047).
+    carries the nonce itself is refused.
 
 ```ts
 const IdTokenStartSchema
@@ -4111,7 +4118,8 @@ _constant_, defined in `packages/contract/src/user.ts`
 
 What became of one row. `index` is the row's place in the request, so the answer can be
 matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
-`reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+`reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one
+a contract error `code` (an `import.*` code, `email.invalid`,
 …) and its default message.
 
 ```ts
@@ -4320,7 +4328,7 @@ const IosAppSchema
 
 _constant_, defined in `packages/contract/src/jwt-template.ts`
 
-What a template's claim can be read from, besides a constant (ADR 0036). A closed list:
+What a template's claim can be read from, besides a constant. A closed list:
 things the server itself knows about the user and the session, never something a request
 said.
 
@@ -4428,7 +4436,7 @@ const JwtTemplateClaimSchema
 _constant_, defined in `packages/contract/src/jwt-template.ts`
 
 A JWT template: a named set of custom claims an environment adds to the sessions of the
-profiles that use it (ADR 0036).
+profiles that use it.
 
 The claims are issued under the one namespace claim `ext`, in a `hybrid` session's access
 token and in what the server answers for a `stateful` session. They are read again from the
@@ -4575,7 +4583,7 @@ const MAX_AUDIT_RETENTION_DAYS: 3650
 _constant_, defined in `packages/contract/src/native-app.ts`
 
 Longest bundle id accepted. Apple's own limit is not stated here as a fact: this is a cap
-that every bundle id the platform accepts is believed to fit (ADR 0040).
+that every bundle id the platform accepts is believed to fit.
 
 ```ts
 const MAX_BUNDLE_ID_LENGTH: 155
@@ -4988,8 +4996,8 @@ _constant_, defined in `packages/contract/src/password-policy.ts`
 The most passwords `history` may tell a server to remember for a user.
 
 A new password is compared with every one of them, and each comparison is a full argon2id
-verification: about a second and a half of one core for all 24 (ADR 0038 has the
-measurement and the limits that bound how often a caller can cause it). 24 is what the
+verification: about a second and a half of one core for all 24 (the number of passwords kept is
+bounded so that a caller cannot make the server do this often). 24 is what the
 strictest common baselines ask for.
 
 ```ts
@@ -5007,7 +5015,7 @@ policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accep
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 How many permissions one role can hold. The permissions of the active organization's role are
-a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+a claim of every access token, so the number is capped.
 
 ```ts
 const MAX_PERMISSIONS_PER_ROLE: 32
@@ -5234,7 +5242,7 @@ const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member read the organization's member list through the client
-routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+routes. `org:sys:memberships:manage` also reads it.
 
 ```ts
 const MEMBERSHIPS_READ_PERMISSION: SystemPermission
@@ -5433,7 +5441,8 @@ const MyOrganizationInvitationQuerySchema
 
 _constant_, defined in `packages/contract/src/organization-invitation.ts`
 
-A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+A pending invitation addressed to the signed-in user, as `GET
+/v1/client/me/organization-invitations`
 lists it: enough to show and answer it, and nothing else. No token, no invited address, no
 inviter and no other user's data. It is answered by its `id`
 (`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session
@@ -5574,7 +5583,7 @@ export type NewPasswordReason = z.infer<typeof NewPasswordReasonSchema>
 _constant_, defined in `packages/contract/src/flow.ts`
 
 Why a sign-in stops to ask for a new password. `expired`: the password is older than the
-environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+environment's `password.expiryDays`. A closed list that may grow.
 
 ```ts
 const NewPasswordReasonSchema: z.ZodEnum<{}>
@@ -5595,7 +5604,7 @@ export type NewPasswordRequest = z.infer<typeof NewPasswordRequestSchema>
 _constant_, defined in `packages/contract/src/flow.ts`
 
 Submit the password that replaces an expired one, for a sign-in attempt on
-`needs_new_password` (ADR 0041). The expired password itself is never accepted.
+`needs_new_password`. The expired password itself is never accepted.
 
 ```ts
 const NewPasswordRequestSchema: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
@@ -5622,7 +5631,7 @@ const code = new URLSearchParams(location.hash.slice(1)).get(OAUTH_ERROR_PARAM)
 
 _constant_, defined in `packages/contract/src/oauth.ts`
 
-The OAuth providers an environment can configure with its own credentials (ADR 0026).
+The OAuth providers an environment can configure with its own credentials.
 
 ```ts
 const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "discord", "linkedin", "x", "facebook"]
@@ -5633,7 +5642,7 @@ const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "disc
 _constant_, defined in `packages/contract/src/oauth.ts`
 
 The providers Tula takes **no email address** from, as a fact about the provider and not a
-setting: X and Facebook (ADR 0026, "Providers without an address").
+setting: X and Facebook.
 
 Neither asserts an address verified in a way a sign-in can rest on, so their adapters ask
 for none and report none. A first sign-in with one creates an account **with no email
@@ -5660,7 +5669,7 @@ _constant_, defined in `packages/contract/src/redirect-url.ts`
 
 The providers that do **not** bind their code with PKCE, as a fact about the provider and
 not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
-is not used (ADR 0026).
+is not used.
 
 A provider sign-in with one of them is never returned to a custom scheme
 ({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
@@ -5680,7 +5689,7 @@ OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
 
 _constant_, defined in `packages/contract/src/redirect-url.ts`
 
-The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+The providers whose authorization code Tula binds to the attempt with PKCE: the
 code is redeemable only with the verifier the attempt holds.
 
 ```ts
@@ -5698,7 +5707,7 @@ OAUTH_PROVIDERS_WITH_PKCE.includes('google') // true
 _constant_, defined in `packages/contract/src/headers.ts`
 
 Name of the URL-fragment parameter carrying the single-use ticket an OAuth sign-in returns to
-the app's page with (ADR 0026).
+the app's page with.
 
 The API redirects to the app's URL followed by `#tula_ticket=<ticket>&tula_attempt=<attempt
 id>`. The page's script removes the fragment from the address and posts the ticket, with the
@@ -5785,7 +5794,7 @@ How many accounts **depend** on a provider: have an account of it connected and 
 way to sign in that the environment accepts (a password, a verified address with the
 emailed code on, another enabled provider, a passkey). Switching the provider off, or
 removing its credentials, locks those accounts out until it is back
-(`GET /v1/admin/oauth-providers/{provider}/dependents`; ADR 0059).
+(`GET /v1/admin/oauth-providers/{provider}/dependents`).
 
 A number and a boolean, and nothing about who: never an id, an address or a name.
 
@@ -5879,7 +5888,7 @@ Set a provider's credentials and whether sign-in offers it.
   ({@link MicrosoftTenantSchema}: which accounts may sign in).
 
 Google also takes `additionalClientIds`: the client ids of the operator's Android and iOS
-apps, whose ID tokens a native sign-in accepts beside `clientId`'s (ADR 0045). Left out,
+apps, whose ID tokens a native sign-in accepts beside `clientId`'s. Left out,
 there are none: the field is the whole set on every write, never merged.
 
 The secret (`clientSecret` or `privateKey`) may be left out when the provider is already
@@ -5942,8 +5951,8 @@ const OAuthStartSchema
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member delete the organization through the client routes (ADR
-0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member delete the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_DELETE_PERMISSION: SystemPermission
@@ -5984,7 +5993,7 @@ const ORGANIZATION_FIELDS: readonly ["name", "slug"]
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The access token's claim naming the active organization (ADR 0065, "Token claims").
+The access token's claim naming the active organization.
 
 ```ts
 const ORGANIZATION_ID_CLAIM: "org_id"
@@ -5994,8 +6003,7 @@ const ORGANIZATION_ID_CLAIM: "org_id"
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
-Orgs 04).
+Name of the URL-fragment parameter carrying an organization invitation's token.
 
 The link in the invitation email is the app's own redirect URL followed by
 `#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
@@ -6016,8 +6024,8 @@ const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVIT
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member rename the organization through the client routes
-(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member rename the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
@@ -6194,7 +6202,7 @@ A domain of an organization. **Pending** (`status` `pending`, `verifiedAt` is `n
 code was emailed and not yet entered; it grants nothing. **Verified**: a user who signs up
 with a verified address on it is suggested the organization or joined to it, by `mode`,
 until `expiresAt`. **Needs re-verification**: `expiresAt` has passed; the domain matches
-nobody until a manager claims it again and enters the new code (ADR 0065, "Lapse").
+nobody until a manager claims it again and enters the new code.
 
 ```ts
 const OrganizationDomainSchema
@@ -6335,7 +6343,7 @@ const OrganizationMemberListSchema
 
 _constant_, defined in `packages/contract/src/organization.ts`
 
-A member of an organization as another member sees them (ADR 0065, Orgs 07): who they are
+A member of an organization as another member sees them: who they are
 and the key of their role. The name and the address are shown so that a member list can be
 read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
 to nobody else, and never into an event or an audit entry.
@@ -6575,7 +6583,7 @@ const PASSWORD_POLICY_PRESETS: Readonly<
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+The grammar of a permission key: `org:<feature>:<action>`, each of the last two
 a lower-case letter followed by lower-case letters, digits and underscores (at most 32
 characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
 No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
@@ -7347,7 +7355,7 @@ _constant_, defined in `packages/contract/src/flow.ts`
 
 The first factors that are proven with a code (or link) the server sends first: the two
 email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
-started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+started with. They are asked for with `first-factor/prepare` and proven with
 `first-factor/attempt`.
 
 ```ts
@@ -7575,7 +7583,7 @@ rule that a custom scheme contains one; the ones with a full stop, and the famil
 {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
 scheme an operating system handles that nobody put here passes. What bounds that is not
 the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
-and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+and a redirect carries only a ticket that is useless without the binding.
 
 ```ts
 const REDIRECT_SCHEMES_NEVER_CUSTOM
@@ -7678,7 +7686,7 @@ const kind: RedirectUrlKind = 'custom_scheme'
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
 
-A URL a flow may send the user back to ({@link redirectUrlKind }, ADR 0044): an absolute
+A URL a flow may send the user back to ({@link redirectUrlKind }): an absolute
 `https://` URL (a web page or an app link), `http://` for `localhost`, `127.0.0.1` and
 `[::1]`, or a custom scheme in reverse-domain form (`com.example.app:/oauth`). No
 credentials, no fragment and no wildcard in any of them; a custom-scheme URL has no query
@@ -7767,7 +7775,7 @@ _constant_, defined in `packages/contract/src/organization.ts`
 
 The permissions a **custom** role holds: at most {@link MAX_PERMISSIONS_PER_ROLE} keys, each
 of the grammar, none twice, and none of the reserved `sys` feature that Tula does not define
-(`rolePermissionRefusal`, ADR 0065). A role may hold any of Tula's own system permissions.
+(`rolePermissionRefusal`). A role may hold any of Tula's own system permissions.
 
 ```ts
 const RolePermissionsSchema: z.ZodArray<z.ZodString>
@@ -7799,8 +7807,8 @@ const RotatedWebhookSecretSchema
 
 _constant_, defined in `packages/contract/src/tokens.ts`
 
-Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
-(ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`:
+the bearer token an organization's identity provider presents to
 `/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
 answer it like a wrong key.
 
@@ -7828,7 +7836,7 @@ Request header naming the session profile a client would like, read when an atte
 It is a request, not a choice: the session gets that profile only when the environment marks
 it `clientSelectable`. Any other name (unknown, not offered, a built-in) is ignored and the
 session gets the profile of its client kind, so a client can never give itself a
-longer-lived session than the operator offered (ADR 0028).
+longer-lived session than the operator offered.
 
 ```ts
 const SESSION_PROFILE_HEADER: "x-tula-session-profile"
@@ -7848,7 +7856,7 @@ await fetch(`${api}/v1/client/sign-ins`, {
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+The header that carries a setup link's token to `/v1/setup/*`. The portal reads
 the token from the page address's fragment, which a browser never sends, and puts it here:
 it is never in a path or a query, so no access log or `Referer` holds it.
 
@@ -7861,7 +7869,7 @@ const SETUP_LINK_HEADER: "x-tula-setup-token"
 _constant_, defined in `packages/contract/src/tokens.ts`
 
 Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
-`_` (ADR 0067, "Setup links"): the credential of the self-serve SSO setup portal, sent in
+`_`: the credential of the self-serve SSO setup portal, sent in
 `x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
 answers it like a wrong key, and the setup routes answer every other credential so.
 
@@ -7874,8 +7882,8 @@ const SETUP_LINK_TOKEN_PREFIX: "tula_setup_"
 _constant_, defined in `packages/contract/src/environment-settings.ts`
 
 The sign-in methods no account can be created with, so that none of them may be an
-environment's only way in: `smsCode`. A phone number is added to an account that exists
-(ADR 0037); there is no sign-up by phone number.
+environment's only way in: `smsCode`. A phone number is added to an account that exists;
+there is no sign-up by phone number.
 
 ```ts
 const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[]
@@ -8044,12 +8052,12 @@ const SMS_PREFIX_MAX_DIGITS: 4
 
 _constant_, defined in `packages/contract/src/sms-template.ts`
 
-Every text message whose wording an environment can change (ADR 0042): one kind per
+Every text message whose wording an environment can change: one kind per
 reason the server texts a code.
 
 - `phone_verification`: the code that proves a phone number being added to an account.
 - `sign_in`: the code that signs someone in with a number their account has proven.
-- `second_factor`: the code of a texted second step (ADR 0025): at its enrolment, after a
+- `second_factor`: the code of a texted second step: at its enrolment, after a
   sign-in's or a reset's first factor, and at a step-up. One kind for the three, because
   to the reader they are one message: "prove it is you, with the phone on your account".
 
@@ -8153,7 +8161,7 @@ const SSO_ATTRIBUTE_DEFAULTS: Record<
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+The access token's claim naming the SSO connection a session was signed in through.
 
 ```ts
 const SSO_CONNECTION_CLAIM: "sso_conn"
@@ -8200,8 +8208,8 @@ const SSO_IDP_PRESETS: readonly ["okta", "entra", "google_workspace", "jumpcloud
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member manage the organization's single sign-on connections
-(ADR 0067). Read from the membership now, never from a token's claims alone.
+The permission that lets a member manage the organization's single sign-on connections.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const SSO_MANAGE_PERMISSION: SystemPermission
@@ -8222,7 +8230,7 @@ const SSO_PROTOCOLS: readonly ["oidc", "saml"]
 _constant_, defined in `packages/contract/src/sso-test.ts`
 
 Why a test sign-in of an SSO connection failed, each with a sentence for the person setting
-the connection up (ADR 0067). **This is the one place a verifier's reason is shown:** a real
+the connection up. **This is the one place a verifier's reason is shown:** a real
 sign-in answers `sso.provider_error` for every refusal and only logs the reason.
 
 ```ts
@@ -8245,7 +8253,7 @@ const STEP_UP_MAX_AGE_SECONDS: 600
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+The permissions Tula's own organization routes check. The same keys an app's
 server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
 also give a role.
 
@@ -8302,7 +8310,7 @@ _constant_, defined in `packages/contract/src/flow.ts`
 
 Second-factor methods a flow can ask for.
 
-`sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+`sms_code` is a 6-digit code texted to the account's proven phone number. It is
 the weakest of them and is listed **alone or not at all**: a user who has an authenticator
 app or a passkey is never offered it.
 
@@ -8353,7 +8361,7 @@ Prove a second factor for an attempt waiting on `needs_second_factor`.
 - `totp`: the 6-digit code the authenticator app shows now.
 - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
   Each works once.
-- `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+- `passkey`: an assertion for the options of `…/second-factor/passkey/options`.
 - `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
 
 ```ts
@@ -8523,7 +8531,7 @@ The `sessions` section of an environment's settings, as `PUT /v1/admin/settings`
   take the defaults); up to {@link MAX_CUSTOM_SESSION_PROFILES} more may be added under
   kebab-case names.
 - `maxPerUser` and `onLimit`: the concurrent-session rule.
-- `jwtTemplates`: named sets of custom claims (ADR 0036), at most
+- `jwtTemplates`: named sets of custom claims, at most
   {@link MAX_JWT_TEMPLATES}; a profile uses one by naming it in its `jwtTemplate`. A profile
   that names a template the document does not have is refused, so a template in use cannot
   be removed without first unsetting it on every profile that names it.
@@ -8551,8 +8559,8 @@ Tokens issued when a flow completes or a session is refreshed.
 `refreshToken` is only present for native/server clients. Browsers receive it as an httpOnly
 cookie and never see it in JavaScript.
 
-`accessToken` and `accessTokenExpiresAt` are absent for a session of a `stateful` profile
-(ADR 0028): the browser holds only an httpOnly session cookie, there is nothing for
+`accessToken` and `accessTokenExpiresAt` are absent for a session of a `stateful` profile:
+the browser holds only an httpOnly session cookie, there is nothing for
 JavaScript to keep, and requests are authenticated by sending that cookie
 (`credentials: 'include'`). Every `hybrid` session carries both.
 
@@ -8574,7 +8582,7 @@ export type SessionType = z.infer<typeof SessionTypeSchema>
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-How a session is held (business plan §5.3, ADR 0028).
+How a session is held (business plan §5.3).
 
 - `hybrid`: a short-lived access token (a JWT any service verifies offline) plus a rotating
   refresh token. The default.
@@ -8644,7 +8652,7 @@ export type SetUserEmailRequest = z.infer<typeof SetUserEmailRequestSchema>
 _constant_, defined in `packages/contract/src/user.ts`
 
 Give a user who has no email address one, from a server or the dashboard
-(`PUT /v1/admin/users/{userId}/email`; ADR 0059). The address is stored **unverified**:
+(`PUT /v1/admin/users/{userId}/email`). The address is stored **unverified**:
 nobody has shown that they read mail sent to it, and the first emailed code its holder
 enters is what verifies it.
 
@@ -8672,8 +8680,7 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
 
-Which tool manages an environment's settings from a config file, as the admin API returns it
-(ADR 0030).
+Which tool manages an environment's settings from a config file, as the admin API returns it.
 
 - `tool`: the tool that last applied a config (`tula-apply`).
 - `configHash`: the fingerprint of the config it applied.
@@ -8744,7 +8751,7 @@ export type SetupGroupRoles = z.infer<typeof SetupGroupRolesSchema>
 _constant_, defined in `packages/contract/src/sso-connection.ts`
 
 The mapping as a setup link's portal sees it: `locked` marks a mapping to a role with a
-system permission (`org:sys:*`), which the portal shows and cannot change (ADR 0067).
+system permission (`org:sys:*`), which the portal shows and cannot change.
 
 ```ts
 const SetupGroupRolesSchema
@@ -8845,7 +8852,7 @@ export type SignInStartRequest = z.infer<typeof SignInStartRequestSchema>
 _constant_, defined in `packages/contract/src/flow.ts`
 
 Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
-code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+code (`sms_code`), a phone number in international form (`+14155550100`; spaces,
 hyphens and parentheses are ignored).
 
 ```ts
@@ -8906,7 +8913,7 @@ export type SignInTestReport = z.infer<typeof SignInTestReportSchema>
 
 _constant_, defined in `packages/contract/src/sign-in-test.ts`
 
-The report of a sign-in test (ADR 0058): what `POST /v1/agent/sign-in-tests` answers.
+The report of a sign-in test: what `POST /v1/agent/sign-in-tests` answers.
 
 A throwaway user was signed up and in through the environment's real flow, by the server
 itself, and deleted. The report holds **nothing the flow handled**: no address, code,
@@ -9235,7 +9242,7 @@ export interface SmsTemplateRules {
 
 _constant_, defined in `packages/contract/src/sms-template-schema.ts`
 
-An environment's wording for one kind of text message (ADR 0042): the sentence that
+An environment's wording for one kind of text message: the sentence that
 carries the code.
 
 **Plain text on one line, with `{{name}}` placeholders and nothing else**, at most
@@ -9420,7 +9427,7 @@ export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
 _constant_, defined in `packages/contract/src/sso-connection.ts`
 
 An organization's IdP group to role mapping. The order is the precedence: a user in several
-mapped groups gets the role of the first of their groups in this list (ADR 0067).
+mapped groups gets the role of the first of their groups in this list.
 
 ```ts
 const SsoGroupRolesSchema
@@ -9553,7 +9560,7 @@ const SsoTestStartSchema: z.ZodObject<{ testId: z.ZodUUID; authorizationUrl: z.Z
 
 _type_, defined in `packages/contract/src/sso-connection.ts`
 
-One way a change to a connection lets more people sign in, or asks less of them (ADR 0067).
+One way a change to a connection lets more people sign in, or asks less of them.
 
 ```ts
 export type SsoWeakening =
@@ -9629,7 +9636,7 @@ What a step-up can be proven with.
 `email_code` is a 6-digit code emailed on request
 (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
 email address and **no** second factor. `passkey` is an assertion for the options of
-`POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey (ADR 0027).
+`POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey.
 `sms_code` is a 6-digit code texted on request
 (`POST /v1/client/sessions/step-up/sms-code`); it exists only for a user whose **only**
 second factor is a texted code, never beside an authenticator app or a passkey.
@@ -9656,7 +9663,8 @@ Prove a factor again for the current session (`POST /v1/client/sessions/step-up`
 
 A user with two-step verification must use `totp`, `backup_code` or a `passkey` (or, where a
 texted code is their only second factor, the `sms_code` they asked for from this session): their
-password alone is refused. A user without it uses `password`, or an `email_code` they asked for from this
+password alone is refused. A user without it uses `password`, or an `email_code` they asked for
+from this
 session.
 
 ```ts
@@ -10356,7 +10364,7 @@ const UserOrganizationListSchema
 
 _constant_, defined in `packages/contract/src/organization.ts`
 
-An organization the signed-in user belongs to, with their role in it (ADR 0065, Orgs 02).
+An organization the signed-in user belongs to, with their role in it.
 What `GET /v1/client/me/organizations` lists and `POST` creates. No creator and no other
 member: a user is told about their own membership and nothing of anyone else's.
 
@@ -10564,7 +10572,8 @@ const WEBHOOK_ROTATION_REFUSALS: readonly ["rotation_in_progress", "no_rotation_
 **Example**
 
 ```ts
-if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress') {
+if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress')
+{
   // wait for the overlap to end, or revoke the previous secret first
 }
 ```
@@ -10896,11 +10905,13 @@ export function appleAppSiteAssociation(
 
 ```ts
 appleAppSiteAssociation([
-  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth'] },
+  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth']
+  },
 ])
 // {
 //   webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
-//   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth' }] }] },
+//   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth'
+}] }] },
 // }
 ```
 
@@ -11543,7 +11554,7 @@ are configured apart from it.
 
 **The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
 with a phone number, so an environment whose only method is `smsCode` would let nobody in
-who is not in already (ADR 0037).
+who is not in already.
 
 ```ts
 export function hasEnabledSignInMethod(settings: {
@@ -12478,7 +12489,7 @@ the dashboard's confirmation).
 - `teamId`: an iOS app is moved to another team. The app the files name is another app.
 - `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
   certificate's key can sign the app.
-- `appLinkPaths`: an app gains an app-link path, at its registration or later (ADR 0044).
+- `appLinkPaths`: an app gains an app-link path, at its registration or later.
   The platform then opens links of the domain in the app instead of the browser: on iOS
   the links of that path, **on Android, with the first path, every link of the domain**.
 
@@ -12625,7 +12636,7 @@ The paths at which a change to a provider's record weakens something. Two things
 - **`additionalClientIds`: a client id gained.** Every accepted client id is another app
   whose ID tokens sign users in. An id taken away, and a reordering, are not.
 - **`enabled`: the provider switched off, or its credentials removed, while accounts depend
-  on it** (ADR 0059): `before.enabled` is `true`, `after` is `null` or not enabled, and
+  on it**: `before.enabled` is `true`, `after` is `null` or not enabled, and
   `before.dependents` counted at least one account, or could not look at all of them
   (`more`). Those accounts are locked out until the provider is back; one with no email
   address (made through X or Facebook) has no recovery of its own. Nothing is judged where
@@ -13093,7 +13104,8 @@ what a Tula server issues).
 **Example**
 
 ```ts
-readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read']
+})
 // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
 readOrganizationClaims({ org_id: 'o1' }) // null
 ```
@@ -13344,7 +13356,7 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 
 _function_, defined in `packages/contract/src/organization-permissions.ts`
 
-Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+Whether a **custom** role may hold a permission key.
 
 A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
 any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
@@ -13393,7 +13405,7 @@ A path is listed when:
 - `audit.retentionDays`: a period is set where there was none, or is made shorter. The
   server then deletes the audit entries older than it, for good: the record of what
   happened gets shorter. A longer period, or none where there was one, is not listed;
-- `agents.proposalsInProduction`: switched on (ADR 0053). A production environment then
+- `agents.proposalsInProduction`: switched on. A production environment then
   accepts changes an AI agent asks for, each still waiting for a person's approval. It is
   listed whatever kind the environment is (this function sees the document alone), and
   switching it off never is;
@@ -13405,18 +13417,18 @@ A path is listed when:
   on, text messages are switched on or a first country is allowed. A texted code is
   easier to take than an authenticator app. Under `optional` it is not listed (it adds a
   second step where there was none, and is never used beside a stronger one), and
-  switching it off never is (nobody's factor is dropped; ADR 0025);
+  switching it off never is (nobody's factor is dropped);
 - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
   more freely (a raised or removed limit, a looser profile, one clients may now select);
 - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
-  one of their claims changes its source or its constant (ADR 0036). It is listed because
+  one of their claims changes its source or its constant. It is listed because
   an application decides on those claims: taking one away can lock users out, and opens up
   an application that reads a missing claim as permission;
 - `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
-  (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+  (`required` → `optional` → `none`): a sign-in that had to bind its session to a
   key no longer has to, or no longer can, so a copied refresh token of a new session works
   without the key;
-- `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
+- `sms.dailyMessageLimit`: more text messages can be sent in a day. It makes no
   account easier to take: it enlarges what someone abusing the environment's SMS can make
   its operator pay, which is why a change that does it is asked about like the others;
 - `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
@@ -13425,10 +13437,10 @@ A path is listed when:
 - `sms.allowedCountries`: a country is added while a texted code signs people in, or
   while one may be the second step a `required` policy asks for (listed once);
 - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
-  listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
+  listed that was not. Any app on a device can claim a scheme. An `https` URL
   added is not listed;
 - `agents.testSignIn`: `true` is written where it was not, or `false` is taken back to
-  `null` (ADR 0058): an AI agent may then sign a throwaway user up and in, which asks the
+  `null`: an AI agent may then sign a throwaway user up and in, which asks the
   environment's hooks and delivers its events. `true` switches it on in a production
   environment, and `null` over `false` in a development one (where the default is yes).
   Each is listed in the other kind too, where it changes nothing: the documents do not
@@ -13437,7 +13449,7 @@ A path is listed when:
 
 - `organizations.enabled`, `organizations.allowUserCreated`, `organizations.maxCreatedPerUser`:
   organizations are switched off, user-created organizations are switched on, or the cap
-  on them is raised or removed (ADR 0065). Switching organizations on is not listed.
+  on them is raised or removed. Switching organizations on is not listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -13445,8 +13457,8 @@ measure), and every other setting. Disabling a sign-in method removes a way in; 
 weakening, and neither is switching on any method but the SMS code. Switching SMS on or
 off, or a wider or narrower country list, is not one **while no texted code signs anyone
 in and none can meet a required second step**: a phone number is then contact data that
-no account is signed in to or recovered with, or a second step added where there was none
-(ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+no account is signed in to or recovered with, or a second step added where there was none,
+and the daily limit bounds what the messages can cost wherever they
 go.
 
 ```ts
@@ -13507,8 +13519,8 @@ const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000)
 
 _function_, defined in `packages/contract/src/phone.ts`
 
-The limits that bound what an environment's text messages can cost, from its one setting
-(ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+The limits that bound what an environment's text messages can cost, from its one setting.
+The server enforces exactly these, and the dashboard shows them from here: one
 definition, so that what an operator reads is what is held.
 
 They count **messages**: not segments (a long message is billed as several) and not money.
@@ -13591,7 +13603,8 @@ export function smsSegments(text: string): SmsSegments
 **Example**
 
 ```ts
-smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments: 1 }
+smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments:
+1 }
 ```
 
 ### `smsTemplateProblems`
@@ -13635,7 +13648,7 @@ _function_, defined in `packages/contract/src/sso-connection.ts`
 
 What a change to a connection lets through that it did not before. The one copy of the rule:
 the server's audit entry says `weakened: true` for exactly these, and the dashboard asks
-first and words each (ADR 0067). A name, or a field left `undefined`, is no change.
+first and words each. A name, or a field left `undefined`, is no change.
 
 ```ts
 export function ssoWeakenings(
@@ -13654,7 +13667,8 @@ export function ssoWeakenings(
 **Example**
 
 ```ts
-ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, { status: 'active' }) // ['activate']
+ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, {
+status: 'active' }) // ['activate']
 ```
 
 ### `stepUpWindowSeconds`
@@ -13689,9 +13703,9 @@ stepUpWindowSeconds(settings.sessions, claims.sp) // 600 unless the profile says
 
 _function_, defined in `packages/contract/src/oauth.ts`
 
-Whether a provider's record takes `additionalClientIds` (ADR 0045): Google alone. Apple's
+Whether a provider's record takes `additionalClientIds`: Google alone. Apple's
 native audiences are not on its record: they are the bundle ids of the environment's
-registered iOS apps (ADR 0047).
+registered iOS apps.
 
 ```ts
 export function takesAdditionalClientIds(provider: string): boolean
@@ -13910,7 +13924,7 @@ Source: `packages/contract/src/custom-claims.ts`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The one top-level claim every custom claim is nested under (ADR 0036).
+The one top-level claim every custom claim is nested under.
 
 An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
 with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
@@ -14063,7 +14077,7 @@ const MAX_ORGANIZATION_PERMISSIONS_CLAIM: 32
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The access token's claim naming the active organization (ADR 0065, "Token claims").
+The access token's claim naming the active organization.
 
 ```ts
 const ORGANIZATION_ID_CLAIM: "org_id"
@@ -14152,7 +14166,7 @@ RESERVED_CLAIM_NAMES.includes('sub') // true
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
 
-The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+The access token's claim naming the SSO connection a session was signed in through.
 
 ```ts
 const SSO_CONNECTION_CLAIM: "sso_conn"
@@ -14386,7 +14400,8 @@ what a Tula server issues).
 **Example**
 
 ```ts
-readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read']
+})
 // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
 readOrganizationClaims({ org_id: 'o1' }) // null
 ```
@@ -14983,7 +14998,7 @@ settings from a config file (`tula-apply`), or `none` to hand them back.
 Sent together with {@link CONFIG_HASH_HEADER}. The API records both with the settings and
 returns them as `managedBy`, so a dashboard can say "these settings come from a config file"
 and warn when they were changed around it. A replace without the header keeps the record,
-which then shows as drifted. See ADR 0030.
+which then shows as drifted.
 
 ```ts
 const CONFIG_MANAGED_BY_HEADER: "x-tula-managed-by"
@@ -15017,7 +15032,7 @@ headers[CONFIG_MANAGED_BY_HEADER] = CONFIG_UNMANAGED
 _constant_, defined in `packages/contract/src/headers.ts`
 
 Request header every call the dashboard makes with its session cookie must carry, with the
-value {@link DASHBOARD_HEADER_VALUE} (ADR 0032).
+value {@link DASHBOARD_HEADER_VALUE}.
 
 A browser attaches a cookie whoever wrote the page. This header is what a form cannot send
 and what a cross-origin `fetch` may send only after a preflight, which the API answers for
@@ -15170,7 +15185,7 @@ const code = new URLSearchParams(location.hash.slice(1)).get(OAUTH_ERROR_PARAM)
 _constant_, defined in `packages/contract/src/headers.ts`
 
 Name of the URL-fragment parameter carrying the single-use ticket an OAuth sign-in returns to
-the app's page with (ADR 0026).
+the app's page with.
 
 The API redirects to the app's URL followed by `#tula_ticket=<ticket>&tula_attempt=<attempt
 id>`. The page's script removes the fragment from the address and posts the ticket, with the
@@ -15191,8 +15206,7 @@ const ticket = new URLSearchParams(location.hash.slice(1)).get(OAUTH_TICKET_PARA
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
-Orgs 04).
+Name of the URL-fragment parameter carrying an organization invitation's token.
 
 The link in the invitation email is the app's own redirect URL followed by
 `#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
@@ -15236,7 +15250,7 @@ Request header naming the session profile a client would like, read when an atte
 It is a request, not a choice: the session gets that profile only when the environment marks
 it `clientSelectable`. Any other name (unknown, not offered, a built-in) is ignored and the
 session gets the profile of its client kind, so a client can never give itself a
-longer-lived session than the operator offered (ADR 0028).
+longer-lived session than the operator offered.
 
 ```ts
 const SESSION_PROFILE_HEADER: "x-tula-session-profile"
@@ -15256,7 +15270,7 @@ await fetch(`${api}/v1/client/sign-ins`, {
 
 _constant_, defined in `packages/contract/src/headers.ts`
 
-The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+The header that carries a setup link's token to `/v1/setup/*`. The portal reads
 the token from the page address's fragment, which a browser never sends, and puts it here:
 it is never in a path or a query, so no access log or `Referer` holds it.
 
@@ -15336,7 +15350,8 @@ is the bracketed IPv6 form).
 `bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
 the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
 ({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
-{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap,
+so its work is bounded.
 
 ```ts
 const DOMAIN_PATTERN: {}
@@ -15379,7 +15394,7 @@ const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
 
 _constant_, defined in `packages/contract/src/organization-domain-rules.ts`
 
-How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+How long a verification of a domain lasts, in days.
 A domain can be lost and registered again by someone else, and nothing tells Tula, so a
 claim is only believed for this long: past it the domain matches nobody (no auto-join, no
 suggestion) until a manager proves it again with a new emailed code. Counted from the day
@@ -15602,7 +15617,7 @@ Source: `packages/contract/src/organization-permissions.ts`
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The two roles every environment has (ADR 0065): `admin` holds every system permission,
+The two roles every environment has: `admin` holds every system permission,
 `member` may read the member list. They cannot be deleted, renamed or given other
 permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
 membership refers to a role the way it does to a custom one.
@@ -15630,7 +15645,7 @@ export interface BuiltInRole {
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member claim, verify, change and remove the organization's
-domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+domains through the client routes. Read from the member's
 role at the time of the request, never from a token.
 
 ```ts
@@ -15642,7 +15657,7 @@ const DOMAINS_MANAGE_PERMISSION: SystemPermission
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member invite people to the organization and withdraw
-invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+invitations. Checked on the server from the membership as it is now,
 never from a token's claims alone.
 
 ```ts
@@ -15664,7 +15679,7 @@ const MAX_CUSTOM_ROLES: 50
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 How many permissions one role can hold. The permissions of the active organization's role are
-a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+a claim of every access token, so the number is capped.
 
 ```ts
 const MAX_PERMISSIONS_PER_ROLE: 32
@@ -15698,7 +15713,7 @@ const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that lets a member read the organization's member list through the client
-routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+routes. `org:sys:memberships:manage` also reads it.
 
 ```ts
 const MEMBERSHIPS_READ_PERMISSION: SystemPermission
@@ -15708,8 +15723,8 @@ const MEMBERSHIPS_READ_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member delete the organization through the client routes (ADR
-0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member delete the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_DELETE_PERMISSION: SystemPermission
@@ -15719,8 +15734,8 @@ const ORGANIZATION_DELETE_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member rename the organization through the client routes
-(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+The permission that lets a member rename the organization through the client routes.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
@@ -15730,7 +15745,7 @@ const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+The grammar of a permission key: `org:<feature>:<action>`, each of the last two
 a lower-case letter followed by lower-case letters, digits and underscores (at most 32
 characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
 No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
@@ -15783,8 +15798,8 @@ export type RolePermissionRefusal = 'grammar' | 'reserved'
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permission that lets a member manage the organization's single sign-on connections
-(ADR 0067). Read from the membership now, never from a token's claims alone.
+The permission that lets a member manage the organization's single sign-on connections.
+Read from the membership now, never from a token's claims alone.
 
 ```ts
 const SSO_MANAGE_PERMISSION: SystemPermission
@@ -15794,7 +15809,7 @@ const SSO_MANAGE_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+The permissions Tula's own organization routes check. The same keys an app's
 server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
 also give a role.
 
@@ -15921,7 +15936,7 @@ organizationRoleWeakenings(null, ['org:billing:read']) // []
 
 _function_, defined in `packages/contract/src/organization-permissions.ts`
 
-Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+Whether a **custom** role may hold a permission key.
 
 A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
 any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
@@ -16129,7 +16144,7 @@ _constant_, defined in `packages/contract/src/redirect-url.ts`
 
 The providers that do **not** bind their code with PKCE, as a fact about the provider and
 not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
-is not used (ADR 0026).
+is not used.
 
 A provider sign-in with one of them is never returned to a custom scheme
 ({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
@@ -16149,7 +16164,7 @@ OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
 
 _constant_, defined in `packages/contract/src/redirect-url.ts`
 
-The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+The providers whose authorization code Tula binds to the attempt with PKCE: the
 code is redeemable only with the verifier the attempt holds.
 
 ```ts
@@ -16176,7 +16191,7 @@ rule that a custom scheme contains one; the ones with a full stop, and the famil
 {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
 scheme an operating system handles that nobody put here passes. What bounds that is not
 the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
-and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+and a redirect carries only a ticket that is useless without the binding.
 
 ```ts
 const REDIRECT_SCHEMES_NEVER_CUSTOM

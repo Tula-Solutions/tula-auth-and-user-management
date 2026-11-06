@@ -35,7 +35,7 @@ const step = FlowStepSchema.parse(await response.json())
 
 The reference of every export is [docs/reference/contract.md](../../docs/reference/contract.md).
 Under a strict Content-Security-Policy (no `'unsafe-eval'`), see
-[docs/releasing.md](../../docs/releasing.md#tula-techcontract-under-a-strict-content-security-policy).
+[docs/internal/releasing.md](../../docs/internal/releasing.md#tula-techcontract-under-a-strict-content-security-policy).
 
 ## What it holds
 
@@ -108,7 +108,7 @@ console.log(Object.keys(openapi.paths).length)
   Zod, so a browser bundle that needs only a constant or a pure function does not carry it.
 - Zod's JIT code generation uses `new Function`. Where a strict Content-Security-Policy
   forbids `'unsafe-eval'`, follow
-  [the note in docs/releasing.md](../../docs/releasing.md#tula-techcontract-under-a-strict-content-security-policy).
+  [the note in docs/internal/releasing.md](../../docs/internal/releasing.md#tula-techcontract-under-a-strict-content-security-policy).
 
 ## Stability and versions
 

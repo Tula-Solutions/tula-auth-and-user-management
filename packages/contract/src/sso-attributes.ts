@@ -1,4 +1,4 @@
-// How an identity provider's attributes (SAML) and claims (OIDC) become a profile (ADR 0067).
+// How an identity provider's attributes (SAML) and claims (OIDC) become a profile.
 // Zod-free: the names are shared by the API, the dashboard and the docs.
 import type { SsoProtocol } from './sso'
 

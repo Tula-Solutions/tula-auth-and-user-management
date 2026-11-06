@@ -121,7 +121,8 @@ describe('buildAiFiles', () => {
     expect(text).toContain('## SDK reference')
     expect(text).toContain('- [Core](https://docs.example/sub/reference/core.md): Generated.')
     expect(text).toContain('- [Docs](https://docs.example/sub/docs.md): The docs.')
-    expect(text).toContain('## Optional')
+    // The decision records and plans are not published: llms.txt does not point an agent at them.
+    expect(text).not.toMatch(/docs\/(adr|plans)/)
     expect(text).not.toContain('skill.md')
   })
 

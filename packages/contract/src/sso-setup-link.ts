@@ -8,7 +8,7 @@ import {
 } from './sso-connection'
 
 // A setup link lets an organization's IT administrator set up single sign-on without an
-// account (ADR 0067, "Setup links"). The portal's routes take the subset of an SSO
+// account. The portal's routes take the subset of an SSO
 // connection's fields below and nothing else: no enforcement, MFA trust, break-glass role or
 // default role, which stay with the operator and the organization's administrators.
 

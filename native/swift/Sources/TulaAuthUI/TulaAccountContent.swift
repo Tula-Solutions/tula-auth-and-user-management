@@ -1,7 +1,7 @@
 import Foundation
 import TulaAuth
 
-// What the account screen holds, as data, by the rule of the sign-in screens (ADR 0057):
+// What the account screen holds, as data, by the rule of the sign-in screens:
 // the model decides, this file says it in words, fields and offers, and a view draws it
 // from top to bottom. `swift test` reads all of it without drawing anything.
 

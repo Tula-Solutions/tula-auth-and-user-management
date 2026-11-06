@@ -72,7 +72,7 @@ export function releaseTitle(version: string): string {
   return `release: v${version}`
 }
 
-/** The hand-kept version places of docs/releasing.md ("First release", step 3), by file. */
+/** The hand-kept version places of docs/internal/releasing.md ("First release", step 3), by file. */
 export const HAND_KEPT_CONSTANTS: readonly string[] = [
   'packages/cli/src/version.ts',
   'packages/create-tula/src/scaffold.ts',

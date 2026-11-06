@@ -16,7 +16,7 @@ const NUMBER_CODES: ReadonlySet<string> = new Set(['phone.invalid', 'sms.country
 type View = 'summary' | 'number' | 'code'
 
 /**
- * "Phone number": the account's number, and adding, changing and removing it (ADR 0037).
+ * "Phone number": the account's number, and adding, changing and removing it.
  *
  * Adding is two steps the server decides: a code is texted to the number, and the code makes
  * the number the account's. The component holds no rule about what a phone number is, which

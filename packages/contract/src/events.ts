@@ -68,7 +68,7 @@ import { AUTHENTICATION_METHODS } from './tokens'
 const id = () => z.uuid()
 
 /**
- * A domain an organization claimed (ADR 0065): the operator's own identifier of the domain
+ * A domain an organization claimed: the operator's own identifier of the domain
  * grammar (`acme.com`), bounded by pattern and length. It holds no address, and is the one
  * client-supplied string of the domain events (the event canary lists the field).
  */
@@ -97,7 +97,7 @@ const PROPOSAL_IS_WHOLE = { message: '`proposalId` and `approvedBy` go together'
 
 /**
  * What the entry of a change says when the change carried out an agent's proposal a human
- * approved (ADR 0053): both fields, or neither for a change an administrator or a user made.
+ * approved: both fields, or neither for a change an administrator or a user made.
  */
 const carriedOut = () => ({
   /**
@@ -122,7 +122,7 @@ function passkeyRemovalIsWhole(removal: {
 
 const provider = OAuthProviderSchema
 
-/** How many accounts depended on a provider when it went (ADR 0059). A count and nothing else. */
+/** How many accounts depended on a provider when it went. A count and nothing else. */
 const dependentAccounts = z.number().int().min(0).max(DEPENDENT_ACCOUNTS_SCAN_LIMIT)
 
 /**
@@ -224,7 +224,7 @@ export const EVENT_DATA_SCHEMAS = {
      */
     hookBypassed: z.boolean().optional(),
     /**
-     * `true` when the account is the throwaway user of a sign-in test (ADR 0058): its
+     * `true` when the account is the throwaway user of a sign-in test: its
      * address is in the reserved test domain, nobody holds it, and the server deletes it
      * within seconds. Absent otherwise. Every later event of that test names this user's id.
      */
@@ -251,7 +251,7 @@ export const EVENT_DATA_SCHEMAS = {
   'user.banned': z
     .object({
       /**
-       * The proposal this ban carried out (ADR 0053): present exactly when the actor is an
+       * The proposal this ban carried out: present exactly when the actor is an
        * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
        */
       proposalId: id().optional(),
@@ -433,7 +433,7 @@ export const EVENT_DATA_SCHEMAS = {
      */
     claimsHookBypassed: z.boolean().optional(),
     /**
-     * `true` when the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * `true` when the session is bound to a device key: its refreshes need a proof
      * signed by the key the client presented when the sign-in started. Absent otherwise.
      * Nothing of the key is in an event.
      */
@@ -584,7 +584,7 @@ export const EVENT_DATA_SCHEMAS = {
       weakened: z.boolean().optional(),
       /**
        * When the provider was switched off: how many accounts were found whose only way to
-       * sign in it was (ADR 0059). A count, never an id; absent when it was not switched off.
+       * sign in it was. A count, never an id; absent when it was not switched off.
        */
       dependentAccounts: dependentAccounts.optional(),
       /** `true` when not every account of the provider was looked at: the count is a floor. */
@@ -691,7 +691,7 @@ export const EVENT_DATA_SCHEMAS = {
       platform: z.enum(NATIVE_APP_PLATFORMS),
       /** How many signing-certificate fingerprints it was registered with; 0 for an iOS app. */
       fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
-      /** How many app-link paths it was registered with (ADR 0044). A count, never a path. */
+      /** How many app-link paths it was registered with. A count, never a path. */
       appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
       /** Always `true`: registering an app widens which apps the served files name. */
       weakened: z.boolean().optional(),
@@ -703,7 +703,7 @@ export const EVENT_DATA_SCHEMAS = {
     changed: z.array(z.enum(NATIVE_APP_FIELDS)).min(1).max(NATIVE_APP_FIELDS.length),
     /** How many fingerprints the app has after the change; 0 for an iOS app. */
     fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
-    /** How many app-link paths the app has after the change (ADR 0044). A count. */
+    /** How many app-link paths the app has after the change. A count. */
     appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
     /**
      * `true` when the change widened what the files say: an iOS app moved to another team,
@@ -717,7 +717,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
   ),
-  // Enterprise single sign-on (ADR 0067): protocol, status, counts and field names.
+  // Enterprise single sign-on: protocol, status, counts and field names.
   'sso_connection.created': data(
     'SsoConnectionCreated',
     'A single sign-on connection was created for an organization. Its issuer, client and domains are not in the event.',
@@ -746,7 +746,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A single sign-on connection was removed.',
     { protocol: z.enum(SSO_PROTOCOLS) }
   ),
-  // SCIM (ADR 0067): ids and enums only.
+  // SCIM: ids and enums only.
   'scim_token.created': data(
     'ScimTokenCreated',
     "A SCIM token was created for an organization's directory. The token is not in the event.",
@@ -799,7 +799,7 @@ export const EVENT_DATA_SCHEMAS = {
     "A group of an organization's directory was removed.",
     { organizationId: id() }
   ),
-  // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
+  // Organizations. Ids and role keys only: the organization's name and slug and a
   // member's address and name are operator or user text, and never in an event.
   'organization.created': data(
     'OrganizationCreated',
@@ -842,7 +842,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.',
     { organizationId: id(), userId: id(), role: RoleKeySchema }
   ),
-  // Custom roles (ADR 0065). The role's key, a count and field names: never its name or a
+  // Custom roles. The role's key, a count and field names: never its name or a
   // permission key, which are the operator's own text.
   'organization_role.created': data(
     'OrganizationRoleCreated',
@@ -868,7 +868,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A custom role was deleted. No member held it.',
     { role: RoleKeySchema }
   ),
-  // Verified domains (ADR 0065). The organization's id, the domain (a name of the domain
+  // Verified domains. The organization's id, the domain (a name of the domain
   // grammar, which the operator chose and which has no address in it) and the mode.
   'organization_domain.claimed': data(
     'OrganizationDomainClaimed',
@@ -902,7 +902,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.',
     { organizationId: id(), domain: DomainName }
   ),
-  // Invitations to an organization (ADR 0065, Orgs 04). Ids and the role's key only: the invited
+  // Invitations to an organization. Ids and the role's key only: the invited
   // address is the inviter's text, and never in an event.
   'organization_invitation.created': data(
     'OrganizationInvitationCreated',
@@ -924,7 +924,7 @@ export const EVENT_DATA_SCHEMAS = {
     'A pending invitation was withdrawn: its link no longer works.',
     { organizationId: id(), role: RoleKeySchema }
   ),
-  // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
+  // Proposals. The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.
   'proposal.created': data(
     'ProposalCreated',
@@ -993,7 +993,7 @@ export const EVENT_DATA_SCHEMAS = {
       to: z.iso.datetime({ offset: true }).optional(),
     }
   ),
-  // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator
+  // A sign-in test. The actor is who asked for it: an agent, or an administrator
   // (a secret key). The account's own events are the flow's, with their own actors.
   'sign_in_test.started': data(
     'SignInTestStarted',

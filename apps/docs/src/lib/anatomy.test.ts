@@ -75,10 +75,10 @@ describe('neighbours', () => {
 })
 
 describe('breadcrumb', () => {
-  test('is the tab, the group and the page; the tab links to its first page, the page does not link', () => {
+  test('is the tab, the group and the page; the tab and the group link to their first page, the page does not link', () => {
     expect(breadcrumb(sections, '/methods/password/')).toEqual([
       { label: 'Guides', route: '/methods/password/' },
-      { label: 'Sign-in methods' },
+      { label: 'Sign-in methods', route: '/methods/password/' },
       { label: 'Password' },
     ])
   })
@@ -86,10 +86,18 @@ describe('breadcrumb', () => {
   test('names the page a nested page hangs under, as a link', () => {
     expect(breadcrumb(sections, '/providers/google/')).toEqual([
       { label: 'Guides', route: '/methods/password/' },
-      { label: 'Sign-in methods' },
+      { label: 'Sign-in methods', route: '/methods/password/' },
       { label: 'OAuth providers', route: '/methods/oauth/' },
       { label: 'Google' },
     ])
+  })
+
+  test('links every step but the last', () => {
+    for (const route of ['/cli/', '/reference/core/', '/providers/google/']) {
+      const crumbs = breadcrumb(sections, route)
+      expect(crumbs.slice(0, -1).every((crumb) => crumb.route !== undefined)).toBe(true)
+      expect(crumbs.at(-1)?.route).toBeUndefined()
+    }
   })
 
   test('is empty for a page no tab lists', () => {

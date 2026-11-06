@@ -51,7 +51,7 @@ export const ACCESS_CHUNK_LENGTH = 3072
 
 /**
  * The longest access token the app keeps in cookies: two cookies' worth. The largest token a
- * Tula server issues (ADR 0029, "The access token and the cookie budget") is about 5,300
+ * Tula server issues is about 5,300
  * characters; this leaves room for a long issuer URL. A longer token is not stored, and the
  * session then lives on its refresh cookie alone (see `handlers.ts`).
  */

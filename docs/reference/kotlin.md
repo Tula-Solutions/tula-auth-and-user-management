@@ -17,7 +17,7 @@ types of the client API (the requests, the answers, the error codes) are not lis
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-Proving again that it is the user (ADR 0025): each call answers one of the methods an
+Proving again that it is the user: each call answers one of the methods an
 `auth.step_up_required` listed, and replaces the access token with one that carries the
 proof. A user with a second factor steps up with it, never with the password alone.
 
@@ -127,7 +127,7 @@ suspend fun withPasskey(): TulaCeremony<Unit>
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in user's passkeys (ADR 0027). Never key material: a name, whether it is synced,
+The signed-in user's passkeys. Never key material: a name, whether it is synced,
 and when it was added and last used.
 
 ```kotlin
@@ -177,7 +177,7 @@ suspend fun remove(id: String)
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in user's second factor (ADR 0025): an authenticator app and its backup codes,
+The signed-in user's second factor: an authenticator app and its backup codes,
 or a texted code.
 
 A setup key, its URI and backup codes are returned once and kept nowhere in the client.
@@ -289,7 +289,7 @@ suspend fun disableSms()
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-An email address for a signed-in account that has none (ADR 0059): an account whose first
+An email address for a signed-in account that has none: an account whose first
 sign-in was with a provider that gives no address.
 
 Both calls are refused `email.already_set` for an account that has an address, and need a
@@ -337,7 +337,7 @@ suspend fun verify(code: String): CurrentUser
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The signed-in account's phone number (ADR 0037): one optional number, proven with a texted
+The signed-in account's phone number: one optional number, proven with a texted
 code. It is contact data, and a way to sign in or a second step only where the
 environment switched those on.
 
@@ -399,7 +399,7 @@ suspend fun remove()
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
 
-The provider accounts the signed-in user signs in with (ADR 0026).
+The provider accounts the signed-in user signs in with.
 
 ```kotlin
 class TulaIdentities internal constructor(private val context: FlowContext)
@@ -849,7 +849,7 @@ fun of(key: ECPublicKey): DevicePublicKey
 
 _interface_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/DeviceKey.kt`
 
-A key a session can be bound to (ADR 0043): its public half, and a way to sign with the
+A key a session can be bound to: its public half, and a way to sign with the
 private half that never hands the private half out.
 
 ```kotlin
@@ -1940,7 +1940,7 @@ constructor() : this(JDK_ENGINE)
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
-An organization's members (ADR 0065). Reading needs `org:sys:memberships:read` or
+An organization's members. Reading needs `org:sys:memberships:read` or
 `:manage`; changing needs `org:sys:memberships:manage`, which the API reads from the
 user's membership on every call.
 
@@ -2006,7 +2006,7 @@ suspend fun remove(organizationId: String, userId: String)
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
-An organization's domains (ADR 0065, "Verified domains"): the organization claims one by a
+An organization's domains: the organization claims one by a
 code emailed to an address on it, and a verified one suggests or joins the people who sign
 up with a verified address on it. Needs `org:sys:domains:manage`, which the API reads from
 the user's membership on every call.
@@ -2113,7 +2113,7 @@ suspend fun remove(organizationId: String, domainId: String)
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
 The active organization an access token says its session acts in: the `org_id`,
-`org_role` and `org_perms` claims (ADR 0065).
+`org_role` and `org_perms` claims.
 
 **Read for showing, never for deciding.** The claims are read from the token the client
 holds, without verifying its signature: this decides what an app draws, and the app's own
@@ -2299,7 +2299,7 @@ fun read(url: String): TulaInvitationLink?
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
-The signed-in user's organizations (ADR 0065) and the one the session acts in. While the
+The signed-in user's organizations and the one the session acts in. While the
 environment's `organizations.enabled` setting is off, each call answers
 `organization.disabled`.
 
@@ -2553,7 +2553,7 @@ val domains: TulaOrganizationDomains get()
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
-Invitations to an organization (ADR 0065), by email.
+Invitations to an organization, by email.
 
 The token an invitation's link carries is a secret: it is sent in a request body and
 nowhere else, and it is in no error, no log line and no URL the client builds. Read it
@@ -3421,7 +3421,7 @@ suspend fun signInWithPasskey(): TulaCeremony<SignInFlow>
 
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
 
-Start a sign-in with a provider's ID token (ADR 0045), for an app that shows the
+Start a sign-in with a provider's ID token, for an app that shows the
 provider's sheet itself. [signInWithGoogle] does both steps with the client's sheet.
 
 @param provider The provider. An Android client is taken for Google only: Apple on
@@ -3553,7 +3553,7 @@ val phone: TulaPhone get()
 _val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
 
 The signed-in user's organizations, the one the session acts in, invitations to them
-and the organizations a verified address is offered (ADR 0065).
+and the organizations a verified address is offered.
 
 ```kotlin
 val organizations: TulaOrganizations get()
@@ -6611,7 +6611,7 @@ _class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/u
 The first screen's other ways to sign in (a passkey, a provider, a texted code).
 
 **A texted sign-in code's screens never say that a message was sent**: a number that signs
-nobody in is answered like one that does and is texted nothing (ADR 0037), so the words are
+nobody in is answered like one that does and is texted nothing, so the words are
 "if this number can sign in".
 
 ```kotlin
@@ -6797,7 +6797,7 @@ data class TulaAccountStrings(
     val sessionsTitle: String = "Where you’re signed in",
     /** Marks the session this app holds. */
     val thisDevice: String = "This device",
-    /** Marks a session bound to a device key. Never more than that of a device (ADR 0043). */
+    /** Marks a session bound to a device key. Never more than that of a device. */
     val deviceBound: String = "Bound to a device key",
     /** `{date}` is when the session was signed in. */
     val signedInOn: String = "Signed in {date}",
@@ -7918,7 +7918,7 @@ sensitive, so that Android 13 and later do not show it in the clipboard's previe
 It is called only when a person presses "Copy". **Android has no expiry for a clip**, so after
 a minute the app clears the clipboard itself, but only when the clip is still the text it
 wrote (a later copy of the person's own is never lost). That timer lives in the process: if
-the process ends first, the copy stays until something else is copied (TULA-157, H-320). Before
+the process ends first, the copy stays until something else is copied. Before
 Android 13 the sensitive mark is not read. The screens say "Copied." and nothing more.
 
 @param context A context.

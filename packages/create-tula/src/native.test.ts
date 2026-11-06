@@ -131,7 +131,7 @@ describe('the native templates', () => {
     expect(app.dependencies.expo).toMatch(/^~\d/)
   })
 
-  // `@tula-tech/expo` is held back from npm (docs/releasing.md): a project that names it by a
+  // `@tula-tech/expo` is held back from npm (docs/internal/releasing.md): a project that names it by a
   // version could not be installed, so it is not scaffolded at all without tarballs.
   test('expo: refused without tarballs, saying the Expo SDK is not released, and nothing is written', async () => {
     const refused = scaffold({ cwd: dir, name: 'shop', framework: 'expo' })

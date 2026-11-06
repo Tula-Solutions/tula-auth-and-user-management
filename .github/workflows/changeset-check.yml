@@ -3,7 +3,7 @@ name: Changeset check
 # A pull request into `develop` that changes what a published package ships (the rule, and
 # what it leaves out, are in `scripts/changeset-check.ts`) carries a changeset, or the label
 # `no-changeset`. Without one the change would reach `develop` and no release pull request
-# would ever name it (docs/releasing.md, "The release flow").
+# would ever name it (docs/internal/releasing.md, "The release flow").
 #
 # It is a workflow of its own and NOT one of the repository's required checks: a person
 # decides whether it should be. It reads the pull request's diff and files and nothing else

@@ -239,7 +239,7 @@ describe('the GitHub Packages workflow', () => {
 
 // Three things a review found unsaid. Each is a sentence a reader acts on.
 describe('what the runbook says about the copy', () => {
-  const doc = read('docs/releasing.md').replace(/\s+/g, ' ')
+  const doc = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
 
   test('the table of who uploads has a row for it: npm is used in two places, not one', () => {
     const section = doc.slice(

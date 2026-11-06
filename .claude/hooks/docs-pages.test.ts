@@ -251,12 +251,10 @@ describe('the docs site workflow', () => {
 })
 
 describe('where the docs say the site is published', () => {
-  test.each(['apps/docs/README.md', 'docs/README.md', 'README.md'])(
-    '%s gives the address',
-    (file) => {
-      expect(read(file)).toContain(PAGES_URL)
-    }
-  )
+  // docs/README.md is a page of the site itself: a link to the site's own address fails its build.
+  test.each(['apps/docs/README.md', 'README.md'])('%s gives the address', (file) => {
+    expect(read(file)).toContain(PAGES_URL)
+  })
 
   test('the area rule says how the site is published, and no longer that nothing deploys it', () => {
     const rule = read('.claude/rules/docs-site.md').replace(/\s+/g, ' ')
@@ -268,7 +266,7 @@ describe('where the docs say the site is published', () => {
     const readme = read('apps/docs/README.md').replace(/\s+/g, ' ')
     expect(readme).toContain('push to `main`')
     expect(readme).toContain(`${PAGES_URL}next/`)
-    const releasing = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const releasing = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(releasing).toContain('.github/workflows/docs-pages.yml')
     // Not as a link: the released build checks every address of its own, and `next/` is not its file.
     expect(releasing).toContain('with `next/` added')

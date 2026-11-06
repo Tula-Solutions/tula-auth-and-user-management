@@ -1,13 +1,13 @@
 import { z } from 'zod'
 
-// A native app's identity (ADR 0040): what the platform, not the app, says an app is. An iOS
+// A native app's identity: what the platform, not the app, says an app is. An iOS
 // app is its bundle id under an Apple team; an Android app is its package name and the
 // SHA-256 fingerprints of the certificates it may be signed with. An environment registers
 // the apps that are its own, and the server serves, from those rows and nothing else, the two
 // files the platforms fetch to believe it: Apple's `apple-app-site-association` and Android's
 // `assetlinks.json`.
 //
-// An app may also be given **app-link paths** (ADR 0044): paths of the domain the files are
+// An app may also be given **app-link paths**: paths of the domain the files are
 // served on whose links the platform opens in the app instead of the browser. That is what
 // lets a provider sign-in started in the app return to it through an `https` redirect URL.
 // It is off until a path is listed, per app.
@@ -51,7 +51,7 @@ export const MAX_CERT_FINGERPRINTS = 10
 
 /**
  * Longest bundle id accepted. Apple's own limit is not stated here as a fact: this is a cap
- * that every bundle id the platform accepts is believed to fit (ADR 0040).
+ * that every bundle id the platform accepts is believed to fit.
  *
  * @example
  * ```ts
@@ -234,8 +234,7 @@ export function normalizeCertFingerprints(fingerprints: readonly string[]): stri
 }
 
 /**
- * What every origin an Android app presents for a passkey starts with (ADR 0027, "Passkeys
- * from a native app").
+ * What every origin an Android app presents for a passkey starts with.
  *
  * @example
  * ```ts
@@ -352,7 +351,7 @@ export const IosAppSchema = z
     /** The app's bundle id. With the platform, what the app is in its environment. */
     bundleId: z.string(),
     /**
-     * The exact paths whose links the served `applinks` section hands this app (ADR 0044),
+     * The exact paths whose links the served `applinks` section hands this app,
      * sorted. Empty, the default, hands it none.
      */
     appLinkPaths: z.array(z.string()),
@@ -369,7 +368,7 @@ export const AndroidAppSchema = z
     /** SHA-256 fingerprints of its signing certificates, in the stored form, sorted. A set. */
     sha256CertFingerprints: z.array(z.string()),
     /**
-     * The paths the app is meant to take links of (ADR 0044), sorted. **With at least one,
+     * The paths the app is meant to take links of, sorted. **With at least one,
      * the served file gives the app `handle_all_urls`, which is every link of the domain**:
      * Android's file cannot name a path, the app's own manifest does. Empty, the default,
      * gives it no link.
@@ -442,7 +441,7 @@ export const UpdateNativeAppRequestSchema = z
   .meta({ ref: 'UpdateNativeAppRequest' })
 
 /**
- * The Digital Asset Links relations every registered Android app is served with (ADR 0040).
+ * The Digital Asset Links relations every registered Android app is served with.
  *
  * One: `get_login_creds`, which lets the app use the credentials (passkeys, saved passwords)
  * of the domain the file is served from. An app with app-link paths is served
@@ -456,8 +455,8 @@ export const UpdateNativeAppRequestSchema = z
 export const ASSET_LINKS_RELATIONS = ['delegate_permission/common.get_login_creds'] as const
 
 /**
- * The relation an Android app is served **only when it has at least one app-link path**
- * (ADR 0044): `handle_all_urls`, which lets the app open links of the domain the file is
+ * The relation an Android app is served **only when it has at least one app-link path**:
+ * `handle_all_urls`, which lets the app open links of the domain the file is
  * served from. The file has no way to say which links; the app's manifest names the paths
  * it takes. So this hands the app every link of the domain, and is off until an operator
  * lists a path for that app.
@@ -584,11 +583,13 @@ export function nativeAppIdentifier(app: NativeAppIdentity): string {
  * @example
  * ```ts
  * appleAppSiteAssociation([
- *   { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth'] },
+ *   { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth']
+ *   },
  * ])
  * // {
  * //   webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
- * //   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth' }] }] },
+ * //   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth'
+ * }] }] },
  * // }
  * ```
  */
@@ -666,7 +667,7 @@ function gainedAppLinkPath(was: NativeAppIdentity | null, is: NativeAppIdentity)
  * - `teamId`: an iOS app is moved to another team. The app the files name is another app.
  * - `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
  *   certificate's key can sign the app.
- * - `appLinkPaths`: an app gains an app-link path, at its registration or later (ADR 0044).
+ * - `appLinkPaths`: an app gains an app-link path, at its registration or later.
  *   The platform then opens links of the domain in the app instead of the browser: on iOS
  *   the links of that path, **on Android, with the first path, every link of the domain**.
  *

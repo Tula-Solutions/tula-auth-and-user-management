@@ -8,8 +8,7 @@ colleagues find their workspace by themselves.
 Verified domains are part of [organizations](organizations.md), so they exist only while an
 environment has [`organizations.enabled`](organizations.md#turn-organizations-on) on: while it is
 off every route answers `organization.disabled` (403), nobody is offered an organization and
-nobody is joined. The design and its reasons are in
-[ADR 0065](adr/0065-organizations.md).
+nobody is joined.
 
 > [!IMPORTANT]
 > A domain is believed for **a year**, not for ever. A domain can be lost and registered again
@@ -301,4 +300,3 @@ domain gets `organization_membership.added` with `via` set to `domain_auto_join`
 - [`<OrganizationProfile>`](organization-profile.md#domains) and
   [`<OrganizationSwitcher>`](organization-switcher.md): the screens.
 - [Organizations](organizations.md) and [Roles and permissions](roles-and-permissions.md).
-- [ADR 0065](adr/0065-organizations.md): the decisions behind all of this.

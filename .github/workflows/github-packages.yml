@@ -8,7 +8,7 @@ name: GitHub Packages
 #
 # GitHub takes a package only under its owner's scope, hence the other name. The files are
 # the tarballs `bun run packages:check` builds, the ones npm gets; npm stays the registry a
-# project installs from, and each copy's README says so (docs/releasing.md, "The copy on
+# project installs from, and each copy's README says so (docs/internal/releasing.md, "The copy on
 # GitHub Packages").
 #
 # It is a workflow of its own, not a job of `release.yml`, because that file is held to

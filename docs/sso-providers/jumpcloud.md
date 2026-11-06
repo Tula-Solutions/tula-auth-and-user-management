@@ -2,8 +2,7 @@
 
 > **Not verified against the live console.** Nothing in this repository has a JumpCloud
 > organization. The values Tula gives JumpCloud and the names Tula reads are what the code does,
-> tested against the built-in mock provider. JumpCloud's console steps are **not verified** until
-> TULA-152, and no JumpCloud documentation page was checked, so no vendor link is given.
+> tested against the built-in mock provider. JumpCloud's console steps are **not verified**, and no JumpCloud documentation page was checked, so no vendor link is given.
 
 <!-- Vendor docs: JumpCloud's support site, https://support.jumpcloud.com/, answered 503 on
      2026-11-03 when a page was requested; look up "custom SAML application" and "custom OIDC

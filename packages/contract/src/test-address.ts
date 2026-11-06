@@ -1,5 +1,5 @@
 // The address of a throwaway user a sign-in test makes, the words of a test's report and
-// the rule for whether an environment allows one (ADR 0058). Plain data and string work: no
+// the rule for whether an environment allows one. Plain data and string work: no
 // Zod here, so a webhook receiver or a hook can tell a test's user without a schema library.
 // The report's schema is in `./sign-in-test`.
 

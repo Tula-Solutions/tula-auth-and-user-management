@@ -414,7 +414,7 @@ export interface Channel {
   /**
    * `bun` on a person's machine. `npm` in the release workflow, the one exception to the
    * repository's Bun-only rule: `bun publish` (1.4) has no provenance and no trusted
-   * publishing, and npm's needs npm itself (docs/releasing.md, "Which CLI uploads").
+   * publishing, and npm's needs npm itself (docs/internal/releasing.md, "Which CLI uploads").
    */
   cli: 'bun' | 'npm'
   /** Whether the upload carries a provenance attestation. */
@@ -756,7 +756,7 @@ export function releaseReport(
   const count = plan.packages.filter((entry) => entry.action === 'publish').length
   if (!args.publish) {
     lines.push(
-      `DRY RUN: nothing was published. ${count} package${count === 1 ? '' : 's'} would be; uploading takes \`bun run release:publish\` (docs/releasing.md).`
+      `DRY RUN: nothing was published. ${count} package${count === 1 ? '' : 's'} would be; uploading takes \`bun run release:publish\` (docs/internal/releasing.md).`
     )
   } else if (plan.refusals.length > 0) {
     lines.push('RELEASE: nothing was published.')

@@ -3,7 +3,7 @@
 > **Not verified against the live console.** Nothing in this repository has an Okta tenant. The
 > values Tula gives Okta, and the attribute names Tula reads, are what the code does and are
 > tested against the built-in mock provider. The steps in Okta's admin console are **not
-> verified** until TULA-152; where a step names a screen
+> verified**; where a step names a screen
 > it is a pointer to the vendor documentation, not a transcription.
 
 <!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):

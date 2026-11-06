@@ -7,8 +7,7 @@ sign-in methods and OAuth providers; the password policy and session profiles; A
 signing keys; webhook endpoints and their deliveries; the audit logs; and the deployment's
 diagnostics.
 
-How it is built and tested: [apps/dashboard/README.md](../apps/dashboard/README.md). The
-session, its CSRF rules and how the app is served: [ADR 0032](adr/0032-dashboard.md).
+How it is built and tested: [apps/dashboard/README.md](../apps/dashboard/README.md).
 
 ## Signing in
 

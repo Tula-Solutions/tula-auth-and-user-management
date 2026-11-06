@@ -13,7 +13,7 @@ import { useClientConfig } from '../hooks/use-password-checklist'
 import type { FieldResolver } from './form-errors'
 import { Button, Card, FormError, useUi } from './ui'
 
-// What the three organization components share (ADR 0065, Orgs 07): which organization a
+// What the three organization components share: which organization a
 // component acts on and what the user may do in it, a guard that keeps a result with the session
 // it was asked for, and the few controls the sections have in common.
 

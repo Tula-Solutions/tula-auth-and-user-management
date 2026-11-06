@@ -10,15 +10,13 @@ that a person approves.
 
 **One tool changes live data, and only while it runs**: `test_signin` has the server sign a
 throwaway user up and in and delete it, where the environment allows that
-([the sign-in test](#the-sign-in-test), [ADR 0058](adr/0058-test-signin.md)). **No other
+([the sign-in test](#the-sign-in-test)). **No other
 tool does.** Nothing bans a user, revokes a session or edits a setting,
 and the scaffold tools return files without writing them. The draft tool returns an edit
-to `tula.config.ts` and writes nothing: you apply it with `tula apply`
-([ADR 0056](adr/0056-mcp-settings-config-diff.md)). A propose tool records a
+to `tula.config.ts` and writes nothing: you apply it with `tula apply`. A propose tool records a
 *proposal*: a request that does nothing until you approve it, outside this server, with a
 credential the server is not given ([proposals.md](proposals.md)). The server never
-returns a secret, a token or key material. The design is in
-[ADR 0033](adr/0033-mcp-server.md) and [ADR 0053](adr/0053-proposals.md).
+returns a secret, a token or key material.
 
 ## Configuration
 
@@ -200,8 +198,7 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
   (`password.minLength`, `mfa.policy`, `providers.google.additionalClientIds`, …); `weakens`
   is whether there is any. `tula apply --yes` refuses such a plan without `--allow-weaker`.
   The rule is the contract's, the one the API, the dashboard and the CLI share. **One
-  weakening is not judged here**: switching off a provider that accounts depend on
-  ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). The tool never reads that
+  weakening is not judged here**: switching off a provider that accounts depend on. The tool never reads that
   count, so `weakens: false` for such a draft is not "nobody is locked out". A draft that
   switches off a provider the server has on says so in one more entry of `notes`, in fixed
   words (no provider's name, no number); `tula diff` counts the accounts for the person
@@ -366,7 +363,7 @@ rendered), or what your webhook receiver did with the events.
 `framework` is `nextjs` (App Router), `react-vite`, `expo`, `swiftui` or `compose`. The files
 are the ones the example apps and `create-tula` use, byte for byte. **`expo` is answered
 with the error `scaffold.not_released` and no file**: its scaffold needs `@tula-tech/expo`,
-which is held back from npm ([releasing.md](releasing.md)), and a tool that told an
+which is not published to npm, and a tool that told an
 assistant to install it would send it to a package that is not there. `create-tula`
 refuses the Expo template for the same reason. **The server writes
 nothing**: your client writes the files, after you agree. `detect_framework` reads one

@@ -3,8 +3,7 @@
 An organization is a group of users who share something: a company, a team, a workspace. A user
 can belong to several, holds a **role** in each, and works in one at a time, the **active**
 organization of their session. Your backend learns which one, and what the role allows, from
-claims in the access token it already verifies. The design and its reasons are in
-[ADR 0065](adr/0065-organizations.md); the roles and the permission keys have a page of their own,
+claims in the access token it already verifies. The roles and the permission keys have a page of their own,
 [Roles and permissions](roles-and-permissions.md).
 
 Organizations are **off by default**. While they are off every organization route answers
@@ -44,7 +43,7 @@ Write them in `tula.config.ts` and apply with `tula apply` ([Settings as code](c
 
 <!-- snippet: examples/tula-config/tula.config.ts#organizations -->
 ```ts
-// Organizations (ADR 0065) are off until an environment switches them on; the roles
+// Organizations are off until an environment switches them on; the roles
 // below only exist while they are on. The other fields are shown at their defaults,
 // except `allowUserCreated`: here a signed-in user may create up to five.
 organizations: {
@@ -422,7 +421,7 @@ import { OrganizationSwitcher } from '@/components/tula/organization-switcher'
 > The registry is not served from a public address yet. Until it is, copy the two files from
 > `packages/ui/items` of the repository and the primitives they name (`button`, `card`,
 > `input`, `label` and the `status` item) into the project; `shadcn add` works once
-> the registry has an address ([ADR 0064](adr/0064-tula-ui.md)).
+> the registry has an address.
 
 The components call the client routes under `/v1/client/me/organizations`: the list, creating,
 switching, renaming and deleting, the members and their roles, the assignable roles, the
@@ -434,8 +433,7 @@ organizations as off.
 
 ## Invitations and verified domains
 
-Two ways to join an organization without being added by hand, each with a guide of its own
-([ADR 0065](adr/0065-organizations.md)):
+Two ways to join an organization without being added by hand, each with a guide of its own:
 
 - **[Invitations](invitations.md).** A member who may manage invitations, or your server, invites
   an email address with a role. The invitee gets a single-use link that works for seven days
@@ -451,14 +449,17 @@ The [Invitations](organization-profile.md#invitations) and
 both, and `client.organizations.invitations` and `client.organizations.domains` in
 `@tula-tech/core` are the calls under them.
 
-## Not built
+## Limits
 
-These are outside this version on purpose, so that you do not look for them: SAML and SCIM,
-billing and plans, settings or branding that differ per organization, nested organizations, DNS
-verification of a domain, and prebuilt organization screens in the Swift, Kotlin and Expo SDKs.
-Their clients have the calls (`organizations` on each) but draw nothing: see
-[Swift](swift.md#organizations), [Kotlin](kotlin.md#organizations) and
-[Expo](expo.md#organizations).
+- Organizations have no billing or plans, no settings or branding of their own, and cannot be
+  nested.
+- A domain is verified with an emailed code, not a DNS record ([verified domains](verified-domains.md)).
+- The Swift, Kotlin and Expo SDKs have the organization calls (`organizations` on each client)
+  but no prebuilt organization screens: see [Swift](swift.md#organizations),
+  [Kotlin](kotlin.md#organizations) and [Expo](expo.md#organizations).
+
+Single sign-on and directory sync for an organization are in [Enterprise SSO](enterprise-sso.md)
+and [SCIM](scim.md).
 
 ## See also
 
@@ -467,4 +468,3 @@ Their clients have the calls (`organizations` on each) but draw nothing: see
 - [JWT templates](jwt-templates.md): the claims beside the organization's.
 - [Settings as code](config.md#organization-roles): roles in `tula.config.ts`.
 - [MCP server](mcp.md): tools that read organizations, their members and roles.
-- [ADR 0065](adr/0065-organizations.md): the decisions behind all of this.

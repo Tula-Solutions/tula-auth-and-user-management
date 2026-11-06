@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 // What is behind the account screen: the signed-in user's profile, sessions, second step,
 // passkeys and phone number, and the forms that change them. One model: the forms are panels
 // over the overview, and a call the server wants a recent authentication for opens the step-up
-// panel and is done again after it (ADR 0062).
+// panel and is done again after it.
 
 /** A field of the account's forms. */
 enum class TulaAccountField {

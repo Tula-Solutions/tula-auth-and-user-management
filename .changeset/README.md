@@ -10,5 +10,5 @@ bunx changeset status   # what the next release would contain
 ```
 
 Versions, the prerelease mode (`pre.json`) and how a release is cut are described in
-[`docs/releasing.md`](../docs/releasing.md). Nine of the eleven are released to npm; the two
+[`docs/internal/releasing.md`](../docs/internal/releasing.md). Nine of the eleven are released to npm; the two
 Expo packages are held back and move with the group's version unpublished.

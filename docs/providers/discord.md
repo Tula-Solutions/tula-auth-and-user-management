@@ -5,7 +5,7 @@
 > stubbed HTTP. The redirect URI, the scopes and the requests below are what the code sends;
 > the portal steps are written from Discord's documentation and have not been clicked through.
 
-What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)).
+What an operator does once per environment.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
    exactly `PUBLIC_URL/v1/oauth/callback/discord`.

@@ -7,7 +7,7 @@ import { type Manifest, PUBLISHABLE_PACKAGES } from '../../scripts/publish-manif
 
 // One version, written in several places. Changesets moves the eleven packages of the fixed
 // group together; four more places are kept by hand when a release is cut
-// (docs/releasing.md, "First release", step 3): three constants a program prints or pins
+// (docs/internal/releasing.md, "First release", step 3): three constants a program prints or pins
 // with, and the version of the API, which Changesets ignores and `tula doctor` compares
 // with the CLI's own. One left behind is a CLI that warns about every deployment, or a
 // scaffolded project pinned to a version that is not on npm. This test names the place.

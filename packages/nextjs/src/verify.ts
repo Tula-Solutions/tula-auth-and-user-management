@@ -45,7 +45,7 @@ export interface SessionClaims {
    */
   ext?: CustomClaims
   /**
-   * The active organization's id (ADR 0065). Present only together with `org_role` and
+   * The active organization's id. Present only together with `org_role` and
    * `org_perms`, and only in the shape a Tula server issues; any other combination was left
    * out, all three. Read the three through `auth()`, which also answers `has()`.
    */
@@ -206,7 +206,8 @@ export async function verifyAccessToken(
 ): Promise<SessionClaims | null> {
   try {
     const header = decodeProtectedHeader(token)
-    // The API always signs `typ: JWT`; any other kind of token under this issuer's keys is not a session.
+    // The API always signs `typ: JWT`; any other kind of token under this issuer's keys is not a
+    // session.
     if (
       header.typ !== 'JWT' ||
       header.alg !== 'EdDSA' ||

@@ -2,7 +2,7 @@
 
 > **Not verified against the live console.** Nothing in this repository has a Ping environment.
 > The values Tula gives Ping and the names Tula reads are what the code does, tested against the
-> built-in mock provider. Ping's console steps are **not verified** until TULA-152, and no Ping
+> built-in mock provider. Ping's console steps are **not verified**, and no Ping
 > documentation page was checked, so no vendor deep link is given.
 
 <!-- Vendor docs: https://docs.pingidentity.com/ (a guessed deep link, .../p1_add_saml_app.html,

@@ -14,7 +14,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 
-// Signing in with a provider, the two ways a native app has (ADR 0045, ADR 0044): handing the
+// Signing in with a provider, the two ways a native app has: handing the
 // server an ID token the platform gave the app, and a round trip through the browser that
 // comes back to the app by a link.
 

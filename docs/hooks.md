@@ -14,8 +14,7 @@ There are three, one per **point**:
 | `before_token` | when a session is created, and when its user proves a factor again | claims to add to the session's tokens |
 
 You register an address for a point; the server posts the question to it and reads your
-answer inside a deadline. The design and its reasons are in
-[ADR 0035](adr/0035-hooks.md). What is not built yet is listed [at the end](#not-built-yet).
+answer inside a deadline.
 
 ## Register a hook
 
@@ -127,7 +126,7 @@ it is never stored: not in the outbox, not in the audit log.
 | --- | --- |
 | `userId` | The user who has just proven who they are. The account exists; look it up by this id (`GET /v1/admin/users/{id}`) if you need more. |
 | `client` | The kind of client the sign-in started from. |
-| `profile` | The name of the [session profile](adr/0028-session-profiles.md) the session will have. |
+| `profile` | The name of the [session profile](methods/sessions.md) the session will have. |
 | `amr` | What the sign-in proved (`pwd`, `email`, `otp`, `mfa`, `fed`, …). **A set**: test membership, never position. |
 | `signUp` | `true` when this sign-in created the account: the first session of a sign-up, or a first sign-in with a provider. |
 | `ipAddress` | The address the request came from, or `null`, as above. |
@@ -630,7 +629,9 @@ The same two codes for every point. With `@tula-tech/core` both are a `TulaError
 the default message for the code ("This was not allowed." / "This is unavailable right now.
 Try again later.") and keep the control to start again.
 
-## Not built yet
+## Limits
+
+What the feature does not do:
 
 - Replacing a hook's secret without removing the hook.
 - A log of calls (the server counts what calls came to, by the hour, and keeps no call by

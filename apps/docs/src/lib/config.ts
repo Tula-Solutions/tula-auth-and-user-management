@@ -15,7 +15,7 @@ export const DOCS_DIR = resolve(REPO_ROOT, 'docs')
  * Directories of `docs/` the site leaves out: plans and decisions are for contributors and are
  * read in the repository, and the codebase map is a generated snapshot.
  */
-export const EXCLUDED_DIRECTORIES = ['plans', 'adr', 'codebase-map'] as const
+export const EXCLUDED_DIRECTORIES = ['plans', 'adr', 'codebase-map', 'internal'] as const
 
 /**
  * Where a link to a repository file that is not a page of the site (an ADR, a package README, a

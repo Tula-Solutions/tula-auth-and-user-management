@@ -10,7 +10,7 @@ import {
 import type { SessionClient } from './session'
 
 /**
- * How a session is held (business plan §5.3, ADR 0028).
+ * How a session is held (business plan §5.3).
  *
  * - `hybrid`: a short-lived access token (a JWT any service verifies offline) plus a rotating
  *   refresh token. The default.
@@ -54,7 +54,7 @@ export const MIN_STEP_UP_AFTER: Duration = '1m'
 export const MAX_STEP_UP_AFTER: Duration = '24h'
 /**
  * How recent a session's last proof must be on a route that requires recent authentication,
- * for a profile that sets no `stepUpAfter` (ADR 0025).
+ * for a profile that sets no `stepUpAfter`.
  */
 export const DEFAULT_STEP_UP_AFTER: Duration = '10m'
 /** Most profiles an environment may define besides the built-in `web` and `mobile`. */
@@ -65,7 +65,7 @@ export const MAX_SESSION_PROFILE_NAME_LENGTH = 32
 export const MAX_SESSIONS_PER_USER = 100
 
 /**
- * How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+ * How strictly a profile's sessions are bound to a device key: what a sign-in of a
  * client that is **not a browser** is held to when it starts.
  *
  * - `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
@@ -210,7 +210,7 @@ const profileFields = {
   /**
    * The JWT template whose custom claims this profile's sessions carry (a key of
    * `sessions.jwtTemplates`), or `null` (the default) for none: such a session's token is
-   * exactly what it was before templates existed (ADR 0036). A name with no template is
+   * exactly what it was before templates existed. A name with no template is
    * refused when the settings are saved.
    */
   jwtTemplate: SessionProfileNameSchema.nullable().default(null),
@@ -455,7 +455,7 @@ const limitFields = {
  *   take the defaults); up to {@link MAX_CUSTOM_SESSION_PROFILES} more may be added under
  *   kebab-case names.
  * - `maxPerUser` and `onLimit`: the concurrent-session rule.
- * - `jwtTemplates`: named sets of custom claims (ADR 0036), at most
+ * - `jwtTemplates`: named sets of custom claims, at most
  *   {@link MAX_JWT_TEMPLATES}; a profile uses one by naming it in its `jwtTemplate`. A profile
  *   that names a template the document does not have is refused, so a template in use cannot
  *   be removed without first unsetting it on every profile that names it.

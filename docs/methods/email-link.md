@@ -3,8 +3,7 @@
 A link in the sign-in email. Clicking it in the browser that asked signs that browser in; the
 same email carries the 6-digit code for every other case. Off by default, and it needs the
 [emailed code](email-code.md).
-The reasoning, and why a link cannot work across devices, is in
-[ADR 0024](../adr/0024-email-sign-in.md).
+A link cannot work across devices: the browser that asked for it must be the one that opens it.
 
 ## Switch it on
 

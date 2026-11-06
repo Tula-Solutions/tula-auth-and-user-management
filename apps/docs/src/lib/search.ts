@@ -27,6 +27,12 @@ export interface IndexablePage {
 export const MAX_TEXT = 1200
 
 /**
+ * The score of a page whose own title starts with the query (`passkey` for Passkeys): above
+ * every section, even a heading equal to the query (a reference section named `passkey`).
+ */
+const PAGE_PREFIX_SCORE = 2000
+
+/**
  * Build the index.
  *
  * @param pages - Every page with its sections (error codes are sections of their page, with the code as id).
@@ -57,9 +63,9 @@ function matches(haystack: string, term: string): boolean {
 /**
  * Score an entry for a query; 0 means it does not match.
  *
- * Every word of the query must appear in the title, the page title or the text. A title equal
- * to the query (an error code typed in full) outranks everything, then a title that contains
- * it, a page title, and last the prose.
+ * Every word of the query must appear in the title, the page title or the text. The order is:
+ * a page whose title starts with the query, a section title equal to it (an error code typed
+ * in full), a title that contains it, a page title, and last the prose.
  *
  * @param entry - An index entry.
  * @param query - What the reader typed.
@@ -75,6 +81,12 @@ export function score(entry: SearchEntry, query: string): number {
   const page = entry.p.toLowerCase()
   const text = entry.x.toLowerCase()
   let total = title === whole ? 1000 : 0
+  // A page whose title starts with the query (`passkey` for Passkeys, `self-host` for
+  // Self-hosting) leads, ahead of any section that merely contains the word. A page's own
+  // entry is the one with no anchor.
+  if (!entry.u.includes('#') && loose(whole) !== '' && loose(title).startsWith(loose(whole))) {
+    total = PAGE_PREFIX_SCORE
+  }
   if (total === 0 && matches(title, whole)) {
     total += 100
   }
@@ -90,6 +102,16 @@ export function score(entry: SearchEntry, query: string): number {
     }
   }
   return total
+}
+
+/**
+ * What a result says about itself: its title and where it is.
+ *
+ * @param entry - An index entry.
+ * @returns The heading (or page title) and the page it is on, or `Page` for a page itself.
+ */
+export function label(entry: SearchEntry): { title: string; where: string } {
+  return { title: entry.t, where: entry.u.includes('#') ? entry.p : 'Page' }
 }
 
 /**

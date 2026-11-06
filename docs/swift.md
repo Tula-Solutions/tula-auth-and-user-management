@@ -6,12 +6,11 @@ The Swift package in [`native/swift`](../native/swift/README.md) has two librari
 an emailed code, a passkey, a provider's ID token or a provider's page in a browser
 session, takes the second step and a step-up, resets a password, and keeps the session: the
 access token in memory, the refresh token in the Keychain, refreshed when it is about to
-expire, and bound to a device key where you ask for that. The decisions are in
-[ADR 0051](adr/0051-swift-client.md).
+expire, and bound to a device key where you ask for that.
 
 `TulaAuthUI` is SwiftUI screens on that client, for a sign-in with a password or an emailed
 code, a sign-up, the emailed code that proves an address and a password reset
-(["Screens"](#screens), [ADR 0057](adr/0057-swiftui-screens.md)). For everything else you
+(["Screens"](#screens)). For everything else you
 draw the screens, from the step the server returns.
 
 **What has been run.** The package is built and tested with `swift test` on a Mac, where its
@@ -22,11 +21,7 @@ and no test looked at the Keychain item. **Nothing was run on a device, and Voic
 never turned on.** No test has asked a Secure Enclave, **no passkey sheet, no Sign in with
 Apple sheet and no browser session has been shown by this package**, and no real provider
 was asked: the tests put a software authenticator, a software key and the API's mock
-provider in their place. What is unverified is listed for
-[the session and the flows](plans/phase-2-unverified.md#step-214-the-swift-client-tula-37-adr-0051),
-for [passkeys, providers and the device key](plans/phase-2-unverified.md#step-214-the-swift-client-passkeys-providers-a-device-key-tula-56-adr-0051)
-and for the screens, [the first ones](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)
-and [the second step and the account](plans/phase-2-unverified.md#step-214-the-swiftui-screens-the-second-step-and-the-account-tula-60-adr-0060).
+provider in their place.
 Nothing is published: there is no tag and no registry entry, and the package is used from a
 checkout.
 
@@ -170,7 +165,7 @@ the device and must throw, never return `nil`, when it could not read.
 
 ### A session bound to a device key
 
-**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+**The key identifies the device, not the person.** Signing out does not
 delete it, on purpose: on a shared device the users who sign in one after another are bound
 to the same key. An app that must not carry a key over calls `client.removeDeviceKey()` when
 its user signs out.
@@ -733,8 +728,7 @@ hold their contrast in both schemes.
 
 **What was checked and what was not.** The system's accessibility audit ran on every screen
 in a simulator, in the light scheme and, for the screens one test reaches, the dark one,
-with the keyboard put away first and one finding excluded
-([the list](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
+with the keyboard put away first and one finding excluded.
 Where the focus is asked to go, and what is announced, is tested on the model. **VoiceOver
 itself was never turned on**, and no device, no iPad, no right-to-left language and none of
 the largest text sizes was tried.
@@ -748,8 +742,7 @@ what the UI tests drive.
 ## An email address for an account without one
 
 An account made by signing in with X or Facebook has no email address (`user.email` is
-`nil`). Its user adds one and proves it with an emailed code
-([ADR 0059](adr/0059-email-for-accounts-without-one.md)):
+`nil`). Its user adds one and proves it with an emailed code:
 
 <!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#email-address -->
 ```swift
@@ -769,8 +762,8 @@ not, is `email.already_set`: nothing here changes one.
 ## Organizations
 
 An environment with organizations switched on lets a user belong to several, and a session
-works in one of them at a time: the **active organization**
-([ADR 0065](adr/0065-organizations.md)). `tula.organizations` lists the user's
+works in one of them at a time: the **active organization**.
+`tula.organizations` lists the user's
 organizations, creates one where the environment lets users, and sets or clears the active
 one. Setting it asks the server for a new access token that carries the organization's
 claims (`org_id`, `org_role`, `org_perms`); the refresh token does not change.
@@ -944,7 +937,7 @@ Coverage has a threshold (90% of lines, 85% of functions) that each library meet
 `TulaAuth` over its hand-written sources, and `TulaAuthUI` over the files directly in
 `Sources/TulaAuthUI`. The views (`Sources/TulaAuthUI/Views`) are not counted: a SwiftUI
 `body` runs when something draws it, and `swift test` draws nothing. They hold no decision
-for that reason ([ADR 0057](adr/0057-swiftui-screens.md)).
+for that reason.
 
 ```bash
 swift test --package-path native/swift --enable-code-coverage

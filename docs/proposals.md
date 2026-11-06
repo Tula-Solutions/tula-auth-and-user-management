@@ -2,8 +2,7 @@
 
 An assistant connected through [`tula mcp`](mcp.md) can read an environment. With an
 **agent key** it can also **ask** for a change: it records a *proposal*, and nothing
-happens until a person approves it with a credential the assistant does not have. The
-design is in [ADR 0053](adr/0053-proposals.md).
+happens until a person approves it with a credential the assistant does not have.
 
 An agent can propose four things, each of which an administrator can put back with one
 call:
@@ -251,5 +250,4 @@ proposal. Keep the two apart:
   `tula approve` shows the account's address and name for that.
 
 How an MCP client shows a proposal to you, and whether a model reliably reports "proposed"
-rather than "done", has not been observed with a real client
-([what is unverified](plans/phase-2-unverified.md)).
+rather than "done", has not been observed with a real client.

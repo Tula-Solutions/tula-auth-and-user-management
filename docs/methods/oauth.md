@@ -2,8 +2,6 @@
 
 "Continue with Google", GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook, and connecting or
 disconnecting those accounts in the account page. Each environment uses its own credentials; none ship with Tula.
-The reasoning (the callback, the ticket, when accounts are linked) is in
-[ADR 0026](../adr/0026-oauth.md).
 
 > **Not verified against the live consoles.** Nothing in this repository has real provider
 > credentials: the flow is tested against the API's built-in mock provider. The redirect URI,
@@ -154,12 +152,11 @@ script; the screens are described below.
 - **LinkedIn has neither.** Its authorization request takes five parameters and none of them
   is a PKCE challenge or a nonce, and its ID token is not documented to carry a nonce. A
   LinkedIn code is bound to the sign-in only by the single-use `state` and by the client
-  secret ([why](../adr/0026-oauth.md#discord-and-linkedin)).
+  secret.
 - **X has PKCE; Facebook has neither PKCE nor a nonce** in the flow used here (Meta documents
   them only for its OpenID Connect flow). A Facebook code is bound to the sign-in by the
   single-use `state`, the app secret and the exact redirect URI, as LinkedIn's is: the
-  weakest binding of the eight providers
-  ([why](../adr/0026-oauth.md#x-and-facebook-providers-without-an-address)).
+  weakest binding of the eight providers.
 - A provider sign-in is a **first** factor: a user with two-step verification is still asked
   for the second step.
 - A provider address that the provider does not assert as verified is refused.
@@ -432,7 +429,7 @@ tula.signInWithGoogle() // TulaCeremony<SignInFlow>: starts, shows Google's shee
 ```
 <!-- /snippet -->
 
-Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No browser session and no provider's sheet has been opened by either client.
+Neither client has been tested on a physical device: no browser session and no provider's sheet has been opened by either.
 
 Reference: [`@tula-tech/core`](../reference/core.md), [`@tula-tech/react`](../reference/react.md),
 [`@tula-tech/nextjs`](../reference/nextjs.md), [`@tula-tech/expo`](../reference/expo.md).

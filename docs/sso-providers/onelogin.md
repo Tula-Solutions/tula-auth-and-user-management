@@ -2,7 +2,7 @@
 
 > **Not verified against the live console.** Nothing in this repository has a OneLogin account.
 > The values Tula gives OneLogin and the names Tula reads are what the code does, tested against
-> the built-in mock provider. OneLogin's admin steps are **not verified** until TULA-152.
+> the built-in mock provider. OneLogin's admin steps are **not verified**.
 
 <!-- Vendor docs, checked to resolve on 2026-11-03 (page content not compared):
      SAML: https://developers.onelogin.com/saml

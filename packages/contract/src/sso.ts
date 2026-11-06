@@ -1,4 +1,4 @@
-// Enterprise single sign-on (ADR 0067). Zod-free: the closed lists an SDK, the dashboard and
+// Enterprise single sign-on. Zod-free: the closed lists an SDK, the dashboard and
 // the audit events share. A connection belongs to an organization and is bound to some of the
 // organization's verified domains; only an `active` one signs anybody in.
 

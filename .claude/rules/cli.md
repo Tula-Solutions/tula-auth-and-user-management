@@ -209,7 +209,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   holds `packages: write` in its two pushing jobs only; `.claude/hooks/api-image.test.ts`
   holds the workflow, the script and the scaffolder to one name. A package is private when
   GitHub creates it: the workflow's last job pulls without signing in and fails until a
-  person has made it public ([docs/releasing.md](../../docs/releasing.md), "The API image").
+  person has made it public ([docs/internal/releasing.md](../../docs/internal/releasing.md), "The API image").
   **Five templates: `react-vite`, `nextjs`, `expo`, `swiftui`, `compose`** (`FRAMEWORKS`;
   the last three copies of `examples/expo/app`, `examples/swiftui` and `examples/compose`).
   A native app is a directory of its own (`app`, `ios`, `android`) beside the stack's

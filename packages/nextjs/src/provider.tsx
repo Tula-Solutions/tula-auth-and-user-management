@@ -29,7 +29,7 @@ export interface InitialAuthState {
   /** The user, from `currentUser()`, when the layout fetched it. */
   user?: User | null
   /**
-   * The active organization's id, from `auth().orgId` (ADR 0065), so that the first paint
+   * The active organization's id, from `auth().orgId`, so that the first paint
    * already knows it. Left out or `null` for none.
    */
   organizationId?: string | null

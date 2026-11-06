@@ -36,10 +36,10 @@ describe('inScope', () => {
 describe('collectPages', () => {
   const pages = collectPages()
 
-  test('every Markdown file under docs/ except plans, adr and the codebase map has a page', () => {
+  test('every Markdown file under docs/ except plans, adr, internal and the codebase map has a page', () => {
     const expected = [...new Glob('**/*.md').scanSync({ cwd: DOCS_DIR })]
       .map((file) => `docs/${file}`)
-      .filter((file) => !/^docs\/(plans|adr|codebase-map)\//.test(file))
+      .filter((file) => !/^docs\/(plans|adr|internal|codebase-map)\//.test(file))
       .sort()
     expect(pages.map((page) => page.file)).toEqual(expected)
     expect(pages.length).toBeGreaterThan(40)
@@ -52,6 +52,8 @@ describe('collectPages', () => {
   })
 
   test('what the site leaves out is not among the pages', () => {
-    expect(pages.some((page) => /\/(plans|adr|codebase-map)\//.test(page.file))).toBe(false)
+    expect(pages.some((page) => /\/(plans|adr|internal|codebase-map)\//.test(page.file))).toBe(
+      false
+    )
   })
 })

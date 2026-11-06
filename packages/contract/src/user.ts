@@ -28,7 +28,7 @@ export const UserSchema = z
     id: z.string(),
     /**
      * The account's email address, or `null` for an account that has none: one created by a
-     * first sign-in with a provider Tula takes no address from (X, Facebook; ADR 0026). Such
+     * first sign-in with a provider Tula takes no address from (X, Facebook). Such
      * an account is sent no email, and nothing is looked up by an address for it.
      */
     email: z.string().nullable(),
@@ -44,7 +44,8 @@ export const UserSchema = z
      * user proved with a code sent to it is ever here, so one that is present is verified
      * (`phoneNumberVerifiedAt` says when). Two accounts may have the same one. It is contact
      * data and, only where the environment has the texted sign-in code on and exactly one
-     * account holds the number, a way to sign in to that account (ADR 0037). Optional in the schema, so a client
+     * account holds the number, a way to sign in to that account. Optional in the schema, so a
+     * client
      * reading an older server's answer treats a missing one as `null`.
      */
     phoneNumber: z.string().nullable().optional(),
@@ -196,7 +197,7 @@ export const ImportUserRowSchema = z
 
 /**
  * A Firebase project's password hash parameters, from `firebase auth:export` or the console's
- * "password hash parameters" (ADR 0066). Given once per call and used by every row whose
+ * "password hash parameters". Given once per call and used by every row whose
  * algorithm is `firebase_scrypt`. All four are secrets of the source project: the signer key
  * above all. They are sealed where stored, and never returned, logged or recorded.
  */
@@ -234,7 +235,8 @@ export const ImportSkipReasonSchema = z
 /**
  * What became of one row. `index` is the row's place in the request, so the answer can be
  * matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
- * `reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+ * `reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one
+ * a contract error `code` (an `import.*` code, `email.invalid`,
  * …) and its default message.
  */
 export const ImportRowResultSchema = z
@@ -252,8 +254,8 @@ export const ImportRowResultSchema = z
       id: z.uuid().optional(),
       /**
        * Whether that user's stored `externalId` equals the row's. It is how a caller tells
-       * "an earlier attempt of this very row made them" from a user who was there before
-       * (ADR 0066, "A retried batch"). Present with `id`; `false` when either side has none.
+       * "an earlier attempt of this very row made them" from a user who was there before.
+       * Present with `id`; `false` when either side has none.
        */
       sameExternalId: z.boolean().optional(),
     }),
@@ -317,7 +319,7 @@ export const PhoneNumberVerifyRequestSchema = z
 
 /**
  * Ask for a code to be emailed to an address the signed-in user wants on their account
- * (`POST /v1/client/me/email`; ADR 0059). Only for an account that has **no** address: one
+ * (`POST /v1/client/me/email`). Only for an account that has **no** address: one
  * made by a first sign-in with a provider Tula takes no address from (X, Facebook).
  *
  * @example
@@ -335,7 +337,8 @@ export const EmailAddressRequestSchema = z
  *
  * @example
  * ```ts
- * EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z' })
+ * EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z'
+ * })
  * ```
  */
 export const EmailCodeSentSchema = z
@@ -360,7 +363,7 @@ export const EmailAddressVerifyRequestSchema = z
 
 /**
  * Give a user who has no email address one, from a server or the dashboard
- * (`PUT /v1/admin/users/{userId}/email`; ADR 0059). The address is stored **unverified**:
+ * (`PUT /v1/admin/users/{userId}/email`). The address is stored **unverified**:
  * nobody has shown that they read mail sent to it, and the first emailed code its holder
  * enters is what verifies it.
  *

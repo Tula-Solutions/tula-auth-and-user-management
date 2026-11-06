@@ -10,7 +10,7 @@ import {
 } from './sso'
 import { SSO_IDP_PRESETS } from './sso-attributes'
 
-// The admin API's shapes for an enterprise connection (ADR 0067). The client secret is
+// The admin API's shapes for an enterprise connection. The client secret is
 // accepted on create and update and never returned: the view says only that one is set.
 
 const Domains = z.array(OrganizationDomainNameSchema).max(MAX_SSO_CONNECTION_DOMAINS)
@@ -66,7 +66,7 @@ export const SsoAttributeMappingSchema = z
 
 /**
  * An organization's IdP group to role mapping. The order is the precedence: a user in several
- * mapped groups gets the role of the first of their groups in this list (ADR 0067).
+ * mapped groups gets the role of the first of their groups in this list.
  */
 export const SsoGroupRolesSchema = z
   .strictObject({
@@ -81,7 +81,7 @@ export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
 
 /**
  * The mapping as a setup link's portal sees it: `locked` marks a mapping to a role with a
- * system permission (`org:sys:*`), which the portal shows and cannot change (ADR 0067).
+ * system permission (`org:sys:*`), which the portal shows and cannot change.
  */
 export const SetupGroupRolesSchema = z
   .strictObject({
@@ -203,7 +203,7 @@ export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionReque
 /** A connection as the admin API returns it. */
 export type SsoConnection = z.infer<typeof SsoConnectionSchema>
 
-/** One way a change to a connection lets more people sign in, or asks less of them (ADR 0067). */
+/** One way a change to a connection lets more people sign in, or asks less of them. */
 export type SsoWeakening =
   | 'activate'
   | 'active_content'
@@ -214,13 +214,14 @@ export type SsoWeakening =
 /**
  * What a change to a connection lets through that it did not before. The one copy of the rule:
  * the server's audit entry says `weakened: true` for exactly these, and the dashboard asks
- * first and words each (ADR 0067). A name, or a field left `undefined`, is no change.
+ * first and words each. A name, or a field left `undefined`, is no change.
  *
  * @param current - The connection as it is.
  * @param changes - The fields being changed.
  * @returns The weakenings, in a fixed order; empty when nothing is weakened.
  * @example
- * ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, { status: 'active' }) // ['activate']
+ * ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, {
+ * status: 'active' }) // ['activate']
  */
 export function ssoWeakenings(
   current: Pick<SsoConnection, 'status' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa'>,

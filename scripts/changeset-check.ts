@@ -5,7 +5,7 @@ import { PUBLISHABLE_PACKAGES } from './publish-manifest'
 // The changeset check (.github/workflows/changeset-check.yml): a pull request into `develop`
 // that changes what a publishable package ships carries a changeset, or the label
 // `no-changeset`. Without it the change would reach `develop` and no release PR would ever
-// name it (docs/releasing.md, "The release flow"). The decision is a pure function, tested in
+// name it (docs/internal/releasing.md, "The release flow"). The decision is a pure function, tested in
 // `.claude/hooks/changeset-check.test.ts`; only `main()` reads git and the working tree.
 //
 // It is a check and not a required status check: the repository's ruleset does not list it.

@@ -5,9 +5,9 @@ Nine packages are released to npm under the `latest` dist-tag, as plain `0.x` ve
 dist-tag ([First release](#first-release) records how it went; `-alpha.0` was skipped on
 purpose, step 1); the owner then dropped the label, and `0.1.0` was skipped so that no
 plain version shares its number with the alphas. Two are built and checked and **held back**. The licence is Apache-2.0 for
-the whole repository ([`LICENSE`](../LICENSE)). The npm scope is decided: `@tula-tech`, the
+the whole repository ([`LICENSE`](../../LICENSE)). The npm scope is decided: `@tula-tech`, the
 owner's npm organisation (`create-tula` is unscoped). The design is in
-[ADR 0020](adr/0020-packaging-and-release.md).
+[ADR 0020](../adr/0020-packaging-and-release.md).
 
 **The first release is made by a person, from their machine** ([First release](#first-release)):
 the release workflow has no token and publishes through npm trusted publishing, which npm
@@ -500,7 +500,7 @@ nothing else.
 
 Nothing in a release needs the docs site to build, but a release that breaks it (a docs link that
 no longer resolves) fails this workflow and leaves the previous site in place; `bun run verify`
-catches that before the merge. Details: [`apps/docs/README.md`](../apps/docs/README.md),
+catches that before the merge. Details: [`apps/docs/README.md`](../../apps/docs/README.md),
 "Where it is published".
 
 ## What stops a publish that was not meant

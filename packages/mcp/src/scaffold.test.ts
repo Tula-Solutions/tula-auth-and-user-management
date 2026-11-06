@@ -36,7 +36,7 @@ const RELEASED = SCAFFOLD_FRAMEWORKS.filter((framework) => !NOT_RELEASED.include
 describe('a scaffold that needs a package that is not released', () => {
   // An agent told to `bun add @tula-tech/expo` gets a 404 from the registry, or, worse,
   // whatever somebody else publishes under a name close to it. create-tula refuses the
-  // template for the same reason (ADR 0020, docs/releasing.md).
+  // template for the same reason (ADR 0020, docs/internal/releasing.md).
   test.each(
     NOT_RELEASED.flatMap((framework) =>
       Object.keys(TOOLS).map((tool) => [tool, framework] as const)
