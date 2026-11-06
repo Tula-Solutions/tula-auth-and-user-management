@@ -15,8 +15,8 @@ const REDIRECT_URI = 'https://auth.northline.app/v1/oauth/callback/facebook'
 const CLIENT_ID = '1234567890123456'
 const SECRET = 'facebook-app-secret'
 const ACCESS_TOKEN = 'facebook-access-token-canary'
-/** Where `arctic`'s client exchanges the code: the version in it is the library's. */
-const TOKEN_URL = 'https://graph.facebook.com/v16.0/oauth/access_token'
+/** Where the code is exchanged: on the pinned Graph API version, like the profile read. */
+const TOKEN_URL = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/oauth/access_token`
 const PROOF = createHmac('sha256', SECRET).update(ACCESS_TOKEN).digest('hex')
 const USER_URL = `https://graph.facebook.com/v25.0/me?fields=id%2Cname&appsecret_proof=${PROOF}`
 const credentials = { clientId: CLIENT_ID, clientSecret: SECRET }
@@ -115,7 +115,9 @@ describe('the authorization URL', () => {
         redirectUri: REDIRECT_URI,
       })
     )
-    expect(url.origin + url.pathname).toBe('https://www.facebook.com/v16.0/dialog/oauth')
+    expect(url.origin + url.pathname).toBe(
+      `https://www.facebook.com/${FACEBOOK_GRAPH_VERSION}/dialog/oauth`
+    )
     expect(Object.fromEntries(url.searchParams)).toEqual({
       response_type: 'code',
       client_id: CLIENT_ID,
@@ -281,6 +283,11 @@ describe('refusals', () => {
     [
       'a token endpoint that is down',
       { [TOKEN_URL]: () => new Response('x', { status: 502 }) },
+      'unavailable',
+    ],
+    [
+      'a token answer that is not JSON',
+      { [TOKEN_URL]: () => new Response('<html>', { status: 200 }) },
       'unavailable',
     ],
     [
