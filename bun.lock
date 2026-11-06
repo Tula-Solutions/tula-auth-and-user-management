@@ -21,7 +21,7 @@
     },
     "apps/api": {
       "name": "@tula-tech/api",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@hono/standard-validator": "^0.4.0",
         "@scalar/api-reference": "1.72.4",
@@ -50,7 +50,7 @@
     },
     "apps/dashboard": {
       "name": "@tula-tech/dashboard",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@tanstack/react-query": "^5.104.1",
         "@tanstack/react-router": "^1.170.41",
@@ -86,7 +86,7 @@
     },
     "apps/docs": {
       "name": "@tula-tech/docs",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@shikijs/transformers": "^4.5.0",
         "@tula-tech/contract": "workspace:*",
@@ -126,7 +126,7 @@
     },
     "examples/nextjs-app-router": {
       "name": "@tula-tech/example-nextjs",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@tula-tech/nextjs": "workspace:*",
         "@tula-tech/react": "workspace:*",
@@ -143,7 +143,7 @@
     },
     "examples/react-vite": {
       "name": "@tula-tech/example-react-vite",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@tula-tech/react": "workspace:*",
         "react": "^19.3.0",
@@ -159,7 +159,7 @@
     },
     "examples/tula-config": {
       "name": "@tula-tech/example-config",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@tula-tech/config": "workspace:*",
       },
@@ -169,7 +169,7 @@
     },
     "packages/admin": {
       "name": "@tula-tech/admin",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
       },
@@ -180,7 +180,7 @@
     },
     "packages/cli": {
       "name": "@tula-tech/cli",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "bin": {
         "tula": "./src/bin.ts",
       },
@@ -199,7 +199,7 @@
     },
     "packages/config": {
       "name": "@tula-tech/config",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "zod": "^4.6.5",
@@ -221,7 +221,7 @@
     },
     "packages/contract": {
       "name": "@tula-tech/contract",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "zod": "^4.6.5",
       },
@@ -231,7 +231,7 @@
     },
     "packages/core": {
       "name": "@tula-tech/core",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
       },
@@ -241,7 +241,7 @@
     },
     "packages/create-tula": {
       "name": "create-tula",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "bin": {
         "create-tula": "./src/bin.ts",
       },
@@ -267,7 +267,7 @@
     },
     "packages/expo": {
       "name": "@tula-tech/expo",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/core": "workspace:*",
       },
@@ -306,7 +306,7 @@
     },
     "packages/expo-screens": {
       "name": "@tula-tech/expo-screens",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",
@@ -333,7 +333,7 @@
     },
     "packages/mcp": {
       "name": "@tula-tech/mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@modelcontextprotocol/server": "^2.2.0",
         "@tula-tech/admin": "workspace:*",
@@ -350,7 +350,7 @@
     },
     "packages/nextjs": {
       "name": "@tula-tech/nextjs",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",
@@ -375,7 +375,7 @@
     },
     "packages/react": {
       "name": "@tula-tech/react",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@tula-tech/contract": "workspace:*",
         "@tula-tech/core": "workspace:*",
@@ -561,8 +561,6 @@
     "@codemirror/view": ["@codemirror/view@6.43.13", "", { "dependencies": { "@codemirror/state": "^6.7.0", "crelt": "^1.0.6", "style-mod": "^4.1.0", "w3c-keyname": "^2.2.4" } }, "sha512-sihaFrUzAsYBQsL9J2t69y8nfMQGwcYmggAZsk+kjPbjYZMyuf2hU8tUNTZ+P+isb6XRr8JE22TZlJxBoVdH1A=="],
 
     "@colors/colors": ["@colors/colors@1.5.0", "", {}, "sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ=="],
-
-    "@commander-js/extra-typings": ["@commander-js/extra-typings@15.0.0", "", { "peerDependencies": { "commander": "~15.0.0" } }, "sha512-yeJlba62xqmkgELUsn7356MEnzLLu/fw2x4lofFqGnXh6YysRdEs2BaLeLtg1+KU0AXvMeqQvTTp+3hBEBK+EA=="],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
@@ -2284,8 +2282,6 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@commander-js/extra-typings/commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
-
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
 
     "@floating-ui/core/@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
@@ -2339,6 +2335,8 @@
     "next/postcss": ["postcss@8.5.23", "", { "dependencies": { "nanoid": "^3.3.16", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg=="],
 
     "npm-run-path/path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
+
+    "orval/@commander-js/extra-typings": ["@commander-js/extra-typings@15.0.0", "", { "peerDependencies": { "commander": "~15.0.0" } }, "sha512-yeJlba62xqmkgELUsn7356MEnzLLu/fw2x4lofFqGnXh6YysRdEs2BaLeLtg1+KU0AXvMeqQvTTp+3hBEBK+EA=="],
 
     "orval/commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 

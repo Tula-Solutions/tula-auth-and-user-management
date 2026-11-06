@@ -1,5 +1,58 @@
 # @tula-tech/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- deb19d7: `POST /v1/admin/audit-logs/export` streams the audit log as NDJSON or CSV, oldest first, resumable from the cursor of the last entry written, and records an `audit.exported` entry. `tula audit export` writes it to standard output; `@tula-tech/admin` gains `stream()` for it.
+- 595f5d9: Custom organization roles (ADR 0065). An environment defines roles of its own beside `admin` and `member`: `/v1/admin/organization-roles` (list, define, read, change, remove; `listOrganizationRoles`, `createOrganizationRole`, `getOrganizationRole`, `updateOrganizationRole`, `deleteOrganizationRole` in `@tula-tech/admin`). A role is its key, a name and up to 32 permissions of the form `org:<feature>:<action>` (a custom role may hold the system permissions Tula defines, such as `org:sys:memberships:manage`, and no other `org:sys:*` key); an environment has up to 50. A change is made over the role's version (`ETag` / `If-Match`), and giving a role a permission is recorded as a weakening. The contract gains the role schemas, `@tula-tech/contract/organization-permissions` (the grammar, the limits and `organizationRoleWeakenings`, Zod-free), the error codes `organization.role_exists`, `organization.role_in_use`, `organization.role_built_in` and `organization.role_limit`, and the activity types `organization_role.created`, `.updated` and `.deleted` (their data holds the role's key, a count and the names of the fields, never a name or a permission). `@tula-tech/config` accepts an `organizationRoles` list per environment (left out, roles are not managed; the fingerprint of an existing file is unchanged), and `tula diff` / `tula apply` plan and write them: a role is its key, the permissions are a set, `--prune` removes an unlisted role, a role that gains a permission needs `--allow-weaker` under `--yes`, and every write carries the version the plan read. `@tula-tech/core` gets the new error codes in its generated types.
+- a1680ba: Add `list_sso_connections` and `get_sso_connection` read tools and an `sso_connections` doctor check; the admin client's `listSsoConnections` takes an optional `organizationId`.
+- df54567: `tula import --from clerk|auth0|firebase|supabase|better-auth <export file>` moves users, with their password hashes, from another provider. It reads the provider's export on your machine (no request to the old provider), prints a dry-run report (counts, and every refused row by number, code and masked address) and, with `--yes`, imports in batches of up to 500 users and 4 MB through `POST /v1/admin/users/import`, waiting out the rate limit. A progress file of row numbers, counts, codes and ids (no address, hash or signer key) lets an interrupted run continue; users that exist are skipped. Clerk organizations and memberships are imported through the organization admin routes. better-auth's scrypt hashes, which the server does not read, are refused with a reason (or imported without a password with `--allow-passwordless`). One migration guide per provider is in the docs.
+
+### Patch Changes
+
+- b06e162: `tula approve` labels the agent-supplied summary "Agent says", and `tula mcp` with an agent key ignores `TULA_ADMIN_TOKEN` unless `--admin-token-file` is given.
+- eb9d6c0: Hardening: control characters refused in the dev block, `--` before docker compose arguments, a size cap on file and standard-input reads, one permission warning per file, the key kind in the `tula approve` prompt, and repeated single-value flags refused.
+- 3e5e07c: Fuller npm READMEs and package author metadata.
+- 67d96f6: A person can reject a pending agent proposal: `POST /v1/admin/proposals/:id/reject` moves it to the terminal `rejected` status, which the agent reads on its routes. `tula approve` names the new status.
+- 1784908: `tula audit export --format ndjson` keeps every record when a field holds a single quote; the count and the resume cursor now match what was written.
+- ad8b8e2: `tula import` reports the users of a retried batch correctly. When a batch got no answer and was sent again, the users the first attempt had made were counted as skipped and a Clerk member was found by address. `POST /v1/admin/users/import` now answers a skipped `email_exists` row with the existing user's `id` and `sameExternalId` (whether their stored external id is the row's); `tula import` counts such a row in a retried batch as created and pairs Clerk members by the recorded id. The answer is additive.
+- Updated dependencies [deb19d7]
+- Updated dependencies [d57ea22]
+- Updated dependencies [c66479e]
+- Updated dependencies [541bc80]
+- Updated dependencies [3bcf937]
+- Updated dependencies [3e5e07c]
+- Updated dependencies [07874cb]
+- Updated dependencies [110ae64]
+- Updated dependencies [568bcec]
+- Updated dependencies [595f5d9]
+- Updated dependencies [2d098d6]
+- Updated dependencies [e15bd1c]
+- Updated dependencies [ef6030d]
+- Updated dependencies [2ee73d3]
+- Updated dependencies [ef92c8b]
+- Updated dependencies [24288d6]
+- Updated dependencies [358f646]
+- Updated dependencies [9c2bafb]
+- Updated dependencies [67d96f6]
+- Updated dependencies [0f5e915]
+- Updated dependencies [49bcd6d]
+- Updated dependencies [a1680ba]
+- Updated dependencies [9db679d]
+- Updated dependencies [38c10a1]
+- Updated dependencies [757bde6]
+- Updated dependencies [ad8b8e2]
+- Updated dependencies [048f982]
+- Updated dependencies [721ed9e]
+- Updated dependencies [ece0a87]
+- Updated dependencies [bf692b6]
+- Updated dependencies [810d68f]
+  - @tula-tech/contract@0.3.0
+  - @tula-tech/admin@0.3.0
+  - @tula-tech/mcp@0.3.0
+  - @tula-tech/config@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

@@ -1,5 +1,49 @@
 # @tula-tech/mcp
 
+## 0.3.0
+
+### Minor Changes
+
+- ef92c8b: Organizations, the guide and the assistant tools (ADR 0065). `@tula-tech/mcp` gains three read-only tools, `list_organizations`, `list_organization_members` (a membership has a user id and a role, no email address) and `list_organization_roles`, over the admin API, bounded and projected from an allow-list like the others. `@tula-tech/react` gains the `organizations` group of localization strings, the words of the Tula UI items `organization-switcher` and `organization-profile`; the prebuilt components do not draw them.
+- a1680ba: Add `list_sso_connections` and `get_sso_connection` read tools and an `sso_connections` doctor check; the admin client's `listSsoConnections` takes an optional `organizationId`.
+
+### Patch Changes
+
+- 3bcf937: The redactor now replaces `tula_sk_`/`tula_ak_` keys whose environment segment has digits and configured secrets of four characters or more. `draft_settings_change` takes a provider secret only from a variable named `*_SECRET` or `*_PRIVATE_KEY`. `list_audit_entries` checks `action` against the contract's list. `detect_framework` reads the manifest through one no-follow handle.
+- 3e5e07c: Fuller npm READMEs and package author metadata.
+- 0f5e915: The Compose example sets `allowInsecureHttp` for the emulator's plain-http address to the host.
+- bf692b6: `useOrganizationList().create()` now ends with the list as the server holds it after the creation, even when a fetch started before it was still on its way. The `list_users` tool says its page size is at most 50.
+- Updated dependencies [deb19d7]
+- Updated dependencies [d57ea22]
+- Updated dependencies [c66479e]
+- Updated dependencies [541bc80]
+- Updated dependencies [3e5e07c]
+- Updated dependencies [07874cb]
+- Updated dependencies [110ae64]
+- Updated dependencies [568bcec]
+- Updated dependencies [595f5d9]
+- Updated dependencies [2d098d6]
+- Updated dependencies [e15bd1c]
+- Updated dependencies [ef6030d]
+- Updated dependencies [2ee73d3]
+- Updated dependencies [24288d6]
+- Updated dependencies [358f646]
+- Updated dependencies [9c2bafb]
+- Updated dependencies [67d96f6]
+- Updated dependencies [49bcd6d]
+- Updated dependencies [a1680ba]
+- Updated dependencies [9db679d]
+- Updated dependencies [38c10a1]
+- Updated dependencies [757bde6]
+- Updated dependencies [ad8b8e2]
+- Updated dependencies [048f982]
+- Updated dependencies [721ed9e]
+- Updated dependencies [ece0a87]
+- Updated dependencies [810d68f]
+  - @tula-tech/contract@0.3.0
+  - @tula-tech/admin@0.3.0
+  - @tula-tech/config@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
