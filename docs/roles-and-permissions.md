@@ -55,8 +55,8 @@ an organization. There are six, and no others can be invented:
 | `org:sys:organization:delete` | Delete the organization. |
 | `org:sys:memberships:read` | See who the members are. |
 | `org:sys:memberships:manage` | Add and remove members and change their roles. |
-| `org:sys:invitations:manage` | Invite people. Used when [invitations](organizations.md#invitations-and-verified-domains) arrive. |
-| `org:sys:domains:manage` | Manage the organization's verified domains. Used when verified domains arrive. |
+| `org:sys:invitations:manage` | Invite people. |
+| `org:sys:domains:manage` | Manage the organization's verified domains. |
 
 A custom role may hold any of these beside its own keys.
 
@@ -89,7 +89,7 @@ rules for managed and unmanaged roles and for `--prune`).
 
 <!-- snippet: examples/tula-config/tula.config.ts#organization-roles -->
 ```ts
-// The custom roles of the environment's organizations (ADR 0065), beside the built-in
+// The custom roles of the environment's organizations, beside the built-in
 // `admin` and `member`. A role is its key; the permissions are a set. Giving a role a
 // permission it did not have widens what its members may do, so `tula apply --yes`
 // asks for `--allow-weaker`. `dev` has no `organizationRoles` key: its roles are not
@@ -186,4 +186,3 @@ export invoices?" with an agent key, which cannot change anything here.
 
 - [Organizations](organizations.md): turning them on, the active organization, the token claims.
 - [Settings as code](config.md#organization-roles): `organizationRoles`.
-- [ADR 0065](adr/0065-organizations.md): why roles are environment-wide and why `has()` is exact.

@@ -3,8 +3,7 @@
 How to take a company from "we have an identity provider" to "everyone signs in through it, and
 leaves when the directory says so". This page is the path through the whole feature. The
 protocol details (every OIDC and SAML check, the error codes) are on
-[Enterprise single sign-on (OIDC and SAML)](methods/sso.md), the reasons are in
-[ADR 0067](adr/0067-enterprise-sso.md), and provisioning has its own page,
+[Enterprise single sign-on (OIDC and SAML)](methods/sso.md), and provisioning has its own page,
 [SCIM provisioning](scim.md).
 
 | You want to | Go to |
@@ -247,8 +246,7 @@ refused. The client secret is write-only.
 ## The identity provider pages
 
 Each page has the exact values to paste in both directions: what Tula gives the provider and what the
-provider gives Tula. **None of the console steps has been checked against a live console yet**
-(that is TULA-152); the pages say so, and cite the vendor documentation.
+provider gives Tula. **None of the console steps has been checked against a live console**; the pages say so, and cite the vendor documentation.
 
 | Provider | SAML | OIDC |
 | --- | --- | --- |

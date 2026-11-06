@@ -5,9 +5,6 @@ A [session profile](methods/sessions.md) names the template its sessions use. Th
 arrive under one claim of the access token, `ext`, so that your backend can decide from the
 token alone: no extra request for "what plan is this user on" or "which address is this".
 
-The reasoning, and what was left out on purpose, is in
-[ADR 0036](adr/0036-jwt-templates.md).
-
 ## Define a template
 
 A template lives in the environment's settings, under `sessions.jwtTemplates`, and a profile
@@ -117,10 +114,9 @@ the profile your staff tool asks for); it is not a per-user role. Per-user claim
 source that knows the user: a [`before_token` hook](hooks.md), which asks your backend for
 them ([Claims from a hook](#claims-from-a-hook)). An organization's claims (`org_id`,
 `org_role`, `org_perms`) are not a template's: the server writes them at the top level of the
-token while an organization is active ([ADR 0065](adr/0065-organizations.md),
-[Organizations](organizations.md#reading-the-organization-in-your-app)), beside `ext`.
+token while an organization is active ([Organizations](organizations.md#reading-the-organization-in-your-app)), beside `ext`.
 Both count toward the token's size, which is why the Next.js SDK stores a large access token in
-two cookies ([ADR 0029](adr/0029-nextjs-sdk.md)).
+two cookies.
 
 ## Rules
 

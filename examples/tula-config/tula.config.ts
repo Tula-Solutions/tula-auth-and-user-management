@@ -85,7 +85,7 @@ export default defineConfig({
         // #endregion
         audit: { retentionDays: 365 },
         // #region organizations
-        // Organizations (ADR 0065) are off until an environment switches them on; the roles
+        // Organizations are off until an environment switches them on; the roles
         // below only exist while they are on. The other fields are shown at their defaults,
         // except `allowUserCreated`: here a signed-in user may create up to five.
         organizations: {
@@ -189,7 +189,7 @@ export default defineConfig({
       ],
       // #endregion
       // #region organization-roles
-      // The custom roles of the environment's organizations (ADR 0065), beside the built-in
+      // The custom roles of the environment's organizations, beside the built-in
       // `admin` and `member`. A role is its key; the permissions are a set. Giving a role a
       // permission it did not have widens what its members may do, so `tula apply --yes`
       // asks for `--allow-weaker`. `dev` has no `organizationRoles` key: its roles are not
