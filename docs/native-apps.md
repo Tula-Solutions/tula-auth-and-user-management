@@ -6,16 +6,14 @@ tells Tula which apps are theirs, per environment, and Tula builds both files fr
 
 This page covers registering an app, the two files and what is in them, how to get them
 onto your own domain, which is where the platforms look, and how a provider sign-in gets
-back into your app. The decisions are in [ADR 0040](adr/0040-native-app-identity.md) and
-[ADR 0044](adr/0044-app-link-and-custom-scheme-redirects.md).
+back into your app.
 
 **What this is for today, and what it is not.** A registered app is named in the files so
 that it may use the credentials saved for the domain (the `webcredentials` section, the
 `get_login_creds` relation), and the API accepts a passkey made or used in it
 ([below](#passkeys-from-an-app)). An app you give [link paths](#link-paths) is also handed links
 of your domain, which is how a [provider sign-in returns to it](#returning-to-your-app-after-a-provider-sign-in).
-The native SDKs arrive with later steps of
-[Phase 2](plans/phase-2.md). **Without link paths, neither file hands an app a link of your
+**Without link paths, neither file hands an app a link of your
 domain.**
 
 ## Register an app
@@ -336,8 +334,7 @@ What follows from that:
   to the app, and keep working from the web and from any other registered app.
 - **The API cannot tell that a request really comes from your app.** It refuses what an
   honest phone reports as another app. The client kind is the caller's word, and somebody
-  who holds a passkey's private key outside a phone can write any origin
-  ([ADR 0027](adr/0027-passkeys.md#native-apps-added-2026-10-09-tula-31) has the argument).
+  who holds a passkey's private key outside a phone can write any origin.
 
 | The answer | What it means |
 | --- | --- |
@@ -444,7 +441,7 @@ never in the redirect URL.
 Everything above returns to your app from a browser tab. Google's own SDKs offer another
 way: Credential Manager on Android and Google Sign-In on iOS show the system's account
 sheet and hand your app a Google **ID token**. The API takes that token in a sign-in of
-two requests ([ADR 0045](adr/0045-native-id-token-exchange.md)):
+two requests:
 
 1. `POST /v1/client/sign-ins/id-token` with `{ "provider": "google" }` starts the sign-in
    and answers the attempt, its secret, and a **nonce the server made**.
@@ -476,8 +473,7 @@ What to know:
 ## Signing in with Apple without a browser
 
 On iOS the system's Sign in with Apple sheet (`ASAuthorizationAppleIDProvider`) hands your
-app an **identity token**. The API takes it in the same two requests
-([ADR 0047](adr/0047-native-apple-sign-in.md)):
+app an **identity token**. The API takes it in the same two requests:
 
 1. `POST /v1/client/sign-ins/id-token` with `{ "provider": "apple" }`, from an `ios`
    client, answers the attempt, its secret and a **nonce the server made**.
@@ -565,8 +561,7 @@ Each SDK's guide says where its side of a row goes: [expo.md](expo.md), [swift.m
 [kotlin.md](kotlin.md). **Nobody has taken any row of this table past its first line on a
 device**: no passkey sheet, no Apple or Google sheet and no system browser has been opened
 by an SDK of this repository, and no file was fetched by Apple or Android
-([below](#what-could-not-be-verified-here), and
-[what was and was not run](plans/phase-2-unverified.md)). What a vendor's console asks for
+([below](#what-could-not-be-verified-here)). What a vendor's console asks for
 changes; the vendor's own documentation is the authority for its column.
 
 ## What could not be verified here
@@ -603,26 +598,21 @@ not proven:
 - **Google's ID tokens from an app.** No token Google made was ever verified here: the
   checks are tested with tokens the tests sign and with the mock provider's. Which client
   ID Google puts in `aud` and which in `azp` on each platform, and that the nonce arrives
-  as the app passed it, are from documentation and third parties
-  ([ADR 0045](adr/0045-native-id-token-exchange.md)). If either is otherwise, sign-ins are
+  as the app passed it, are from documentation and third parties. If either is otherwise, sign-ins are
   refused and nothing wrong is accepted.
 
 - **Apple's identity tokens from an app.** No token Apple made was ever verified here, and
   no iOS app was run. That a native token's audience is the bundle ID, and that Apple
   echoes the request's nonce unchanged, are read from Apple's documentation; that apps
-  hash the nonce is a convention of other backends, not Apple's
-  ([ADR 0047](adr/0047-native-apple-sign-in.md)). If any is otherwise, sign-ins are
+  hash the nonce is a convention of other backends, not Apple's. If any is otherwise, sign-ins are
   refused and nothing wrong is accepted.
 
 Apple's validation is `swcutil` on a Mac and the device's own logs; Google's is the Digital
 Asset Links API (`https://digitalassetlinks.googleapis.com/v1/statements:list`). Run both
 against your domain before relying on the files.
 
-## Not built yet
+## Not available
 
-- The native SDKs that run a passkey ceremony for you. The API's side is built
-  ([above](#passkeys-from-an-app)); until the SDKs exist an app calls the platform and the
-  API itself.
 - The native SDKs' side of a sign-in that returns to an app, and linking a provider to a
   signed-in account from a native app (that start is a browser's, and is refused a custom
   scheme).

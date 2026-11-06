@@ -1,9 +1,6 @@
 # The `tula` command line
 
-`tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
-in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
-Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`;
-[releasing.md](internal/releasing.md)). **Run `bunx tula` only in a project that has the CLI
+`tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`). **Run `bunx tula` only in a project that has the CLI
 installed**: anywhere else the name resolves to an unrelated npm package called `tula`. Outside a
 project, name the package: `bunx --package @tula-tech/cli@latest tula <command>`. Inside this
 repository run `bun run tula -- <command>`, and see
@@ -123,11 +120,10 @@ A phone cannot reach `localhost`, and a passkey, an app link and a native sign-i
 on a name the phone trusts. `--tunnel` starts the same stack under a public https address
 that is the same on every run, through
 [Tailscale Funnel](https://tailscale.com/kb/1223/funnel): the machine's own name in your
-tailnet's `ts.net` domain ([ADR 0049](adr/0049-dev-tunnel.md) has why this service).
+tailnet's `ts.net` domain.
 
 **Nobody has run this against a phone, and no tunnel was opened while it was built**: the
-command is tested against a stand-in for Tailscale
-([what was not verified](plans/phase-2-unverified.md#step-212-tula-dev---tunnel-tula-21-adr-0049)).
+command is tested against a stand-in for Tailscale.
 
 Before the first run, once, with Tailscale's own tools (`tula` takes no credential of
 Tailscale's, reads none and stores none):
@@ -326,7 +322,7 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 ```
 
 A person's answer to a change an assistant proposed through `tula mcp`
-([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
+([proposals.md](proposals.md)). It reads the proposal,
 and what it is about, with **your secret key**: a user with their address and whether they
 are banned, a session with whose it is (the user's id, address and name), the kind of
 client, when it was signed in and whether it is live now or has already ended (live by

@@ -4,8 +4,7 @@ An environment's sign-in behaviour is its **settings** (app name, password polic
 methods, allowed origins and redirect URLs, notices, the MFA policy, passkeys, session profiles)
 and its **OAuth providers**. Both can be written in a file, reviewed in a pull request and
 applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#webhook-endpoints),
-below), hooks, native apps and [organization roles](#organization-roles). The decisions behind this page are in
-[ADR 0030](adr/0030-config-and-apply.md).
+below), hooks, native apps and [organization roles](#organization-roles).
 
 > `@tula-tech/config` and `@tula-tech/cli` are released to npm
 > (`bun add -d @tula-tech/config@latest @tula-tech/cli@latest`). Inside this repository the CLI is `bun run tula -- <args>`,
@@ -331,7 +330,7 @@ hooks: {
   is still a change to who can sign in: if its endpoint does not answer, every sign-up or
   sign-in it guards is refused from that moment. Deploy the receiver first.
 - **Order.** Hooks are written after the settings, every provider and every webhook
-  endpoint (only [native apps](#native-apps) come later). An endpoint registered in the same run is then there for the `hook.*` events
+  endpoint (only [native apps](#native-apps) are written after them). An endpoint registered in the same run is then there for the `hook.*` events
   the hook writes produce, and an address the server refuses for a hook does not stop
   anything about signing in. Among themselves: new hooks, then changes that weaken nothing,
   then changes that weaken, then removals. What tightens is in place before anything is
@@ -420,7 +419,7 @@ nativeApps: [
 
   | In the plan | Path |
   | --- | --- |
-  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on, [ADR 0047](adr/0047-native-apple-sign-in.md)) | `nativeApps.<platform>/<identifier>` |
+  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on) | `nativeApps.<platform>/<identifier>` |
   | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
   | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
   | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
@@ -683,8 +682,7 @@ Changes pending. Run `tula apply` to make them.
   then the organization roles'.
 - A provider is flagged when it gains a client id (`providers.google.additionalClientIds`)
   and when it is **switched off or removed while accounts can sign in only with it**
-  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`;
-  [ADR 0059](adr/0059-email-for-accounts-without-one.md)). For each provider that is on at
+  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`). For each provider that is on at
   the server and that the plan switches off or removes, and for no other, `tula` asks the
   server how many accounts depend on it and prints the answer under the plan:
 
@@ -828,8 +826,7 @@ tula apply --env prod --yes    # no question: for CI
   not. The key is sent only when the file names an id, so a file without one still applies
   to a server from before the field.
 - **Switching a provider off, or removing it, while accounts can sign in only with it is a
-  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`;
-  [ADR 0059](adr/0059-email-for-accounts-without-one.md)): those accounts are locked out
+  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`): those accounts are locked out
   until it is back, so `apply --yes` refuses it, before any write, without
   `--allow-weaker`, and at a terminal the question names it. What is counted, and what a
   count that could not be read means, is under [`tula diff`](#tula-diff).
