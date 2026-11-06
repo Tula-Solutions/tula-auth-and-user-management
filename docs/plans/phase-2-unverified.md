@@ -1175,7 +1175,7 @@ else.
 | **A person who approves without reading** | Not defended, and cannot be. The screen never says more than "approved". |
 | **PostgreSQL, a deployed server** | Not run against either: the screen added no route, query or store method. |
 | **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): there is none of the Proposals screen in `apps/dashboard/docs`. |
-| **Dismissing a proposal** | Not built (ADR 0053, "Dismissing a proposal: not built"). |
+| **Rejecting a proposal** | Built, TULA-198 (ADR 0053, "Rejecting a proposal"). |
 
 ## Step 2.17, a settings change as an edit to the config file (TULA-24, [ADR 0056](../adr/0056-mcp-settings-config-diff.md))
 

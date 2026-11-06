@@ -279,11 +279,13 @@ decision in ADR 0053.
   act on a proposal that was valid when made, the operation is reversible, and it is
   audited; closing the gap would hold the environment lock across the operation. Recommend
   leaving it; no code changed.
-- Decision (TULA-157, H-183): recommend a route that rejects (cancels) a pending proposal
-  (`POST /v1/admin/proposals/:id/reject`, behind `secretKey()`, an audit entry, a new
-  `rejected` status the store's compare-and-set also checks). Today a pending proposal only
-  expires. This is a usability gap, not a security one, and it changes the contract, the SDKs
-  and ADR 0053 ("dismissal is not built"), so it is recorded and not built.
+- Decision (TULA-157, H-183; built in TULA-198): a person rejects a pending proposal with
+  `POST /v1/admin/proposals/:id/reject`, behind `secretKey()` (an agent key is refused). The
+  `rejected` status leaves `pending` through the store's own compare-and-set, the same one an
+  approval takes, so the two never both succeed; the `proposal.rejected` entry is written in
+  that transaction, and its optional `reason` (at most 200 characters) never holds a secret.
+  Rejecting a proposal that is not pending gives an approval's refusals. The rejecter is in
+  the audit entry, not in the row; an agent cannot reject. ADR 0053, "Rejecting a proposal".
 ## Decisions from the TULA-157 hardening audit
 
 - Decision (TULA-157, H-121): API keys, agent keys and SCIM tokens do not expire and are not
