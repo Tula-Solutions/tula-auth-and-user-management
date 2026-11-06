@@ -812,6 +812,52 @@ describe('an approval of a proposal, against another approval and against the re
     }
   })
 
+  // A rejection takes the same compare-and-set as an approval, so the two meet at the
+  // proposal's row and only the first leaves `pending`: never both an approval and a rejection.
+  test('an approval and a rejection at once: exactly one wins, and one entry is recorded', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal } = await seed()
+      const admin = Bun.randomUUIDv7()
+      const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
+      const reject = () =>
+        stores.second().reject(
+          tenant.environmentId,
+          proposal.id,
+          beforeExpiry,
+          Audit.entry(
+            { ids: { next: () => Bun.randomUUIDv7() }, clock: { now: () => beforeExpiry } },
+            scope,
+            {
+              type: 'proposal.rejected',
+              actor: { type: 'admin', id: admin, ipAddress: null, userAgent: null },
+              target: { type: 'proposal', id: proposal.id },
+              data: {
+                operation: 'ban_user',
+                targetType: 'user',
+                targetId: proposal.targetId,
+                proposedBy: proposal.proposedBy,
+              },
+            }
+          )
+        )
+      const {
+        results: [approved, rejected],
+      } = await overlapping(
+        round,
+        proposalRow(proposal.id),
+        () => approve(stores.first(), proposal, admin),
+        reject
+      )
+      expect((approved === null) !== (rejected === null)).toBe(true)
+      const stored = await stores.first().find(tenant.environmentId, proposal.id)
+      expect(stored?.status).toBe(approved === null ? 'rejected' : 'approved')
+      const entries = (await recorded(proposal.id)).filter((e) =>
+        ['proposal.approved', 'proposal.rejected'].includes(e.type)
+      )
+      expect(entries).toHaveLength(1)
+    }
+  })
+
   // "Not expired" is in the statement too, judged with each call's own time. An approval at
   // the expiry matches no row, so it takes no row lock and never waits: it is refused while
   // the row is held and while an approval that is in time is in flight on it. So this is not

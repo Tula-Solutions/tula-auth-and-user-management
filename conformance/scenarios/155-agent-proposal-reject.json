@@ -1,0 +1,318 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a person rejects an agent's proposal, once, and an approved one cannot be rejected",
+  "description": "An agent key asks for a ban and cannot reject its own proposal. A secret key rejects it with a reason: the proposal reads `rejected` to the agent, nothing changes, it can then be neither approved nor rejected, and the audit log records the rejection. A second proposal is approved and carried out, and a rejection after that is refused with the same reason. Each run leaves one revoked agent key behind.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "an agent key, shown once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret",
+        "body": {
+          "kind": "agent",
+          "name": "conformance agent"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "kind": "agent",
+          "key": {
+            "$matches": "^tula_ak_"
+          }
+        }
+      },
+      "capture": {
+        "agentKeyId": "id",
+        "agentKey": "key"
+      }
+    },
+    {
+      "name": "the agent asks for a ban",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "ban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "status": "pending"
+        }
+      },
+      "capture": {
+        "proposalId": "id"
+      }
+    },
+    {
+      "name": "the agent cannot reject its own proposal",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/reject",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "a person rejects it, with a reason",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/reject",
+        "auth": "secret",
+        "body": {
+          "reason": "not now"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{proposalId}}",
+          "status": "rejected",
+          "approvedBy": null,
+          "approvedAt": null
+        }
+      }
+    },
+    {
+      "name": "the agent reads that it was rejected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/proposals/{{proposalId}}",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{proposalId}}",
+          "status": "rejected"
+        }
+      }
+    },
+    {
+      "name": "a rejected proposal cannot be approved",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "ban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "already_decided"
+          }
+        }
+      }
+    },
+    {
+      "name": "nor rejected again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/reject",
+        "auth": "secret",
+        "body": {}
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "already_decided"
+          }
+        }
+      }
+    },
+    {
+      "name": "the user was not banned",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    },
+    {
+      "name": "the rejection is recorded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=proposal.rejected&targetId={{proposalId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "proposal.rejected"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the agent asks again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "ban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "status": "pending"
+        }
+      },
+      "capture": {
+        "secondProposalId": "id"
+      }
+    },
+    {
+      "name": "a person approves it, and it is carried out",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{secondProposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "ban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "executed"
+        }
+      }
+    },
+    {
+      "name": "an approved proposal cannot then be rejected",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{secondProposalId}}/reject",
+        "auth": "secret",
+        "body": {}
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "already_decided"
+          }
+        }
+      }
+    },
+    {
+      "name": "the user is banned, by the approval alone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "revoke the agent key",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/api-keys/{{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "delete the user",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}
