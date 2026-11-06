@@ -1,5 +1,5 @@
 import '../styles.css'
-import { type SearchEntry, search } from '../lib/search'
+import { label, type SearchEntry, search } from '../lib/search'
 import { initNativeScreens } from './native-screens'
 import { initPage } from './page'
 
@@ -203,10 +203,10 @@ function initSearch(): void {
         link.href = hit.u
         const title = document.createElement('span')
         title.className = 'title'
-        title.textContent = hit.t
+        title.textContent = label(hit).title
         const where = document.createElement('span')
         where.className = 'where'
-        where.textContent = hit.p
+        where.textContent = label(hit).where
         link.append(title, where)
         item.append(link)
         return item
