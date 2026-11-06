@@ -1,5 +1,15 @@
 # @tula-tech/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [0bc0bae]
+  - @tula-tech/admin@0.3.1
+  - @tula-tech/mcp@0.3.1
+  - @tula-tech/config@0.3.1
+  - @tula-tech/contract@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

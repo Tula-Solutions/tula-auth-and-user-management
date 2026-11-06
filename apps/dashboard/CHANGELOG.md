@@ -1,5 +1,11 @@
 # @tula-tech/dashboard
 
+## 0.0.5
+
+### Patch Changes
+
+- @tula-tech/contract@0.3.1
+
 ## 0.0.4
 
 ### Patch Changes
