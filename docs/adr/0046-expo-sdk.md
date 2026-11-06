@@ -90,8 +90,8 @@ how tokens are delivered on a guess.
   and an app that stopped trying would need a restart after the key is fixed in a
   development build. What was missing was the reason, which no hook exposed.
 - **A write the store refuses is tried three times, and after that the stored token can be
-  a replaced one** (`SECURE_WRITE_RETRY_DELAYS_MS`: again after 50 ms and 200 ms; a read
-  and a delete are asked once; a value that is too large is not retried). A refresh's
+  a replaced one** (`SECURE_WRITE_RETRY_DELAYS_MS`: again after 50 ms and 200 ms; a delete
+  is tried the same way (TULA-157, H-322), a read is asked once; a value that is too large is not retried). A refresh's
   write comes after the server has rotated the token. When every try fails the running
   app is unaffected (the newest token is in memory; `refresh()`, `load()` and a sign-in
   throw `storage.failed`, and `getToken()`, which is `@tula/core`'s and unchanged,

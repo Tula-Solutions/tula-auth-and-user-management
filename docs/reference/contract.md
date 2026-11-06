@@ -4820,6 +4820,16 @@ is refused alone with `validation.failed`.
 const MAX_IMPORT_METADATA_BYTES: 4096
 ```
 
+### `MAX_IMPORT_PASSWORD_PARAMS`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The most `params` keys an imported password may carry; no algorithm takes more than a handful.
+
+```ts
+const MAX_IMPORT_PASSWORD_PARAMS: 16
+```
+
 ### `MAX_IMPORT_ROWS`
 
 _constant_, defined in `packages/contract/src/user.ts`

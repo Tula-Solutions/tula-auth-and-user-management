@@ -178,7 +178,8 @@ tula.session.signOut() // throws when the server could not be told
 - **A failed sign-out is not a sign-out.** `signOut()` forgets the session on the device
   and throws when the server could not be told: the session may still be alive there. Leave
   the signed-in screen only after a `signOut()` that returned; offer "try again" otherwise
-  (calling it again tells the server).
+  (calling it again tells the server, as long as the app has not restarted: the token is
+  held in memory, so a restart loses it and the session lives until it expires).
 
 ## The second step, and step-up
 
@@ -349,6 +350,10 @@ at `resumed()`. The client still judges the whole address it is handed.
   link, never a custom scheme.
 
 ## A session bound to a device key
+
+**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+delete it, on purpose: on a shared device the users who sign in one after another are bound
+to the same key. An app that must not carry a key over removes it when its user signs out.
 
 With `deviceKeys`, a sign-in carries a proof signed by a key the device keeps, the session
 is bound to that key, and every refresh carries a new proof. A copy of the stored refresh

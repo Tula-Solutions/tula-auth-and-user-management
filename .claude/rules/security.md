@@ -72,3 +72,28 @@ there is held to as it is to the list above:
 | Phone numbers, text messages, a texted sign-in code | `phone-and-sms.md` |
 | Password history and expiry | `passwords.md` |
 | Email templates | `message-wording.md` |
+
+## Fail-open rate limiters
+
+Decision (TULA-157, H-108): `whenUnavailable: 'allow'` is allowed only on a limiter in front of a
+route that takes no guessable secret and costs nothing: the client ceiling (`middleware/rate-limit.ts`),
+`session_refresh` (a 256-bit token), the JWKS and native-app association files (public data),
+`ready` (it must report the outage) and `message_preview`. Every credential route and
+`instance-admin.ts` refuse. A new `'allow'` needs a same-place comment saying why (ADR 0016).
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-124): there is no emergency purge of a compromised signing key.
+  Recommendation: an admin route that retires a key at once and drops it from the JWKS
+  (tokens it signed then fail verification, so every session of the environment must sign in
+  again), with an audit entry. Reason: it logs out a whole environment and needs the owner's
+  say on the contract. Today a key is rotated (the old one stays published until its tokens
+  expire). Recorded only.
+- Decision (TULA-157, H-135): the active and total API-key caps are soft: two concurrent
+  creates at a limit can both pass (`createApiKey`, "Soft caps"). Kept soft on purpose: a
+  hard cap needs a lock or a constraint, and the cap only bounds a leaked key's damage.
+- Decision (TULA-157, H-137): `TULA_MASTER_KEY` has no rotation. Sealed signing keys and
+  keyed hashes are derived from it, so changing it invalidates both. Recommendation: a
+  versioned key id on each sealed value and a re-seal job; large and risky, recorded only.
+- Operator scripts (TULA-157, H-140): `api-key:create` and the other minting scripts print
+  the key once to stdout. Run them where the terminal and its history are yours; do not pipe
+  them into a CI log. The key is not recoverable afterwards, only replaceable.

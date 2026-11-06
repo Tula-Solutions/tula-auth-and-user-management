@@ -143,6 +143,13 @@ const DEPLOYMENT_CREDENTIALS: ReadonlySet<string> = new Set([
 /** The per-environment forms of the CLI's keys: `TULA_SECRET_KEY_<NAME>`, `TULA_AGENT_KEY_<NAME>`. */
 const DEPLOYMENT_CREDENTIAL_PREFIXES = ['TULA_SECRET_KEY_', 'TULA_AGENT_KEY_'] as const
 
+/**
+ * The shape of a name a provider's secret is read from. An allow-list on top of the closed list
+ * above: a model-chosen name for some other credential (a cloud key, a database URL) is refused
+ * though no list names it, and the person applying still reads every name.
+ */
+const PROVIDER_SECRET_NAME = /_(?:SECRET|PRIVATE_KEY)$/
+
 function isDeploymentCredential(name: string): boolean {
   return (
     DEPLOYMENT_CREDENTIALS.has(name) ||
@@ -184,6 +191,10 @@ const providerChange = z.strictObject({
     .max(MAX_VARIABLE_NAME_CHARS)
     .refine(isVariableName, {
       message: 'the NAME of an environment variable (capitals, digits, underscores), not a value',
+    })
+    .refine((name) => PROVIDER_SECRET_NAME.test(name), {
+      message:
+        'a provider’s secret is read from a variable whose name ends in _SECRET or _PRIVATE_KEY, e.g. GOOGLE_CLIENT_SECRET',
     })
     .refine((name) => !isDeploymentCredential(name), {
       // Fixed words: the name that was refused is not repeated.

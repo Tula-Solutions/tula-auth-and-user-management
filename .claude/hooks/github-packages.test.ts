@@ -9,6 +9,7 @@ import {
   mirrorName,
   mirrorReadme,
   tarballName,
+  unpackedProblems,
   uploadCommand,
   versionsPath,
 } from '../../scripts/github-packages'
@@ -219,7 +220,7 @@ describe('the GitHub Packages workflow', () => {
   test('it copies what a release builds, and names no publish command of its own', () => {
     const runs = (workflow.jobs.mirror?.steps ?? []).map((step) => step.run).filter(Boolean)
     expect(runs).toEqual([
-      'bun install --frozen-lockfile',
+      'bun install --frozen-lockfile --ignore-scripts',
       'bun run packages:check',
       'bun run scripts/github-packages.ts --publish',
     ])
@@ -265,5 +266,44 @@ describe('what the runbook says about the copy', () => {
 
   test('the preview asks GitHub too, and the runbook says what it needs', () => {
     expect(doc).toContain('it asks GitHub which versions exist, so `gh` must be signed in')
+  })
+})
+
+describe('what is checked again before the upload', () => {
+  const sound: Manifest = {
+    name: '@tula-tech/core',
+    version: '0.1.1',
+    exports: { '.': './dist/index.js' },
+    dependencies: { zod: '^4.6.5' },
+  }
+  const clean = 'package/package.json\npackage/README.md\npackage/dist/index.js\n'
+
+  test('a sound tarball has no problem', () => {
+    expect(unpackedProblems(sound, clean)).toEqual([])
+  })
+
+  // The copy is made from a tarball on disk, which the run that wrote it checked: a
+  // tarball swapped since, or written by another job, is judged again by the same rules.
+  test('a manifest the release would refuse is refused here', () => {
+    expect(unpackedProblems({ ...sound, scripts: { postinstall: 'x' } }, clean)).toContain(
+      '@tula-tech/core: the packed manifest still has "scripts"'
+    )
+    expect(
+      unpackedProblems({ ...sound, dependencies: { a: 'git+https://x.invalid/a.git' } }, clean)
+    ).toHaveLength(1)
+  })
+
+  test('a file that must not ship is refused here', () => {
+    const problems = unpackedProblems(sound, `${clean}package/.npmrc\npackage/.env\n`)
+    expect(problems.join('\n')).toContain('package/.npmrc')
+    expect(problems.join('\n')).toContain('package/.env')
+  })
+
+  test('the upload script calls it before it writes the copy', () => {
+    const script = read('scripts/github-packages.ts')
+    expect(script.indexOf('unpackedProblems(')).toBeGreaterThan(-1)
+    expect(script.indexOf('unpackedProblems(packed, ')).toBeLessThan(
+      script.indexOf('mirrorManifest(packed)')
+    )
   })
 })

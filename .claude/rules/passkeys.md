@@ -57,6 +57,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   for an identity and for a passkey alike. The admin factor reset is the one exception (it
   removes every passkey, on purpose), and it reports the outcome by the same rule: the
   `x-tula-can-still-sign-in` response header and `canStillSignIn` on the audit entry.
+- **Removing a passkey ends the user's other sessions** (`Passkeys.remove`, reason
+  `mfa_changed`, the current session kept), before the notice. Decision (TULA-157, H-093):
+  the existing reason is reused instead of a new `SessionRevokeReason` value, which would move
+  `openapi.json`; a passkey is a credential and the nearest reason is the factor change.
 
 ## What to test
 
@@ -104,3 +108,14 @@ rules themselves are above and are not repeated).
   `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
   no response, audit entry, email or log line holds a public
   key or a credential id.
+
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-144): `Settings.replace` has no guard against changing the `rpId`
+  while passkeys exist (the settings deps hold no passkey store); existing passkeys then stop
+  matching. Recommendation: refuse or weaken-flag a changed `rpId` when the environment has
+  passkeys. Recorded only.
+- Decision (TULA-157, H-157): `Passkey.remove` takes no `sign_in_methods` lock, while the OAuth
+  writers do, so a settings change can race a removal and leave no way to sign in.
+  Recommendation: take the lock in `Passkey.remove`. Recorded only (a locking change on a
+  user path, which the environment-lock rule keeps off user requests).

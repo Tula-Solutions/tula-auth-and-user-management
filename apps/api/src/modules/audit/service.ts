@@ -12,6 +12,7 @@ import {
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
+import { allowedFields } from '~/lib/event-payload'
 import {
   type Activity,
   type AuditEntry,
@@ -103,6 +104,18 @@ export function none(reason: UnrecordedReason): Unrecorded {
   return unrecordedFor(reason)
 }
 
+/**
+ * The entry's data limited to the keys its type's contract schema names, the same allow-list
+ * an event payload uses: a key added at a call site without a decision in the contract is
+ * stored but never listed or exported (H-172). Keys only: values were checked when written.
+ */
+function allowedMetadata(record: AuditEntry): Record<string, unknown> {
+  const fields = allowedFields(record.type as ActivityType)
+  return Object.fromEntries(
+    Object.entries(record.data).filter(([key]) => Object.hasOwn(fields, key))
+  )
+}
+
 function toAuditLog(record: AuditEntry): AuditLog {
   return {
     id: record.id,
@@ -111,7 +124,7 @@ function toAuditLog(record: AuditEntry): AuditLog {
     target: record.target,
     ipAddress: record.ipAddress,
     userAgent: record.userAgent,
-    metadata: record.data,
+    metadata: allowedMetadata(record),
     occurredAt: record.occurredAt.toISOString(),
   }
 }
@@ -189,9 +202,16 @@ export const EXPORT_CSV_COLUMNS = [
 ] as const
 
 /**
+ * A formula trigger, after any run of white space, zero-width or byte-order characters:
+ * spreadsheets skip a leading space and read the full-width forms of `=+-@` as the ASCII ones.
+ */
+const FORMULA_START = /^[\s\u00a0\u200b-\u200d\u2060\ufeff]*[=+\-@\t\r\uff1d\uff0b\uff0d\uff20]/
+
+/**
  * One CSV cell.
  *
- * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`:
+ * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return (or those after white
+ * space or a lookalike full-width form) is prefixed with `'`:
  * a spreadsheet would run it as a formula, and the user agent and the metadata are text a
  * stranger chose (OWASP "CSV injection"). Quoting follows RFC 4180.
  *
@@ -202,7 +222,7 @@ export function csvCell(value: string | null): string {
   if (value === null || value === '') {
     return ''
   }
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  const safe = FORMULA_START.test(value) ? `'${value}` : value
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
 }
 

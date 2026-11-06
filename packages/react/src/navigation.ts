@@ -117,6 +117,25 @@ export function safeUrl(url: string | undefined, base: string): string | null {
 }
 
 /**
+ * The form of a developer-supplied URL to hand a router or an anchor: {@link safeUrl}'s
+ * normalised result, as a path (with query and hash) when `url` was relative.
+ *
+ * Validating one string and using another let the two differ (`' /app'`, `'/a/../b'`).
+ *
+ * @param url - The URL as passed.
+ * @param base - What a relative URL is resolved against.
+ * @returns What to navigate to, or `null` when {@link safeUrl} refuses it.
+ */
+export function safeTarget(url: string | undefined, base: string): string | null {
+  const resolved = safeUrl(url, base)
+  if (resolved === null || url === undefined || isAbsolute(url)) {
+    return resolved
+  }
+  const { pathname, search, hash } = new URL(resolved)
+  return pathname + search + hash
+}
+
+/**
  * Go to a developer-supplied URL, through the app's own `navigate` when it gave one.
  *
  * @param url - The destination; nothing happens when it is missing or refused by {@link safeUrl}.
@@ -131,12 +150,12 @@ export function go(
     return false
   }
   const resolved = safeUrl(url, window.location.href)
-  if (resolved === null || url === undefined) {
+  if (resolved === null) {
     return false
   }
   if (navigate) {
-    // The router gets what the developer wrote (routers want paths, not absolute URLs).
-    navigate(url)
+    // Routers want paths, not absolute URLs: the normalised form, never the raw string.
+    navigate(safeTarget(url, window.location.href) ?? resolved)
   } else {
     window.location.assign(resolved)
   }

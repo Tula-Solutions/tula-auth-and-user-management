@@ -9,6 +9,7 @@ import {
   identities,
   passkeys,
   passwordHistory,
+  sessions,
   userFactors,
   users,
   withTenant,
@@ -470,6 +471,9 @@ export class PostgresUserRepository implements UserRepository {
           )
         )
         .limit(1)
+        // A hash upgrade takes this row and not the user's: without the lock this read could
+        // see the hash an upgrade in flight is replacing, and keep that cheaper form (H-081).
+        .for('update')
       const current = stored?.secret ?? null
       if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
         return 'stale'
@@ -816,6 +820,26 @@ export class PostgresUserRepository implements UserRepository {
       const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
       return unchanged ?? null
     })
+  }
+
+  /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({ managedByDirectoryId: null })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            eq(users.managedByDirectoryId, organizationId)
+          )
+        )
+    )
   }
 
   /** @inheritdoc */
@@ -1211,13 +1235,34 @@ export class PostgresUserRepository implements UserRepository {
       if (blocked) {
         return { outcome: 'last_manager', organizationIds: blocked } as const
       }
-      const rows = await tx
+      // The user's row is locked first: a session insert takes KEY SHARE on it for its foreign
+      // key, so a concurrent one either is committed and listed below or waits and then fails.
+      const [locked] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .for('update')
+      if (!locked) {
+        await recordActivity(tx, [])
+        return { outcome: 'not_found' } as const
+      }
+      // The delete cascades the sessions away; the active ones are named so the caller can
+      // denylist their access tokens (H-229).
+      const active = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.environmentId, environmentId),
+            isNull(sessions.revokedAt)
+          )
+        )
+      await tx
         .delete(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
-        .returning({ id: users.id })
-      const deleted = rows.length === 1
-      await recordActivity(tx, deleted && activity ? [activity] : [])
-      return { outcome: deleted ? 'deleted' : 'not_found' } as const
+      await recordActivity(tx, activity ? [activity] : [])
+      return { outcome: 'deleted', endedSessionIds: active.map((row) => row.id) } as const
     })
   }
 

@@ -1066,6 +1066,31 @@ describe('tula mcp with an agent key', () => {
     expect(w.stderr()).not.toContain(SECRET_KEY)
   })
 
+  test('an agent key ignores an admin token from the environment, so the doctor is off', async () => {
+    const w = world({
+      TULA_SECRET_KEY: undefined,
+      TULA_AGENT_KEY: AGENT_KEY,
+      TULA_ADMIN_TOKEN: TEST_ADMIN_TOKEN,
+    })
+    const inner = w.io.fetch as AdminFetch
+    const seen: (string | null)[] = []
+    const io: CliIo = {
+      ...w.io,
+      fetch: (url, init) => {
+        seen.push(new Headers(init?.headers).get('authorization'))
+        return inner(url, init)
+      },
+    }
+    const client = await connect({ ...w, io })
+    expect(w.stderr()).toContain('Doctor: configured')
+    expect(w.stderr()).toContain('admin token was ignored')
+    expect(w.stderr()).not.toContain(TEST_ADMIN_TOKEN)
+    await call(client, 'run_doctor')
+    // The stderr line is not proof: the doctor itself must not have sent the token.
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen).not.toContain(`Bearer ${TEST_ADMIN_TOKEN}`)
+  })
+
   test('an agent key that is not one is refused without being repeated, and the secret key does not stand in', async () => {
     const w = world({ TULA_AGENT_KEY: 'tula_sk_dev_notanagentkey00000000000000000000' })
     const client = await connect(w)

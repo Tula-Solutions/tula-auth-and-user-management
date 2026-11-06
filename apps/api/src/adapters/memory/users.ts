@@ -41,6 +41,7 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
   readonly #deletionListeners: Array<(environmentId: string, userId: string) => void>
+  readonly #sessionCascades: Array<(environmentId: string, userId: string) => string[]>
   readonly #deletionGuards: Array<
     (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
   >
@@ -77,6 +78,7 @@ export class MemoryUserRepository implements UserRepository {
     // initializers as an uncalled function.
     this.#users = new Map()
     this.#deletionListeners = []
+    this.#sessionCascades = []
     this.#deletionGuards = []
     this.#passwords = new Map()
     this.#history = new Map()
@@ -185,6 +187,7 @@ export class MemoryUserRepository implements UserRepository {
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
     if (
+      this.#users.has(user.id) ||
       (user.emailNormalized !== null && this.#byEmail(user.environmentId, user.emailNormalized)) ||
       (oauthIdentity &&
         this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
@@ -529,6 +532,18 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async releaseDirectory(
+    environmentId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<void> {
+    const user = this.#user(environmentId, userId)
+    if (user && user.managedByDirectoryId === organizationId) {
+      user.managedByDirectoryId = null
+    }
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,
@@ -749,6 +764,10 @@ export class MemoryUserRepository implements UserRepository {
     if (blocked) {
       return { outcome: 'last_manager', organizationIds: blocked }
     }
+    // What the database cascades: the sessions go with the user, and the active ones are named.
+    const endedSessionIds = this.#sessionCascades.flatMap((cascade) =>
+      cascade(environmentId, userId)
+    )
     this.#passwords.delete(userId)
     this.#passwordsChangedAt.delete(userId)
     this.#history.delete(userId)
@@ -761,7 +780,7 @@ export class MemoryUserRepository implements UserRepository {
       listener(environmentId, userId)
     }
     this.#activityLog.record(activity ? [activity] : [])
-    return { outcome: 'deleted' }
+    return { outcome: 'deleted', endedSessionIds }
   }
 
   /** What the guards say stops these users from being deleted: user id to organization ids. */
@@ -773,6 +792,15 @@ export class MemoryUserRepository implements UserRepository {
       }
     }
     return blocked
+  }
+
+  /**
+   * Let the session store cascade a user's deletion the way `sessions_user_fk` does.
+   *
+   * @param cascade - Removes the user's sessions and returns the ids of those still active.
+   */
+  onDeleteSessions(cascade: (environmentId: string, userId: string) => string[]): void {
+    this.#sessionCascades.push(cascade)
   }
 
   /**

@@ -97,6 +97,8 @@ device ([releasing.md](releasing.md)); the
 
 Create one client, outside any component. Creating it sends nothing and reads nothing.
 
+The client refuses plain `http` to another machine, which is what a computer's address on the network (`http://192.168.…:3003`) or the Android emulator's (`http://10.0.2.2:3003`) is. The example sets `allowInsecureHttp: __DEV__`, so that only a development build accepts one; a release build needs an `https` address.
+
 <!-- snippet: examples/expo/app/src/tula.ts#client -->
 ```ts
 function createClient(publishableKey: string, baseUrl: string) {
@@ -104,6 +106,9 @@ function createClient(publishableKey: string, baseUrl: string) {
     publishableKey,
     // The address of the Tula API as the phone reaches it: never `localhost` on a device.
     baseUrl,
+    // Plain http to a computer on the network (`http://192.168.…`, `http://10.0.2.2:3003`) is
+    // refused unless asked for: asked for in development only, never in a release build.
+    allowInsecureHttp: __DEV__,
     // The platform's passkey sheet (`react-native-passkey`) and the system browser's
     // authentication session (`expo-web-browser`). Both are optional: leave one out, with
     // its import and its package, and the app offers no passkey, or no provider.
@@ -732,7 +737,7 @@ value.
   call made anyway is refused with `storage.failed` before any request; like the emailed
   link's, that message is written for another case, so do not show it for this one.
 - **A dismissed sheet is not an error and not a sign-in**: `dismissed` is `true`, `error`
-  stays `null`, no token was sent, and the button works again (the outcome `cancelled`).
+  stays `null`, no token was sent, and the button works again (the outcome `cancelled`). A device with no Google account to sign in with is the outcome `no_account`: offer another way in.
   The next try starts an attempt of its own: an attempt takes one token.
 - **The nonce is the package's business.** The server makes a nonce for every attempt and
   accepts the token only with it. Google's sheet is handed the nonce as it is. Apple's is
@@ -763,6 +768,12 @@ Give the client a key store and its sessions are **bound to a device key**
 sign-in makes a P-256 key the device keeps and does not hand out, the server binds the
 session to it, and every refresh carries a proof signed by it. A refresh token copied off
 the phone is then of no use without the phone's key.
+
+**The key identifies the device, not the person** (TULA-157, H-335). Signing out does not
+delete it, on purpose: the next sign-in finds it instead of making a new one. On a shared
+phone the users who sign in one after another are bound to the same key; a different
+person is told apart by the account, never by the key. An app that must not carry a key
+over calls `removeDeviceKey()` when its user signs out.
 
 The key store is the client's `deviceKeys` option, as in
 [the client above](#the-client-and-the-provider). `hardwareDeviceKeys`
@@ -1485,6 +1496,13 @@ run in a real Expo app.
 | A provider's ID token | Memory, from the sheet's answer to the one request that sends it. | Storage, a log line, an error. |
 | The binding of an [emailed link](#the-emailed-link) | Memory, for fifteen minutes at most: from the request that asked for the link to the one that presents it. | The secure store, AsyncStorage, a file, a log line, an error, a URL. |
 
+- **The entry is gated by the phone's lock, not by the person's face or fingerprint.**
+  The secure store is never created with `requireAuthentication` (TULA-157, H-333): a
+  refresh every minute would prompt for the face, fingerprint or passcode each time, and Expo Go
+  does not support it. So anyone who can use the unlocked phone as the same user, or reads
+  its storage on a rooted one, can read the token. The defence is the
+  [device key](#a-session-bound-to-a-device-key), which makes a copied token useless
+  elsewhere; there is no opt-in for a prompt per read.
 - **The entry stays on the device.** It is not synced and not restored to another phone:
   after a restore or a new phone the user signs in again.
 - **By default it can be read only while the phone is unlocked** (`when_unlocked`). An app
@@ -1501,7 +1519,7 @@ run in a real Expo app.
 - **A store that fails is not "signed out".** A read, a write or a delete the secure store
   refuses is `storage.failed`, and the running app keeps its session.
 - **A write the store refuses is tried three times** (again after 50 ms and after 200 ms;
-  a read and a delete are asked once). The write that matters is the one after a refresh:
+  a delete is tried the same way, a read is asked once). The write that matters is the one after a refresh:
   the server has replaced the refresh token by then, and the store still holds the one it
   replaced. If all three fail:
   - the running app is still signed in and its tokens work. `session.refresh()`,

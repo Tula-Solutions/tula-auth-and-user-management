@@ -168,6 +168,19 @@ describe('<UserButton>', () => {
     expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
   })
 
+  test('a failed sign-out dialog goes away when someone signs in again (H-290)', async () => {
+    const w = signedIn()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    w.mount(<UserButton />, { afterSignOutUrl: '/', navigate: mock() })
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    expect(w.client.state.status).toBe('signed-out')
+    await w.client.session.refresh()
+    expect(w.client.state.status).toBe('signed-in')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+  })
+
   test('a client that holds its own refresh token: "Try again" reaches the server with it (review E1)', async () => {
     const w = world({ signedIn: true, kind: 'server' })
     w.api.on(ROUTE.sessions, () => json(200, { data: [] }))

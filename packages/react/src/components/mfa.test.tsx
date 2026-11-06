@@ -766,6 +766,23 @@ describe('useStepUp', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2))
     expect(onResult).toHaveBeenLastCalledWith('declined')
   })
+
+  test('a different session underneath the dialog closes it and the action is not retried', async () => {
+    const w = world({ signedIn: true })
+    const onResult = mock()
+    w.api.on(MFA.codes, () => stepUpRequired('totp'))
+    w.mount(<Sensitive onResult={onResult} />)
+    await waitFor(() => expect(w.client.state.status).toBe('signed-in'))
+    await w.user.click(screen.getByRole('button', { name: 'Renew' }))
+    await screen.findByRole('dialog', { name: 'Confirm it is you' })
+    // Someone signed in as another session (another tab, a sign-in elsewhere) while it was open:
+    // a proof for the first would be spent on the second.
+    w.api.on(ROUTE.refresh, () => json(200, sessionTokens('other', { sessionId: 'session_2' })))
+    await act(() => w.client.session.refresh())
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('declined'))
+    expect(w.api.calls(MFA.codes)).toHaveLength(1)
+  })
 })
 
 describe('the step-up dialog: a code by email', () => {

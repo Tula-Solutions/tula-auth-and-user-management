@@ -128,7 +128,11 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
   const users = overrides.users ?? new MemoryUserRepository(activityLog)
   const organizations = overrides.organizations ?? new MemoryOrganizationStore(activityLog, users)
-  const ssoConnections = new MemorySsoConnectionStore(activityLog, users)
+  const ssoConnections = new MemorySsoConnectionStore(
+    activityLog,
+    users,
+    organizations instanceof MemoryOrganizationStore ? organizations : null
+  )
   const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
   const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
   if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
@@ -157,7 +161,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
-    sessions: new MemorySessionStore(activityLog),
+    sessions: new MemorySessionStore(activityLog, users),
     users,
     factors,
     passkeys,
@@ -184,8 +188,14 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
     ssoConnections,
-    scim: new MemoryScimStore(activityLog),
-    setupLinks: new MemorySetupLinkStore(activityLog),
+    scim: new MemoryScimStore(
+      activityLog,
+      organizations instanceof MemoryOrganizationStore ? organizations : null
+    ),
+    setupLinks: new MemorySetupLinkStore(
+      activityLog,
+      organizations instanceof MemoryOrganizationStore ? organizations : null
+    ),
     organizations,
     organizationDomains: new MemoryOrganizationDomainStore(
       activityLog,

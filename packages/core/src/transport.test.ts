@@ -235,6 +235,29 @@ describe('errors', () => {
     }
   )
 
+  test('never follows a redirect: a 3xx is response.invalid', async () => {
+    const inits = recordRequestInits()
+    const error = await caught(
+      transport(
+        async () => new Response(null, { status: 302, headers: { location: 'https://x.test/' } }),
+        {
+          client: 'web',
+        }
+      ).call('getClientConfig', {})
+    )
+    expect(inits[0]?.redirect).toBe('manual')
+    expect(error).toMatchObject({ code: 'response.invalid', status: 302 })
+  })
+
+  test.each([
+    ['an array', json(200, [])],
+    ['a string', json(200, 'ok')],
+    ['a number', json(200, 3)],
+  ] as [string, Response][])('a 200 whose body is %s is response.invalid', async (_n, response) => {
+    const error = await caught(transport(async () => response).call('getClientConfig', {}))
+    expect(error).toMatchObject({ code: 'response.invalid', status: 0 })
+  })
+
   test('a fetch that throws is network.failed, with the cause', async () => {
     const cause = new TypeError('fetch failed')
     const error = await caught(

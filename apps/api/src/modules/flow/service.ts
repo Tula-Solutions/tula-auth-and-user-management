@@ -883,14 +883,24 @@ async function finish(
   }
   // Named field by field from the server's own records: the allow-list of the question
   // (`HookBeforeSessionDataSchema`). No address of the user's, no user agent, no attempt.
+  // The persisted flag is only believed for an account made no earlier than the attempt, so a
+  // future writer of it cannot make a sign-in of an old account count as a sign-up (H-083).
+  const createdHere =
+    attempt.kind === 'sign_up' ||
+    (state.accountCreated === true &&
+      ((await deps.users.findById(tenant.environmentId, userId))?.createdAt ?? new Date(0)) >=
+        attempt.createdAt)
   const clearance = await Hooks.beforeSession(deps, tenant, {
     userId,
     client: state.client,
     profile: await Sessions.profileNameFor(deps, tenant, state),
     amr: mergeAuthMethods([], state.amr ?? []),
-    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    signUp: createdHere,
     ipAddress: cleanOrigin(context).ipAddress,
   })
+  // `finish` has no ban check of its own: `Sessions.create` owns the ban and the concurrent-session
+  // rule (ADR 0028), so a ban that lands after the flow's checks still ends here. Pinned by
+  // `hardening.test.ts` (H-087); keep that check if `Sessions.create` is refactored.
   const tokens = await Sessions.create(deps, tenant, {
     userId,
     client: state.client,
@@ -903,6 +913,10 @@ async function finish(
     deviceThumbprint: state.deviceThumbprint,
     ssoConnectionId: state.ssoConnectionId ?? null,
   })
+  // Only the factors the user holds are asked again here, not an `mfa.policy` that became
+  // `required` after this attempt started (H-090): that takes an administrator's settings
+  // change, the user has no factor this session failed to prove, and their next sign-in
+  // stops at the enrolment.
   if (
     attempt.kind !== 'sign_up' &&
     // Asked only of an attempt that did not prove a strong factor: one that did is past this.
@@ -923,7 +937,7 @@ async function finish(
     })
     throw new AuthError('flow.invalid_step')
   }
-  if (attempt.kind === 'sign_up' || state.accountCreated === true) {
+  if (createdHere) {
     // A verified address on an `auto_join` domain of an organization (ADR 0065, "Verified
     // domains"): the membership, its audit entry and its event are written here, as part of
     // the sign-up, and never for a sign-in. Cannot throw: a sign-up that has a session is
@@ -1193,6 +1207,15 @@ export async function signIn(
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
+  // Refused by shape alone, before anything is looked up: the answer for a malformed
+  // identifier is the same whoever holds the account (TULA-157, H-032).
+  const phone = parsePhoneNumber(input.identifier)
+  const address = phone === null ? parseEmail(input.identifier, context.testAddress) : null
+  // A reserved test address is answered at the start as any address is (ADR 0058: the start
+  // looks nothing up); it is refused where an email would be asked for.
+  if (phone === null && address === null && !isTestAddress(input.identifier.trim())) {
+    throw new InvalidEmailError()
+  }
   const strategies: FirstFactorStrategy[] = [
     ...Factors.firstFactors(
       await Settings.current(deps, tenant),
@@ -1202,7 +1225,11 @@ export async function signIn(
   ]
   // Offered by the address's domain alone, never by whether an account exists: a known and an
   // unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
-  const connection = await Sso.offered(deps, tenant, normalizeEmail(input.identifier))
+  const connection = await Sso.offered(
+    deps,
+    tenant,
+    address?.normalized ?? normalizeEmail(input.identifier)
+  )
   if (connection !== null) {
     strategies.push('sso')
   }
@@ -1219,7 +1246,7 @@ export async function signIn(
         : 'needs_first_factor',
     // A phone number is kept in E.164 form, whatever was typed between its digits; anything
     // else is kept as an address would be. Neither is looked up here.
-    identifier: parsePhoneNumber(input.identifier) ?? normalizeEmail(input.identifier),
+    identifier: phone ?? address?.normalized ?? normalizeEmail(input.identifier),
     state,
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
@@ -2569,6 +2596,8 @@ export async function completeExternalSignIn(
   method: string
 ): Promise<FlowResult> {
   // A provider's profile is refused for an enforced domain before any account is made or linked.
+  // A null profile address skips this first check on purpose (H-164): nothing is made or linked
+  // for it, and the account's own address is checked again below (the invariant the next check holds).
   if (typeof provider === 'string' && profile.email !== null) {
     await Sso.requireNotEnforced(deps, tenant, normalizeEmail(profile.email), provider)
   }
@@ -2583,7 +2612,11 @@ export async function completeExternalSignIn(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  if (typeof provider === 'string' && !created && user.emailNormalized !== null) {
+  // The account's own address, for a new account too (H-031): one rule for both, so a path
+  // that makes an account with an address the profile did not carry is still refused. What
+  // resolution does before this point is either nothing (an identity already linked) or
+  // reachable only for the profile's address, which the check above has cleared (H-029).
+  if (typeof provider === 'string' && user.emailNormalized !== null) {
     await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, provider)
   }
   // A connection that trusts its identity provider for MFA (TULA-140) skips Tula's second step,
@@ -3239,7 +3272,17 @@ export async function verifyEmail(
     ...required,
     passwordExpired: false,
   })
-  return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
+  // `accountCreated` is what `finish` reads for "this attempt made the account", for every kind.
+  return advance(
+    deps,
+    tenant,
+    attempt,
+    { ...proven(state, 'email'), accountCreated: true },
+    userId,
+    next,
+    required,
+    context
+  )
 }
 
 /**
@@ -3347,8 +3390,9 @@ export async function startPasswordReset(
     !!found &&
     (await isManaged(deps, tenant.environmentId, found)) &&
     !(await Sso.isBreakGlass(deps, tenant, identifier))
-  const user =
-    found && !managed && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
+  // Asked for every address, so a decoy costs the same lookup as a real account (H-078).
+  const ssoRefuses = await Sso.refuses(deps, tenant, identifier, 'password')
+  const user = found && !managed && !ssoRefuses ? found : null
   const state: State = {
     ...asked(context),
     email,

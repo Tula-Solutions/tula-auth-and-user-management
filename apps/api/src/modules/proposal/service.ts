@@ -353,6 +353,7 @@ type ExecutionDeps = Pick<
   | 'config'
   | 'clock'
   | 'ids'
+  | 'verificationTokens'
 >
 
 /**
@@ -631,27 +632,31 @@ export async function approve(
   const outcome = await execute(deps, tenant, approved, agent, approvedBy)
   const target = { type: 'proposal', id } as const
   try {
-    const finished = await deps.proposals.finish(
-      tenant.environmentId,
-      id,
-      outcome.reason === null
-        ? { status: 'executed' }
-        : { status: 'failed', reason: outcome.reason },
-      deps.clock.now(),
-      outcome.reason === null
-        ? Audit.entry(deps, tenant, {
-            type: 'proposal.executed',
-            actor: agent,
-            target,
-            data: { ...proposed(approved), approvedBy, changed: outcome.changed },
-          })
-        : Audit.entry(deps, tenant, {
-            type: 'proposal.failed',
-            actor: agent,
-            target,
-            data: { ...proposed(approved), approvedBy, reason: outcome.reason },
-          })
-    )
+    const record = () =>
+      deps.proposals.finish(
+        tenant.environmentId,
+        id,
+        outcome.reason === null
+          ? { status: 'executed' }
+          : { status: 'failed', reason: outcome.reason },
+        deps.clock.now(),
+        outcome.reason === null
+          ? Audit.entry(deps, tenant, {
+              type: 'proposal.executed',
+              actor: agent,
+              target,
+              data: { ...proposed(approved), approvedBy, changed: outcome.changed },
+            })
+          : Audit.entry(deps, tenant, {
+              type: 'proposal.failed',
+              actor: agent,
+              target,
+              data: { ...proposed(approved), approvedBy, reason: outcome.reason },
+            })
+      )
+    // One retry (H-179): `finish` is a compare-and-set on `approved`, so it is safe to repeat,
+    // and a transient database error should not leave the proposal approved for good.
+    const finished = await record().catch(() => record())
     const answer = toProposal(finished ?? approved, deps.clock.now())
     // Said only by the request that carried it out, and only for a proposal recorded as
     // carried out: whether the target was changed, or was already so.

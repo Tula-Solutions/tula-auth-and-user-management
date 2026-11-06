@@ -16,7 +16,7 @@ To change a page, change the JSDoc (for a native SDK, the doc comment) and run
 | [`@tula-tech/expo-screens`](expo-screens.md) | `@tula-tech/expo-screens`, `@tula-tech/expo-screens/plugin` | 19 |
 | [`@tula-tech/admin`](admin.md) | `@tula-tech/admin` | 42 |
 | [`@tula-tech/config`](config.md) | `@tula-tech/config` | 36 |
-| [`@tula-tech/contract`](contract.md) | `@tula-tech/contract`, `@tula-tech/contract/custom-claims`, `@tula-tech/contract/device-binding`, `@tula-tech/contract/error-codes`, `@tula-tech/contract/event-types`, `@tula-tech/contract/headers`, `@tula-tech/contract/issuer`, `@tula-tech/contract/organization-domain-rules`, `@tula-tech/contract/organization-permissions`, `@tula-tech/contract/password-rules`, `@tula-tech/contract/redirect-url`, `@tula-tech/contract/theme`, `@tula-tech/contract/webhook-signature` | 1074 |
+| [`@tula-tech/contract`](contract.md) | `@tula-tech/contract`, `@tula-tech/contract/custom-claims`, `@tula-tech/contract/device-binding`, `@tula-tech/contract/error-codes`, `@tula-tech/contract/event-types`, `@tula-tech/contract/headers`, `@tula-tech/contract/issuer`, `@tula-tech/contract/organization-domain-rules`, `@tula-tech/contract/organization-permissions`, `@tula-tech/contract/password-rules`, `@tula-tech/contract/redirect-url`, `@tula-tech/contract/theme`, `@tula-tech/contract/webhook-signature` | 1075 |
 
 ## Native SDKs
 
@@ -27,7 +27,7 @@ Kotlin toolchain). The generated types of the client API are not listed.
 
 | Module | Language | Sources | Declarations | Without a doc comment |
 | --- | --- | --- | --- | --- |
-| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 326 | 0 |
+| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 327 | 0 |
 | [`TulaAuthUI`](swift.md) | Swift | `native/swift/Sources/TulaAuthUI` | 696 | 0 |
 | [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 271 | 1 |
 | [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 242 | 0 |

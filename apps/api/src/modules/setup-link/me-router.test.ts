@@ -114,3 +114,27 @@ describe('an administrator’s setup links', () => {
     expect(revoked.status).toBe(204)
   })
 })
+
+describe('a stale session', () => {
+  test('may list but cannot mint or revoke a setup link (H-001)', async () => {
+    const org = await Organizations.create(deps, TENANT, { name: 'acme', slug: 'acme' }, TEST_ACTOR)
+    const maya = await member(org, 'maya@northline.app', 'admin')
+    const path = `/me/organizations/${org.id}/setup-links`
+    const made = await json<{ id: string }>(
+      await client('POST', path, { name: 'IT', expiresInDays: 7 }, maya.accessToken)
+    )
+    deps.clock.advance('11m')
+    const refreshed = await client('POST', '/sessions/refresh', {
+      refreshToken: maya.refreshToken,
+    })
+    const stale = (await json<{ accessToken: string }>(refreshed)).accessToken
+
+    expect((await client('GET', path, undefined, stale)).status).toBe(200)
+    const minted = await client('POST', path, { name: 'IT', expiresInDays: 7 }, stale)
+    expect(minted.status).toBe(403)
+    expect((await json<{ code: string }>(minted)).code).toBe('auth.step_up_required')
+    const revoked = await client('DELETE', `${path}/${made.id}`, undefined, stale)
+    expect(revoked.status).toBe(403)
+    expect((await json<{ code: string }>(revoked)).code).toBe('auth.step_up_required')
+  })
+})

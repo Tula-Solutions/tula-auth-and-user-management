@@ -502,7 +502,7 @@ function limitsNow(
  * leave a revoked session whose access token still works, and a retry (which finds nothing left
  * to revoke) would never repair it. Adding an entry twice is harmless.
  */
-async function denylist(
+export async function denylist(
   deps: Pick<Deps, 'revokedSessions'>,
   sessionIds: readonly string[],
   now: Date
@@ -683,6 +683,27 @@ export async function create(
     await createWithinLimit(deps, scope, { session, root, activity, origin, now }, settings)
   }
 
+  // A ban that landed after the caller's own check has already run its revocation, which missed
+  // this session: re-read after the insert so that the ban, not the race, has the last word.
+  const owner = await deps.users.findById(scope.environmentId, input.userId)
+  if (owner?.bannedAt) {
+    await denylist(deps, [sessionId], now)
+    await deps.sessions.revoke(
+      scope.environmentId,
+      sessionId,
+      'user_banned',
+      now,
+      revoked(
+        deps,
+        scope,
+        { id: sessionId, userId: input.userId },
+        'user_banned',
+        systemActor(origin)
+      )
+    )
+    throw new AuthError('auth.user_banned')
+  }
+
   const cookieMaxAge = absoluteExpiresAt
     ? Math.ceil((absoluteExpiresAt.getTime() - now.getTime()) / 1000)
     : MAX_COOKIE_AGE_SECONDS
@@ -742,41 +763,55 @@ async function createWithinLimit(
     // the sign-in that took the place is kept.
     revoked(deps, scope, { id, userId: session.userId }, 'session_limit', systemActor(origin))
   const denylisted = new Set<string>()
-  for (let pass = 0; pass < LIMIT_ATTEMPTS; pass++) {
-    const active = await deps.sessions.listActiveByUser(scope.environmentId, session.userId, now)
-    const excess = active.length - max + 1
-    if (excess > 0 && rule.onLimit === 'refuse_newest') {
-      throw new AuthError('session.limit_reached')
+  // A session denylisted but not ended is refused until the entry expires, so whatever this call
+  // denylisted and the store did not end is ended here (H-104, H-107).
+  const endLeftovers = async (kept: readonly string[]) => {
+    for (const id of denylisted) {
+      if (!kept.includes(id)) {
+        await deps.sessions.revoke(scope.environmentId, id, 'session_limit', now, ended(id))
+      }
     }
-    const end = [...active]
-      .sort((x, y) => (beganBefore(x, y) ? -1 : 1))
-      .slice(0, Math.max(excess, 0))
-      .map((oldest) => oldest.id)
-    await denylist(deps, end, now)
-    for (const id of end) {
-      denylisted.add(id)
+  }
+  try {
+    for (let pass = 0; pass < LIMIT_ATTEMPTS; pass++) {
+      const active = await deps.sessions.listActiveByUser(scope.environmentId, session.userId, now)
+      const excess = active.length - max + 1
+      if (excess > 0 && rule.onLimit === 'refuse_newest') {
+        throw new AuthError('session.limit_reached')
+      }
+      const end = [...active]
+        .sort((x, y) => (beganBefore(x, y) ? -1 : 1))
+        .slice(0, Math.max(excess, 0))
+        .map((oldest) => oldest.id)
+      await denylist(deps, end, now)
+      for (const id of end) {
+        denylisted.add(id)
+      }
+      const result = await deps.sessions.create(session, root, activity, {
+        max,
+        end,
+        at: now,
+        activity: ended,
+      })
+      if (result.created) {
+        await endLeftovers(result.ended)
+        return
+      }
+      if (rule.onLimit === 'refuse_newest') {
+        throw new AuthError('session.limit_reached')
+      }
     }
-    const result = await deps.sessions.create(session, root, activity, {
-      max,
-      end,
-      at: now,
-      activity: ended,
-    })
-    if (result.created) {
-      return
-    }
-    if (rule.onLimit === 'refuse_newest') {
-      throw new AuthError('session.limit_reached')
-    }
+  } catch (error) {
+    // The original failure is what the caller needs; a cleanup that fails too must not hide it.
+    await endLeftovers([]).catch(() => undefined)
+    throw error
   }
   // Giving up must not leave a session on the denylist that the store never ended: it would
   // be refused for as long as the entry lasts and then be alive again. Ending them is what
   // the rule asks for in any case: each was among the oldest of a user at the limit, and the
   // store only refuses when the user is still full without them. One that the sign-in which
   // won the race already ended is left as it is (the store's revoke writes nothing then).
-  for (const id of denylisted) {
-    await deps.sessions.revoke(scope.environmentId, id, 'session_limit', now, ended(id))
-  }
+  await endLeftovers([])
   throw new ServiceUnavailableError({
     internalMessage: 'sign-ins of one user kept racing at the session limit',
   })

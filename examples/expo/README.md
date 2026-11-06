@@ -50,7 +50,8 @@ and fill in both values:
   `localhost` is the phone itself: use the computer's address on the network
   (`http://192.168.…:3003`), and start the API so that it listens there. The Android
   emulator reaches the computer as `http://10.0.2.2:3003`; the iOS simulator shares the
-  computer's `localhost`.
+  computer's `localhost`. The app passes `allowInsecureHttp: __DEV__`, so the client accepts
+  plain `http` to such an address in development only; a release build needs an `https` one.
 - `EXPO_PUBLIC_TULA_PUBLISHABLE_KEY` is the environment's publishable key. It is public by
   design and ends up in the app's bundle. Never put a secret key in an `EXPO_PUBLIC_*`
   variable.

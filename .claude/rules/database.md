@@ -94,3 +94,29 @@ paths:
   characters on a `hybrid` session) and the trigger `sessions_device_thumbprint_immutable`
   (hand-written in the migration: Drizzle declares no triggers), and add no store method
   that updates the column. `packages/db/src/session-device-binding.test.ts` holds both.
+
+- **Cache markers in Redis** (`adapters/cache/versioned.ts`): the shared version marker per
+  id (an environment id) is bumped on a change and never deleted by the code today. A future
+  path that deletes an environment (ADR 0032 leaves deletion out) must also drop its marker
+  and its cached settings and signing keys, in the same change; a marker left behind is
+  harmless to correctness (it is only compared) but is never cleaned up.
+
+- **Decision (TULA-157, H-240): the environment lock's 31-bit FNV key may collide.** Two
+  environments that hash to one advisory-lock key wait for each other (the wait fails closed
+  after 5s); isolation is unaffected. Accepted: a two-int key would remove it, but the
+  mapping is fixed across rolling upgrades (ADR 0026), so changing it is a migration.
+- **Decision (TULA-157, H-241): Redis keys of the revoked-session list, the lockout, the rate
+  limiter and proof replay carry no environment segment** (`tula:<kind>:<id>`). Their ids
+  are random uuids or keyed hashes, so nothing collides today; only the signing-key marker is
+  `tula:sk:<env>`. Recorded, not changed: a new shape is a cross-instance migration (old and
+  new instances would read different keys during a rolling upgrade). A new key kind whose id
+  is not random or keyed names its environment.
+- **Decision (TULA-157, H-242): a retired signing key may stay accepted for up to the cache's
+  `ttlMs` on other instances when the shared Redis marker cannot be written or read**
+  (`adapters/cache/signing-keys.ts`, header). Accepted as it is, not made fail-closed;
+  the revoked-session list still fails closed. Shorten `ttlMs`, never lengthen it.
+- **Tables with no row-level security:** `api_keys` and the control-plane tables
+  (`workspaces`, `projects`, `environments`, `instance_audit_logs`). The control plane
+  scopes in the application, behind `instanceAdmin()` (`PostgresControlPlane` trusts the
+  router guard). `boundaries.test.ts` pins `api_keys` as the only table with an
+  `environment_id` and no policy: a new exemption is a decision, not a side effect.

@@ -321,3 +321,11 @@ lookup by address.
   imported by an earlier run, not the lost attempt; either way the row's user is already
   imported, and the count says created. A server that predates this amendment sends no ids and
   the client behaves as before.
+
+## Decision (TULA-157, H-086): the PBKDF2 floor stays at 100,000, global
+
+Recommendation: keep it, and do not make it per-environment. The floor is the point where
+accepting a hash stops being a migration and becomes storing a weak one; a stricter value would
+refuse real exports (Django before 4.2 and older) that the first sign-in replaces anyway, and a
+per-environment knob would add a setting that only ever weakens the check. An operator who wants
+OWASP's 600,000 can filter their export before importing. Docs only; no code changed.

@@ -47,7 +47,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   components sign out through `useTulaContext().signOut`, never `client.session.signOut()`
   with a swallowed error: it navigates only after a sign-out that went through, and otherwise
   the provider shows `SignOutFailedDialog` (an alert, "Try again"), which is the provider's
-  because the component that asked is gone once the client is signed out.
+  because the component that asked is gone once the client is signed out. `useAuth().signOut`
+  is the one exception, for an app's own button: it awaits `client.session.signOut()`, throws
+  when the server could not be told and shows no dialog, so the app handles the error itself
+  (H-302).
 - **A flow that is left is discarded.** `flow.discard()` (every flow has it) forgets the
   attempt's secret and drops the answer of an action still in flight, so a late `complete`
   signs nobody in; `use-flow.ts` calls it on `reset()` and when `adopt()` replaces a flow.

@@ -183,8 +183,10 @@ describe.each(MARKED_SPELLINGS)('the marked address %p', (address) => {
       )
     }
     const marked = await prepare(address)
-    expect(marked).toEqual(await prepare(NEVER_AN_ADDRESS))
+    // A malformed identifier is refused at the start since H-032, so it cannot stand beside the
+    // marked one here; the marked address gets the refusal a malformed address gets at prepare.
     expect(marked.status).toBe(422)
+    expect((marked.body as { code: string }).code).toBe('email.invalid')
     expect(deps.mailer.outbox).toEqual([])
   })
 

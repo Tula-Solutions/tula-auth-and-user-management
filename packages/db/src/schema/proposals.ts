@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, index, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { check, index, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -78,6 +78,11 @@ export const proposals = tula.table(
     // A proposal lives for minutes. The API sets the lifetime; no write of any kind may make
     // one that can be approved a day later.
     check('proposals_lifetime_bounds', sql`${t.expiresAt} <= ${t.createdAt} + interval '1 hour'`),
+    // One waiting proposal per agent key, operation and target (H-177): what makes the
+    // service's look-before-insert hold under concurrent identical requests.
+    uniqueIndex('proposals_pending_unique_idx')
+      .on(t.environmentId, t.proposedBy, t.operation, t.targetType, t.targetId)
+      .where(sql`${t.status} = 'pending'`),
     index('proposals_environment_created_idx').on(t.environmentId, t.createdAt),
     ...tenantConstraints('proposals', t),
   ]

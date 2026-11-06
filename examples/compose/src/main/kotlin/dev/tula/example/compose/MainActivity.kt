@@ -149,6 +149,8 @@ fun ExampleApp(told: ExampleConfiguration?) {
                         passkeys = ExampleSheets.passkeys ?: CredentialManagerPasskeySheet(activity),
                         google = ExampleSheets.google ?: it.googleClientId?.let { id -> CredentialManagerGoogleSheet(id, activity) },
                         browser = ExampleSheets.browser,
+                        // The emulator reaches the developer's machine at 10.0.2.2, over plain http.
+                        allowInsecureHttp = true,
                     )
                 } catch (error: IllegalArgumentException) {
                     refusal = error.message

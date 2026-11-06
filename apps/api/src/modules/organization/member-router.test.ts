@@ -500,6 +500,45 @@ describe('members', () => {
     expect(ok.status).toBe(200)
   })
 
+  test('a manager demoted between two requests is judged on the permissions they hold now (H-076)', async () => {
+    const { ada, cy, org } = await world()
+    await defineRole('people', ['org:sys:memberships:manage', 'org:sys:memberships:read'])
+    await Organizations.changeMemberRole(
+      deps,
+      TENANT_A,
+      org.id,
+      ada.userId,
+      { role: 'people' },
+      TEST_ACTOR
+    )
+    await join(org, cy.userId, 'member')
+    const before = await client(
+      'PATCH',
+      `${base(org)}/members/${cy.userId}`,
+      { role: 'member' },
+      as(ada)
+    )
+    expect(before.status).toBe(200)
+    // The same session token, now a plain member: the rights are read from the store per request,
+    // not from the token's claims.
+    await Organizations.changeMemberRole(
+      deps,
+      TENANT_A,
+      org.id,
+      ada.userId,
+      { role: 'member' },
+      TEST_ACTOR
+    )
+    const after = await client(
+      'PATCH',
+      `${base(org)}/members/${cy.userId}`,
+      { role: 'member' },
+      as(ada)
+    )
+    expect(after.status).toBe(403)
+    expect(await codeOf(after)).toBe('organization.permission_required')
+  })
+
   test('a manager cannot demote or remove a member who holds more than they do', async () => {
     const { ada, maya, cy, org } = await world()
     await defineRole('people', ['org:sys:memberships:manage', 'org:sys:memberships:read'])

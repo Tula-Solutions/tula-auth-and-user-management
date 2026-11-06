@@ -1,4 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
@@ -37,13 +38,33 @@ export class MemorySessionStore implements SessionStore {
   readonly #tokens: Map<string, RefreshTokenRecord>
   readonly #activityLog: MemoryActivityLog
 
-  /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  /**
+   * @param activityLog - Where activity is recorded; shared with the other memory stores.
+   * @param users - When given, a user's deletion removes their sessions, as `sessions_user_fk` does.
+   */
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    users?: MemoryUserRepository
+  ) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#sessions = new Map()
     this.#tokens = new Map()
     this.#activityLog = activityLog
+    users?.onDeleteSessions((environmentId, userId) => {
+      const gone = [...this.#sessions.values()].filter(
+        (s) => s.environmentId === environmentId && s.userId === userId
+      )
+      for (const session of gone) {
+        this.#sessions.delete(session.id)
+        for (const [id, token] of this.#tokens) {
+          if (token.sessionId === session.id) {
+            this.#tokens.delete(id)
+          }
+        }
+      }
+      return gone.filter((s) => s.revokedAt === null).map((s) => s.id)
+    })
   }
 
   /** @inheritdoc */
@@ -160,7 +181,14 @@ export class MemorySessionStore implements SessionStore {
   async rotate(environmentId: string, rotation: Rotation): Promise<boolean> {
     const parent = this.#tokens.get(rotation.parentId)
     const session = parent && this.#session(environmentId, parent.sessionId)
-    if (!parent || !session || parent.usedAt !== null || session.revokedAt !== null) {
+    // The child must join the parent's own session, as the Postgres adapter's guard requires.
+    if (
+      !parent ||
+      !session ||
+      parent.usedAt !== null ||
+      session.revokedAt !== null ||
+      rotation.child.sessionId !== parent.sessionId
+    ) {
       return false
     }
     parent.usedAt = rotation.at

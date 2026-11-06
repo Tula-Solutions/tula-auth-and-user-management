@@ -53,7 +53,8 @@ private const val MAX_SESSION_PROFILE_LENGTH = 32
  * would each refresh the same token.
  *
  * @param publishableKey The environment's publishable key (`tula_pk_…`). Never a secret key.
- * @param baseUrl The API's address, `https://…`; plain `http` is for a development server.
+ * @param baseUrl The API's address, `https://…`. Plain `http` is for this machine only (`localhost`,
+ *   `127.0.0.1`, `[::1]`): any other host needs [allowInsecureHttp].
  * @param storage Where the refresh token is kept. There is no default on purpose: on a device
  *   it is `KeystoreTokenStorage`, and [MemoryTokenStorage] is a decision to forget the session
  *   when the process ends.
@@ -73,6 +74,9 @@ private const val MAX_SESSION_PROFILE_LENGTH = 32
  * @param deviceKeys Where the device's key is kept. `null` means no session of this client is
  *   bound to a key and no request carries a proof. With one, the six calls that start an
  *   attempt and every refresh carry a proof.
+ * @param allowInsecureHttp Allow a plain `http` [baseUrl] to another machine (an emulator's
+ *   `10.0.2.2`, a private network you trust). Off by default: the publishable key and the
+ *   session would cross the network in the clear.
  * @throws IllegalArgumentException for options that can never work. Its message never repeats
  *   a value it was given.
  */
@@ -90,6 +94,7 @@ class TulaClient internal constructor(
     browser: BrowserSession?,
     deviceKeys: DeviceKeyStore?,
     sheetCeilingMs: Long,
+    allowInsecureHttp: Boolean = false,
 ) : AutoCloseable {
     constructor(
         publishableKey: String,
@@ -104,9 +109,10 @@ class TulaClient internal constructor(
         google: GoogleSheet? = null,
         browser: BrowserSession? = null,
         deviceKeys: DeviceKeyStore? = null,
+        allowInsecureHttp: Boolean = false,
     ) : this(
         publishableKey, baseUrl, storage, http, clock, timeoutMs, messages, sessionProfile,
-        passkeys, google, browser, deviceKeys, SHEET_CEILING_MS,
+        passkeys, google, browser, deviceKeys, SHEET_CEILING_MS, allowInsecureHttp,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -130,7 +136,7 @@ class TulaClient internal constructor(
                 "TulaClient: `publishableKey` must be a publishable key (tula_pk_…)"
             }
         }
-        val base = normalizeBaseUrl(baseUrl)
+        val base = normalizeBaseUrl(baseUrl, allowInsecureHttp)
         require(timeoutMs > 0) { "TulaClient: `timeoutMs` must be a positive number" }
         require(
             sessionProfile == null ||
@@ -522,15 +528,20 @@ class TulaClient internal constructor(
          * @param publishableKey The environment's publishable key.
          */
         fun storageKey(baseUrl: String, publishableKey: String): String =
-            storageKeyFor(normalizeBaseUrl(baseUrl), publishableKey)
+            storageKeyFor(normalizeBaseUrl(baseUrl, allowInsecureHttp = true), publishableKey)
     }
 }
 
 private fun storageKeyFor(base: String, publishableKey: String): String =
     "tula.refresh.$base|$publishableKey"
 
-/** The origin and path of the API's address, without a trailing slash. */
-internal fun normalizeBaseUrl(baseUrl: String): String {
+/**
+ * The origin and path of the API's address, without a trailing slash.
+ *
+ * Plain `http` is refused for any host but this machine unless [allowInsecureHttp]: the
+ * publishable key and the tokens would cross the network in the clear.
+ */
+internal fun normalizeBaseUrl(baseUrl: String, allowInsecureHttp: Boolean): String {
     val uri = try {
         URI(baseUrl)
     } catch (_: URISyntaxException) {
@@ -544,10 +555,18 @@ internal fun normalizeBaseUrl(baseUrl: String): String {
     require(uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) {
         "TulaClient: `baseUrl` is an address and a path, with no user name, query or fragment"
     }
+    val lower = host.lowercase()
+    require(scheme == "https" || allowInsecureHttp || isLoopbackHost(lower)) {
+        "TulaClient: `baseUrl` is plain http to another machine; use https " +
+            "(or set `allowInsecureHttp` on a private network you trust)"
+    }
     val port = if (uri.port == -1) "" else ":${uri.port}"
     val path = (uri.rawPath ?: "").trimEnd('/')
-    return "$scheme://${host.lowercase()}$port$path"
+    return "$scheme://$lower$port$path"
 }
+
+private fun isLoopbackHost(host: String): Boolean =
+    host == "localhost" || host.endsWith(".localhost") || host == "127.0.0.1" || host == "[::1]"
 
 /**
  * The session of a [TulaClient].

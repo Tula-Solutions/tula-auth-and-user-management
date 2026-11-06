@@ -20,6 +20,7 @@ import * as Sms from '~/modules/sms/service'
 import * as Sso from '~/modules/sso/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
+import * as Users from '~/modules/user/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -438,6 +439,25 @@ describe('a sign-in through the connection', () => {
     expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
   })
 
+  test('an expired attempt reaches the provider no more (TULA-157, H-025)', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    idp.lastVerifier = ''
+    deps.clock.advance('11m')
+    expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
+    // No code was exchanged: the token endpoint never saw a request.
+    expect(idp.lastVerifier).toBe('')
+  })
+
+  test('a failed exchange spends the state: the same state cannot be tried again (TULA-157, H-040)', async () => {
+    const { sso } = await started()
+    const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
+    const bad = await callback({ ...query, code: 'not-a-grant' })
+    expect(bad.fragment.get('tula_error')).toBe('sso.provider_error')
+    expect((await callback(query)).fragment.get('tula_error')).toBe('oauth.state_invalid')
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
   test('a state for another connection, or of no attempt, gets the static page', async () => {
     const { sso } = await started()
     const query = consent(((await sso.json()) as { authorizationUrl: string }).authorizationUrl)
@@ -643,6 +663,7 @@ describe('the ID token', () => {
     ['a wrong issuer', { iss: 'https://evil.test' }],
     ['a wrong audience', { aud: 'someone-else' }],
     ['an azp that is not the client', { azp: 'someone-else' }],
+    ['several audiences and no azp (H-034)', { aud: [CLIENT_ID, 'other'] }],
     ['a nonce that is not the attempt’s', { nonce: 'not-the-nonce' }],
     ['no nonce', { nonce: undefined }],
     ['an expired token', { exp: 1 }],
@@ -674,17 +695,33 @@ describe('the ID token', () => {
     expect(back.fragment.get('tula_error')).toBe('sso.provider_error')
   })
 
+  test('several audiences with an azp that is the client are accepted (H-034)', async () => {
+    idp.claims = { aud: [CLIENT_ID, 'other'], azp: CLIENT_ID }
+    await signedIn()
+  })
+
   test('an unknown kid makes the key set be fetched again once, and a rotated key is taken', async () => {
     await signedIn()
     expect(idp.jwksFetches).toBe(1)
+    deps.clock.advance(60_000)
     idp.published = [0, 1]
     idp.signer = 1
     await signedIn()
     expect(idp.jwksFetches).toBe(2)
     // A key the fresh set does not have either: refused, with one more fetch and no more.
+    deps.clock.advance(60_000)
     idp.signer = 2
     expect(await codeOf()).toBe('sso.provider_error')
     expect(idp.jwksFetches).toBe(3)
+  })
+
+  test('an unknown kid cannot make the key set be fetched again within the cooldown (H-035)', async () => {
+    await signedIn()
+    expect(idp.jwksFetches).toBe(1)
+    idp.signer = 2
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(await codeOf()).toBe('sso.provider_error')
+    expect(idp.jwksFetches).toBe(1)
   })
 
   test('the documents come from cache: one discovery and one key set for two sign-ins', async () => {
@@ -739,6 +776,15 @@ describe('IdP groups mapped to organization roles', () => {
       { group: 'eng', role: 'member' },
     ])
     expect(await roleOf((await signedIn()).step.userId)).toBe('admin')
+  })
+
+  test('a banned user’s sign-in is refused before their role is changed (H-004)', async () => {
+    const first = await signedIn()
+    await Users.ban(deps, TENANT, first.step.userId, TEST_ACTOR)
+    await mapGroups([{ group: 'ops', role: 'admin' }])
+    idp.claims = { groups: ['ops'] }
+    expect(await codeOf()).toBe('auth.user_banned')
+    expect(await roleOf(first.step.userId)).toBe('member')
   })
 
   test('a user in no mapped group gets the connection default role', async () => {

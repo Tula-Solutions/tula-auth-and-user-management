@@ -1872,7 +1872,9 @@ Where a non-browser client keeps its refresh token between runs.
 The `web` client kind never uses it: there the refresh token lives in an httpOnly cookie that
 JavaScript cannot read. For `ios`, `android` and `server` the token is a long-lived
 credential, so back this with the platform's secure store (Keychain, Keystore, an encrypted
-file), never with `localStorage` or a plain file. A React Native secure-store adapter ships in
+file), never with `localStorage` or a plain file: script can read those, so any script on
+the page (an XSS, a compromised dependency) could take the refresh token. The default
+{@link memoryStorage} is not readable that way. A React Native secure-store adapter ships in
 Phase 2.
 
 ```ts
@@ -3279,6 +3281,12 @@ export interface TulaClientOptions {
   publishableKey: string
   /** Where the Tula API is served, e.g. `https://auth.example.com`. */
   baseUrl: string
+  /**
+   * Allow a plain `http:` `baseUrl` to a host that is not this machine. Off by default: the
+   * publishable key and the bearer tokens would cross the network readable. Only for a private
+   * network you trust.
+   */
+  allowInsecureHttp?: boolean
   /**
    * The kind of client, which decides where the refresh token lives. `web` (the default in a
    * browser): an httpOnly cookie set by the API, which this SDK never sees. `ios`, `android`,

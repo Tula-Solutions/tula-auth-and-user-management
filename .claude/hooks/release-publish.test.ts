@@ -12,6 +12,8 @@ import {
   publishCommand,
   type RegistryState,
   refusals,
+  registryLatest,
+  registryLatestUrl,
   registryStates,
   registryUrl,
   releaseReport,
@@ -570,6 +572,18 @@ describe('which command uploads', () => {
       '11.6.0',
       /NODE_AUTH_TOKEN is set/,
     ],
+    [
+      'an npm_config__authToken',
+      { ...oidc, npm_config__authToken: 'npm_x' },
+      '11.6.0',
+      /npm_config__authToken is set/,
+    ],
+    [
+      'a registry-scoped NPM_CONFIG token',
+      { ...oidc, 'NPM_CONFIG_//registry.npmjs.org/:_authToken': 'npm_x' },
+      '11.6.0',
+      /is set/,
+    ],
     ['no npm', oidc, null, /npm is not installed/],
     ['an npm before trusted publishing', oidc, '11.5.0', /npm 11\.5\.0 is older than 11\.5\.1/],
     ['an npm of an older major', oidc, '10.9.9', /npm 10\.9\.9 is older than 11\.5\.1/],
@@ -582,6 +596,22 @@ describe('which command uploads', () => {
     expect(uploadCommands({ publish: true, otp: null }, plan, staging)).toEqual([])
     // What is said never repeats a value from the environment.
     expect(JSON.stringify(channel)).not.toMatch(/npm_x|opaque|example\.invalid/)
+  })
+
+  test.each<[string, string, boolean]>([
+    ['a literal token', '//registry.npmjs.org/:_authToken=npm_x\n', true],
+    ['a literal _auth', '_auth = abc\n', true],
+    [
+      'a placeholder setup-node writes',
+      '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n',
+      false,
+    ],
+    ['a comment', '; _authToken=npm_x\n', false],
+    ['no credential at all', 'registry=https://registry.npmjs.org/\n', false],
+  ])('in GitHub Actions, an .npmrc with %s', (_what, npmrc, forbidden) => {
+    const channel = chooseChannel(oidc, '11.6.0', [npmrc])
+    expect(channel.problems.length > 0).toBe(forbidden)
+    expect(JSON.stringify(channel)).not.toContain('npm_x')
   })
 
   // The code is one element of the argument vector, never part of a string a shell reads,
@@ -754,5 +784,59 @@ describe('what a person reads first', () => {
     expect(releaseReport({ publish: false, otp: null }, one, context)).toContain(
       '1 package would be;'
     )
+  })
+})
+
+// H-341: DIST_TAG is `latest`, so publishing a version below the registry's current latest
+// would move the tag backward for everyone who installs without a version.
+describe('a version below the registry latest', () => {
+  const lower = (what: string | null) =>
+    new Map<string, string | null>(
+      packages.map((pkg) => [pkg.name, pkg.name === contract.name ? what : null])
+    )
+  const plan = (latest: Map<string, string | null>, states = absent) =>
+    planRelease(packages, states, local, [], latest)
+
+  test.each([
+    ['0.2.0', true],
+    ['0.1.2', true],
+    ['0.1.1', false],
+    ['0.1.0', false],
+    [null, false],
+  ])('latest %p refuses: %p', (latest, refused) => {
+    const result = plan(lower(latest))
+    expect(result.refusals.length > 0).toBe(refused)
+    if (refused) {
+      expect(result.refusals.join('\n')).toContain('@tula-tech/contract@0.1.1')
+      expect(result.refusals.join('\n')).toContain('below')
+      expect(uploadCommands({ publish: true, otp: null }, result, staging)).toEqual([])
+    }
+  })
+
+  test('an unanswered question about latest refuses (fail closed)', () => {
+    expect(plan(lower('unknown')).refusals.join('\n')).toContain('latest')
+  })
+
+  test('a version already on the registry is not judged against latest', () => {
+    const states = new Map(absent)
+    states.set(contract.name, 'published')
+    expect(plan(lower('0.2.0'), states).refusals).toEqual([])
+  })
+
+  test('registryLatest reads dist-tags: 200 latest, 404 none, anything else unknown', async () => {
+    const answers: Record<string, unknown> = {
+      [registryLatestUrl('@tula-tech/contract')]: [200, { latest: '0.3.0' }],
+      [registryLatestUrl('@tula-tech/core')]: [404, {}],
+      [registryLatestUrl('@tula-tech/react')]: [500, {}],
+    }
+    const fetcher: Fetcher = async (url) => {
+      const [status, body] = answers[url] as [number, unknown]
+      return { status, json: async () => body }
+    }
+    expect([...(await registryLatest(packages, fetcher))]).toEqual([
+      ['@tula-tech/contract', '0.3.0'],
+      ['@tula-tech/core', null],
+      ['@tula-tech/react', 'unknown'],
+    ])
   })
 })

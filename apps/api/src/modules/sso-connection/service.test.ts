@@ -226,6 +226,21 @@ describe('SSO connection admin service', () => {
     ).rejects.toMatchObject({ code: 'sso.test_required' })
   })
 
+  test('the test fingerprint depends on the sealed client secret, so a new secret resets a passing test (H-039)', async () => {
+    const base = {
+      protocol: 'oidc' as const,
+      issuer: 'https://idp.example.test',
+      clientId: 'c',
+      saml: null,
+      defaultRole: 'org:member',
+      domains: [],
+      attributeMapping: {},
+    }
+    const a = Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-1' } as never)
+    expect(Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-1' } as never)).toBe(a)
+    expect(Sso.fingerprint({ ...base, clientSecretSealed: 'sealed-2' } as never)).not.toBe(a)
+  })
+
   test('a mark for settings that changed meanwhile is not written', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')
@@ -498,6 +513,25 @@ describe('SAML connections', () => {
     ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'forbidden_xml' } })
   })
 
+  test('metadata values past the manual-input caps are refused (TULA-157, H-022)', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const long = metadata().replace(
+      'entityID="https://idp.example.test/e"',
+      `entityID="https://idp.example.test/${'e'.repeat(1100)}"`
+    )
+    await expect(
+      Sso.create(deps, TENANT, saml(o.id, { metadataXml: long }), TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'too_long' } })
+    const longUrl = metadata().replace(
+      'Location="https://idp.example.test/sso"',
+      `Location="https://idp.example.test/${'s'.repeat(2100)}"`
+    )
+    await expect(
+      Sso.create(deps, TENANT, saml(o.id, { metadataXml: longUrl }), TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'too_long' } })
+  })
+
   test('no source, or two, is refused', async () => {
     const o = await org()
     await verified(o.id, 'acme.test')
@@ -565,6 +599,38 @@ describe('SAML connections', () => {
         code: 'sso.saml_invalid',
         params: { reason: 'fetch_failed' },
       })
+    } finally {
+      request.mockRestore()
+    }
+  })
+
+  test('a refresh that changes the IdP entity id is refused (H-005)', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    let body = metadata()
+    const request = spyOn(Outbound, 'request').mockImplementation(async () => ({
+      status: 200,
+      headers: new Headers(),
+      body: new TextEncoder().encode(body),
+    }))
+    try {
+      const made = await Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, { metadataUrl: 'https://idp.example.test/metadata' }),
+        TEST_ACTOR
+      )
+      body = metadata().replace(
+        'entityID="https://idp.example.test/e"',
+        'entityID="https://evil.example.test/e"'
+      )
+      await expect(Sso.refreshMetadata(deps, TENANT, made.id, TEST_ACTOR)).rejects.toMatchObject({
+        code: 'sso.saml_invalid',
+        params: { reason: 'entity_id_changed' },
+      })
+      expect((await Sso.get(deps, TENANT, made.id)).saml?.idpEntityId).toBe(
+        'https://idp.example.test/e'
+      )
     } finally {
       request.mockRestore()
     }

@@ -15,6 +15,8 @@ export interface SetupLinkSuiteContext {
   recorded: () => Promise<string[]>
   /** Makes an organization of the tenant and returns its id. */
   organization: (tenant: SetupLinkSuiteTenant) => Promise<string>
+  /** Deletes the organization as the database does: the cascade is what is under test. */
+  deleteOrganization: (tenant: SetupLinkSuiteTenant, organizationId: string) => Promise<void>
   a: SetupLinkSuiteTenant
   b: SetupLinkSuiteTenant
 }
@@ -150,6 +152,13 @@ export function describeSetupLinkStore(
       expect(await ctx.store.findByHash(ctx.a.environmentId, lapsed2.tokenHash)).toBeNull()
       expect(await ctx.store.findByHash(ctx.a.environmentId, open.tokenHash)).not.toBeNull()
       expect(await ctx.store.findByHash(ctx.b.environmentId, theirs.tokenHash)).not.toBeNull()
+    })
+
+    test('deleting the organization removes its setup links', async () => {
+      const one = await add(ctx.a)
+      await ctx.deleteOrganization(ctx.a, org)
+      expect(await ctx.store.findByHash(ctx.a.environmentId, one.tokenHash)).toBeNull()
+      expect(await ctx.store.list(ctx.a.environmentId, org)).toEqual([])
     })
   })
 }

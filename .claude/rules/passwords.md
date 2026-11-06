@@ -141,6 +141,12 @@ new one is stored. `null` is off.
   signs in again with the new password. The same holds, with the sessions ended, when
   `finish` fails after the store (a hook that refuses, a session limit). A stored "sweep
   owed" marker was decided against (ADR 0041); adding one is a decision. Tests pin the cost.
+- **Decision (TULA-157, H-166): no stored "sweep owed" marker; recommendation, code left alone.**
+  A marker needs a column (a migration), a store method in both adapters and the shared suite,
+  and a job or a sign-in check that pays the debt: more than a hardening ticket's size, for a
+  window that needs a database outage between two statements. The 503, the logged line and the
+  administrator's `DELETE /v1/admin/users/:userId/sessions` stay the remedy. Revisit if the
+  line ever shows up in production.
 - **The step calls `requireProvenMethod`** like every parked step, and the hooks are asked
   where they always are (`finish`, `Sessions.create`): after the password is stored.
 - **`expiryDays` is not a weakening**, set, shortened or removed (`settingsWeakenings`).

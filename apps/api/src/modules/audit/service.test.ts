@@ -94,7 +94,8 @@ describe('list', () => {
           target: { type: 'user', id: USER },
           ipAddress: TEST_ACTOR.ipAddress,
           userAgent: TEST_ACTOR.userAgent,
-          metadata: { n: 1 },
+          // `n` is no field of the type's contract schema, so the allow-list drops it (H-172).
+          metadata: {},
           occurredAt: second.occurredAt.toISOString(),
         },
         expect.objectContaining({ id: first.id, action: 'user.banned' }),

@@ -118,6 +118,8 @@ describe('a token that must not be accepted', () => {
           .sign(new TextEncoder().encode(signer.jwk.x as string))
       },
     ],
+    ['with a typ of another kind of token', () => signer.sign({}, { typ: 'dpop+jwt' })],
+    ['with no typ', () => signer.sign({}, { typ: undefined })],
     ['with an unknown kid', () => signer.sign({}, { kid: 'key-9' })],
     ['with no kid', () => signer.sign({}, { kid: undefined })],
     ['signed by another key under the same kid', () => stranger.sign()],
@@ -382,6 +384,19 @@ describe('refreshing', () => {
     expect(response.headers.getSetCookie().join('\n')).not.toContain('tula_at=ey')
   })
 
+  test('a refreshed token that does not verify leaves the stale access cookie as it was (H-306)', async () => {
+    // Pinned on purpose: the rotated refresh cookie is kept (the API already spent r1), the
+    // access cookie is neither replaced nor cleared, and the request is signed out. The stale
+    // token is expired or invalid, so it cannot be used; the next refresh replaces it.
+    const api = createFakeApi([signer])
+    refreshing(api, await stranger.sign())
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt=r1; tula_at=stale' }))
+    expect(response.status).toBe(307)
+    const cookies = response.headers.getSetCookie()
+    expect(cookies).toContain('tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600')
+    expect(cookies.some((line) => line.startsWith('tula_at='))).toBe(false)
+  })
+
   test('requests arriving together with one refresh token share one refresh', async () => {
     const api = createFakeApi([signer])
     const fresh = await signer.sign()
@@ -581,6 +596,12 @@ describe('a forged header from the browser', () => {
     expect(names).not.toContain('x-tula-auth')
     expect(response.headers.has('x-middleware-request-x-tula-auth')).toBe(false)
     expect(overridden(response).get('cookie')).toBe('tula_session=sess-token')
+  })
+
+  test('a differently spelled handler path is not exempt: it is protected like any route (H-295)', async () => {
+    const api = createFakeApi([signer], { secretKey: SECRET })
+    const response = await protect(api)(get('/api/%74ula/v1/client/me'))
+    expect(isNext(response)).toBe(false)
   })
 
   test('a route the middleware does not cover ignores it: the signature is checked, not the presence', async () => {

@@ -127,7 +127,8 @@ router.post(
       'verification on, and returns ten backup codes **once**. Every other session of the ' +
       'user ends; this one stays signed in. A wrong code is `mfa.invalid_code` and counts ' +
       'against the user’s second-factor lockout; with nothing pending, or after ten minutes, ' +
-      'it is `mfa.enrolment_expired` (410).',
+      'it is `mfa.enrolment_expired` (410).' +
+      STEP_UP,
     security: openapi.security.session,
     responses: {
       413: openapi.responses[413],
@@ -141,6 +142,7 @@ router.post(
   limited('mfa_totp_confirm'),
   publishableKey(),
   sessionAuth(),
+  requireRecentAuth(),
   validator('json', TotpConfirmRequestSchema, validationHook),
   async (c) => {
     const { sub, sid } = c.get('session')

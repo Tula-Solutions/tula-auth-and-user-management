@@ -118,6 +118,22 @@ for `before_sign_up` and hold for all three unless they name it.
   (the user starts again): that cost is stated in `docs/hooks.md`. Never move the question
   before the attempt's compare-and-set (a parallel submit would ask twice), and never after
   `Sessions.create` (a refused sign-in would leave a live session).
+- Decision (TULA-157, H-199, recorded, no code): the ticket asked to ask `before_session`
+  before the attempt is spent, so that a fail-closed outage or a rate-limit refusal would not
+  make the user redo the sign-in. Recommendation: do not. Asking first lets two parallel
+  submits of one attempt both ask the hook (the compare-and-set is what lets exactly one
+  through), which costs the operator's endpoint a call per submit and lets a denial be
+  decided twice. The cost of the other order is a restart of the sign-in during an outage,
+  which `docs/hooks.md` states. Reopening the attempt on `hook.unavailable` would instead
+  have to undo a spent compare-and-set, a second write path to the attempt's state.
+- Decision (TULA-157, H-201, recorded, no code): a hook's ceiling is per environment and
+  point (600 a minute for `before_sign_up`, 3000 for `before_session` and `before_token`), so
+  a flood that is let through the flow's own limits could use a point's whole allowance and
+  make the others' calls fail with a rate-limit error. It costs availability of the hook for
+  that environment, nothing else. Recommendation: leave it. The flow's per-IP and
+  per-identifier limits already bound what reaches a call (a call needs a proven address or
+  factor), and a per-IP or per-user sub-limit would add a counter on every sign-in path. Add
+  one if a real flood shows it.
 - **Neither later question holds an email address, and `before_token`'s holds no IP address
   either**: ids, the client kind, the profile's name and `amr` in both; `signUp` and the
   request's IP address in `before_session` only (`HookBeforeSessionDataSchema`,
@@ -207,3 +223,12 @@ rules themselves are above and are not repeated).
   refuses leaves the factor absent, no backup code valid and no new session, and the user's
   earlier sessions ended and denylisted; a backup code used for a refused sign-in is spent
   (nine left).
+
+- **`before_sign_up` is not asked for an account an operator creates.** Admin `Users.create`
+  and a SCIM create are operator-authenticated acts and skip the hook by design. An
+  operator who uses `before_sign_up` as a policy gate (an allow-list of domains, say) must
+  enforce the same policy in what calls those routes. Test: `modules/hook/sign-up.test.ts`.
+- Decision (TULA-157, H-187): a hook's URL is judged twice, on purpose. Saving it calls
+  `Outbound.check`, which only resolves and judges the address and sends nothing; a call goes
+  through `Outbound.request`, which judges again at delivery, because DNS changes. A save-time
+  pass is never proof for delivery. `modules/hook/outbound-judging.test.ts` holds both.

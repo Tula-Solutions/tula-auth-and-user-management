@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
+import { RateLimitError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { adminActor } from '~/lib/actor'
 import { adminRateLimit } from '~/middleware/rate-limit'
@@ -10,6 +11,12 @@ import * as openapi from '~/openapi'
 import { AuditExportRequestSchema, AuditLogListSchema, AuditLogQuerySchema } from './schema'
 
 const router = new Hono<AppEnv>()
+
+/** Exports one environment may have streaming at once on this instance (H-168). */
+export const MAX_CONCURRENT_EXPORTS = 2
+// shortcut: counted per process, not across instances; move to the rate limiter's store if
+// several instances must share one cap.
+const exportsInFlight = new Map<string, number>()
 
 router.get(
   '/',
@@ -83,12 +90,40 @@ router.post(
   validator('json', AuditExportRequestSchema, validationHook),
   (c) => {
     const body = c.req.valid('json')
+    const environmentId = c.get('tenant').environmentId
+    const running = exportsInFlight.get(environmentId) ?? 0
+    if (running >= MAX_CONCURRENT_EXPORTS) {
+      // Each export holds a database cursor and a stream open: a few at once is a client bug
+      // or an attempt to starve the pool, so the rest wait for one to end.
+      throw new RateLimitError(5_000)
+    }
+    exportsInFlight.set(environmentId, running + 1)
+    let released = false
+    const release = () => {
+      if (released) {
+        return
+      }
+      released = true
+      const left = (exportsInFlight.get(environmentId) ?? 1) - 1
+      if (left > 0) {
+        exportsInFlight.set(environmentId, left)
+      } else {
+        exportsInFlight.delete(environmentId)
+      }
+    }
     const chunks = Audit.exportEntries(c.get('deps'), c.get('tenant'), adminActor(c), body)
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
-        const next = await chunks.next()
+        let next: IteratorResult<string>
+        try {
+          next = await chunks.next()
+        } catch (error) {
+          release()
+          throw error
+        }
         if (next.done) {
+          release()
           controller.close()
         } else {
           controller.enqueue(encoder.encode(next.value))
@@ -96,7 +131,11 @@ router.post(
       },
       async cancel() {
         // A reader that leaves early still gets its export recorded, with the rows it got.
-        await chunks.return(undefined)
+        try {
+          await chunks.return(undefined)
+        } finally {
+          release()
+        }
       },
     })
     const csv = body.format === 'csv'

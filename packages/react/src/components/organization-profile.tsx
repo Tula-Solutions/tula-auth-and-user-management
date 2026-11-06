@@ -10,6 +10,7 @@ import { type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } f
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
+import { organizationStore } from '../hooks/organization-store'
 import { useOrganizationList } from '../hooks/use-organization'
 import { useClientConfig } from '../hooks/use-password-checklist'
 import { formatText } from '../localization'
@@ -122,7 +123,7 @@ export function OrganizationProfileSections(
   props: Omit<OrganizationProfileProps, 'appearance' | 'headingLevel'>
 ) {
   const { el, t } = useUi()
-  const { navigation } = useTulaContext()
+  const { navigation, client } = useTulaContext()
   const config = useClientConfig()
   const list = useOrganizationList()
   const guard = useGuard()
@@ -261,7 +262,9 @@ export function OrganizationProfileSections(
       try {
         await list.reload()
         if (wasActive) {
-          const others = (list.organizations ?? []).filter((entry) => entry.id !== leaving.id)
+          // The store's snapshot, not `list`: this closure still holds the list from before the reload.
+          const fresh = organizationStore(client).snapshot().list?.data
+          const others = (fresh ?? []).filter((entry) => entry.id !== leaving.id)
           if (config?.organizations?.personalAccount === true) {
             await list.setActive(null)
           } else if (others[0]) {

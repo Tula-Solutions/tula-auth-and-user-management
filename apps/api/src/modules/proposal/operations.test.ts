@@ -1064,7 +1064,8 @@ describe('limits', () => {
     expect((await refusal(refused)).code).toBe('rate_limited')
     expect(await deps.proposals.list(DEVELOPMENT.environmentId, 100)).toHaveLength(limit)
     // Another operation is counted apart, and so is another environment.
-    const session = await signIn(last.id)
+    // A banned user cannot sign in, so the session to end is a live user's.
+    const session = await signIn((await createUser('live@northline.app')).id)
     expect((await ask('end_session', { type: 'session', id: session })).status).toBe(201)
     const elsewhere = await createUser('maya@northline.app', OTHER_SK)
     expect((await call('POST', `/v1/admin/users/${elsewhere.id}/ban`, OTHER_SK)).status).toBe(200)

@@ -42,6 +42,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
   `amr` is a set: never compare it as an ordered array (scenarios use `{ "$set": [...] }`).
+- **A credential removed ends the other sessions.** Removing a passkey and unlinking an
+  OAuth identity call `Sessions.revokeOthers` with reason `mfa_changed`. Decision (TULA-157,
+  H-093): `SessionRevokeReason` gets no new value, because that moves `openapi.json` and every
+  SDK; the nearest existing reason is reused. Add a value if a client ever needs to tell them apart.
 
 ## What to test
 
@@ -74,3 +78,12 @@ rules themselves are above and are not repeated).
 - What a session is tested for in another area is in that area's file: a device key
   (`device-binding.md`), custom claims (`jwt-templates.md`), the hooks asked when one is made
   (`auth-hooks.md`).
+
+- **The ban window of the stateless fast path** (H-115): `sessionAuth` verifies an access token
+  without a database hit, so a user banned a moment ago is served by a token already issued
+  until it expires or the revoked-session list holds its session. The window is bounded by
+  the access-token TTL (~60s) and has no interval constant of its own. `Users.ban` revokes
+  every session through `Sessions.revokeAllForUser` (the denylist), which closes it at once;
+  the ban can be run again to retry a revocation that failed. A refresh or a touch rejects a
+  banned user (`rejectBanned`), `Sessions.create` re-reads the user after the store write, and
+  `Users.me` refuses one, so a race with the ban ends in a refused or ended session.

@@ -243,6 +243,7 @@ router.post(
       503: openapi.responses[503],
     },
   }),
+  rateLimit({ name: 'session_revoke_others', limit: STEP_UP_RATE_LIMIT, window: '1m', key: byIp }),
   publishableKey(),
   sessionAuth(),
   async (c) => {

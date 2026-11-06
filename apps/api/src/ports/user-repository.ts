@@ -3,7 +3,11 @@ import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** What deleting a user came to. */
 export type DeleteUserOutcome =
-  | { outcome: 'deleted' }
+  /**
+   * `endedSessionIds`: the sessions that were still active (not revoked) when the delete took
+   * them away by cascade. The caller denylists them: a sweep after the delete finds nothing.
+   */
+  | { outcome: 'deleted'; endedSessionIds: string[] }
   | { outcome: 'not_found' }
   /**
    * The user is the only member who can manage members of these organizations (ids in
@@ -657,6 +661,18 @@ export interface UserRepository {
   ): Promise<UserRecord | null>
 
   /**
+   * Clear the mark that says a directory created this account, when it is that organization's.
+   *
+   * Not recorded: the mark is bookkeeping for the directory's own repair, not a permission.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param organizationId - The directory's organization; another organization's mark stays.
+   * @returns Nothing.
+   */
+  releaseDirectory(environmentId: string, userId: string, organizationId: string): Promise<void>
+
+  /**
    * The users of an environment whose account holds a phone number, oldest account first.
    *
    * A number is not unique (ADR 0037), so this answers a list. **It is the one read by
@@ -805,7 +821,11 @@ export interface UserRepository {
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param activity - Recorded in the same transaction, only if the user was deleted.
-   * @returns `deleted`; `not_found` when they do not exist; `last_manager` with the ids of the
+   * **The user's row is locked first and the sessions still active are read under that lock**,
+   * so a session created concurrently either is in the list or fails its foreign key; the
+   * cascade then leaves nothing for a later sweep to find.
+   *
+   * @returns `deleted` with `endedSessionIds`; `not_found` when they do not exist; `last_manager` with the ids of the
    *   organizations they alone manage, when nothing was deleted or recorded.
    */
   delete(environmentId: string, userId: string, activity: Recorded): Promise<DeleteUserOutcome>

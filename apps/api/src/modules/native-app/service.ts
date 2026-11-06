@@ -148,7 +148,7 @@ async function register(
   }
   const id = deps.ids.next()
   const fingerprints =
-    input.platform === 'android' ? normalizeCertFingerprints(input.sha256CertFingerprints) : []
+    input.platform === 'android' ? certFingerprints(input.sha256CertFingerprints) : []
   const appLinkPaths = normalizeAppLinkPaths(input.appLinkPaths ?? [])
   const activity = Audit.entry(deps, tenant, {
     type: 'native_app.created',
@@ -182,6 +182,27 @@ async function register(
     })
   }
   return view(record)
+}
+
+/**
+ * Normalise fingerprints, refusing a non-empty list in which none is valid (H-180):
+ * `normalizeCertFingerprints` drops what it cannot read, so without this a list of typos
+ * would silently clear the stored set.
+ */
+function certFingerprints(given: readonly string[]): string[] {
+  const normal = normalizeCertFingerprints(given)
+  if (given.length > 0 && normal.length === 0) {
+    throw new ValidationError({
+      errors: [
+        {
+          field: 'sha256CertFingerprints',
+          code: 'validation.failed',
+          message: 'None of the fingerprints is a SHA-256 certificate fingerprint.',
+        },
+      ],
+    })
+  }
+  return normal
 }
 
 /** The 422 for a field that is not one of the app's platform. */
@@ -235,7 +256,7 @@ export async function update(
     changes.teamId = input.teamId
   }
   if (input.sha256CertFingerprints !== undefined) {
-    const next = normalizeCertFingerprints(input.sha256CertFingerprints)
+    const next = certFingerprints(input.sha256CertFingerprints)
     if (next.join() !== current.sha256CertFingerprints.join()) {
       changes.sha256CertFingerprints = next
     }

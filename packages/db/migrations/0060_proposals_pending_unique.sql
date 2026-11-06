@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "proposals_pending_unique_idx" ON "tula"."proposals" USING btree ("environment_id","proposed_by","operation","target_type","target_id") WHERE "tula"."proposals"."status" = 'pending';

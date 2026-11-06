@@ -43,6 +43,8 @@ const MAX_DOCUMENT_BYTES = 256 * 1024
 
 /** How long a discovery document or a key set is reused for one issuer. */
 const CACHE_MS = 10 * 60 * 1000
+/** How soon after a key set was fetched an unknown `kid` may fetch it again (TULA-157, H-035). */
+const JWKS_REFETCH_COOLDOWN_MS = 30_000
 
 /** Seconds of clock difference accepted on `exp` and `iat`, as for an OAuth provider. */
 const CLOCK_TOLERANCE_SECONDS = 30
@@ -107,8 +109,13 @@ export async function offered(
  * Whether the connection's organization still holds `domain`: a verified, unlapsed row of its
  * own (ADR 0065). The connection's stored list is only a filter; ownership is read here, on
  * every use, because a lapse is a matter of time and no write marks it.
+ *
+ * @param deps - Domain store and clock.
+ * @param connection - The connection whose organization must hold the domain.
+ * @param domain - The domain to check.
+ * @returns Whether the organization holds it, verified and unlapsed.
  */
-async function holdsDomain(
+export async function holdsDomain(
   deps: Pick<Deps, 'organizationDomains' | 'clock'>,
   connection: SsoConnectionRecord,
   domain: string
@@ -384,6 +391,12 @@ function keysOf(deps: FetchDeps & Pick<Deps, 'clock'>, jwksUri: string): JWTVeri
       if (!(error instanceof errors.JWKSNoMatchingKey)) {
         throw error
       }
+      // A token with a made-up kid must not make us call the provider on every attempt: a set
+      // fetched within the cooldown is the answer (a rotation shows up on the next minute's try).
+      const kept = cache.get(jwksUri)
+      if (kept && deps.clock.now().getTime() - (kept.until - CACHE_MS) < JWKS_REFETCH_COOLDOWN_MS) {
+        throw error
+      }
       return (await set(true))(header, token)
     }
   }
@@ -497,7 +510,12 @@ export async function exchange(
   if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, params.nonce)) {
     throw refused('id_token', 'nonce', 'response_not_to_this_request')
   }
-  if (payload.azp !== undefined && payload.azp !== connection.clientId) {
+  // OIDC Core 3.1.3.7: several audiences need an azp, and it must be this client (H-034).
+  const several = Array.isArray(payload.aud) && payload.aud.length > 1
+  if (
+    (several && payload.azp === undefined) ||
+    (payload.azp !== undefined && payload.azp !== connection.clientId)
+  ) {
     throw refused('id_token', 'azp', 'wrong_audience')
   }
   if (seen) {
@@ -596,6 +614,7 @@ export async function verifySaml(
     acsUrl,
     requestId,
     idpEntityId: saml.idpEntityId,
+    replayScope: `${connection.environmentId}:${connection.id}`,
     certificates: saml.certificates.map((c) => c.pem),
   })
   if (!verdict.ok) {
@@ -826,6 +845,10 @@ export async function resolveAccount(
     )
     const knownUser = known && (await deps.users.findById(environmentId, known.userId))
     if (knownUser) {
+      // A ban stops the side effects too: no membership or role changes for a banned account.
+      if (knownUser.bannedAt !== null) {
+        throw new AuthError('auth.user_banned')
+      }
       await ensureMember(deps, tenant, connection, knownUser.id, profile, origin)
       return { user: knownUser, created: false }
     }

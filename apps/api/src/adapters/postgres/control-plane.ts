@@ -67,6 +67,11 @@ async function insertActivities(
  * The control plane in `tula.workspaces`, `tula.projects`, `tula.environments` and
  * `tula.instance_audit_logs` (no RLS: none of them is tenant data). Every write runs in one
  * transaction with its audit entry.
+ *
+ * Because there is no RLS here, the database does not decide who may call any of this: the
+ * router's `instanceAdmin()` does, and nothing else. A method of this class must therefore only
+ * be reached from `/v1/instance/*` routes behind that middleware; `instance-guards.test.ts`
+ * walks the route table and fails for a route there that answers a request without a credential.
  */
 export class PostgresControlPlane implements ControlPlane {
   /** @param db - Database connected as the runtime role. */

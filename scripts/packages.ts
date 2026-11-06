@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { readNpmConfigFiles } from './npm-config'
 import {
   HELD_PACKAGES,
   leakedPackedFiles,
@@ -21,6 +22,7 @@ import {
   planRelease,
   printableCommand,
   refusals,
+  registryLatest,
   registryStates,
   releaseReport,
   type StagedPackage,
@@ -340,13 +342,15 @@ async function main(argv: readonly string[]): Promise<number> {
   const after = await treeState()
   const channel = chooseChannel(
     process.env,
-    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null
+    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null,
+    await readNpmConfigFiles(process.env, process.cwd())
   )
   const plan = planRelease(
     staged,
     await registryStates(staged, fetch as unknown as Fetcher),
     channel,
-    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) })
+    refusals({ packages: staged, before, after, problems: otpProblems(args, process.env) }),
+    await registryLatest(staged, fetch as unknown as Fetcher)
   )
   process.stdout.write(releaseReport(args, plan, { head: after.head, root }))
   process.stdout.write(

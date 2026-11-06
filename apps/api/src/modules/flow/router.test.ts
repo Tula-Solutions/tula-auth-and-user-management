@@ -309,14 +309,29 @@ describe('sign-in over HTTP', () => {
     )
   })
 
+  test('an identifier that is neither an address nor a phone number is refused (TULA-157, H-032)', async () => {
+    const res = await post('/sign-ins', { identifier: 'not an address' })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('email.invalid')
+  })
+
   test('password submissions are rate limited per IP', async () => {
-    const attempt = await json<FlowAttempt>(await post('/sign-ins', { identifier: 'x' }))
+    const attempt = await json<FlowAttempt>(await post('/sign-ins', { identifier: EMAIL }))
     for (let i = 0; i < Flows.CREDENTIAL_RATE_LIMIT; i++) {
       await post(`/sign-ins/${attempt.id}/password`, {})
     }
     expect((await post(`/sign-ins/${attempt.id}/password`, { password: PASSWORD })).status).toBe(
       429
     )
+  })
+
+  test('the OAuth start and the SSO start have budgets of their own', async () => {
+    const attempt = await json<FlowAttempt>(await post('/sign-ins', { identifier: 'x' }))
+    for (let i = 0; i < Flows.CREDENTIAL_RATE_LIMIT; i++) {
+      await post('/sign-ins/oauth', {})
+    }
+    expect((await post('/sign-ins/oauth', {})).status).toBe(429)
+    expect((await post(`/sign-ins/${attempt.id}/sso`, {})).status).not.toBe(429)
   })
 
   test('malformed requests from many IPs cannot use up an environment’s ceiling', async () => {

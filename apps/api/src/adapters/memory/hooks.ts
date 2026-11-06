@@ -32,7 +32,10 @@ export class MemoryHookStore implements HookStore {
     }
     const same =
       !expected ||
-      (record.enabled === expected.enabled && record.failureMode === expected.failureMode)
+      (record.url === expected.url &&
+        record.enabled === expected.enabled &&
+        record.deadlineMs === expected.deadlineMs &&
+        record.failureMode === expected.failureMode)
     return same ? record : null
   }
 

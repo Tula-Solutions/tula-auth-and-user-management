@@ -35,6 +35,7 @@ import { PostgresOrganizationDomainStore } from '~/adapters/postgres/organizatio
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
+import { assertRuntimeRole } from '~/adapters/postgres/runtime-role'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSetupLinkStore } from '~/adapters/postgres/setup-links'
@@ -64,6 +65,7 @@ import { sha256Hex } from '~/lib/crypto'
 import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
+import { localTierIsExposed } from '~/lib/outbound-tier'
 import { createSecretBox } from '~/lib/secret-box'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import type { SmsSender } from '~/ports/sms-sender'
@@ -137,6 +139,8 @@ export interface Container {
   deps: Deps
   /** What this process does (`planProcess`): what it serves and which jobs it starts. */
   plan: ProcessPlan
+  /** Refuses (throws) a database login that would bypass row-level security; call before serving. */
+  verifyDatabaseRole: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -157,8 +161,20 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
   const plan = planProcess(role, env.WEBHOOK_WORKER)
   const database = createDatabase(env.DATABASE_URL)
   const clock = systemClock
-  const mailer = new SmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
+  const mailer = new SmtpMailer({
+    url: env.SMTP_URL,
+    from: env.MAIL_FROM,
+    // TLS is mandatory where real users' mail goes (TULA-182, H-225).
+    requireTls: env.ENVIRONMENT === 'staging' || env.ENVIRONMENT === 'prod',
+  })
   const keyedHash = createKeyedHash(env.TULA_MASTER_KEY)
+  if (localTierIsExposed(env)) {
+    // Loud on every boot, for the API and the worker: the `local` outbound tier allows
+    // loopback targets for webhooks and hooks, which a reachable deployment must not.
+    logger.warn(
+      "ENVIRONMENT is local but PUBLIC_URL is not a loopback address: webhooks and hooks may reach this host's loopback services. Set ENVIRONMENT to dev, staging or prod for any deployment other people can reach."
+    )
+  }
   // State that API instances must agree on lives in Redis when it is configured. Without it
   // (allowed in `local` and `dev` only, see `env.ts`) it is held in this process's memory.
   const redis = env.REDIS_URL ? connectRedis(env.REDIS_URL, clock) : null
@@ -185,6 +201,14 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     // every code it "sends".
     logger.warn(
       'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
+    )
+  }
+  if (role === 'api' && env.TRUST_PROXY && env.ENVIRONMENT !== 'local') {
+    // `clientIp` takes the LAST X-Forwarded-For entry, right only behind exactly one trusted
+    // proxy. Behind two (a CDN and a load balancer) it is the inner proxy's address, so every
+    // client shares one bucket; with none, a client writes its own (H-150).
+    logger.warn(
+      'TRUST_PROXY is on: the API takes the last X-Forwarded-For entry as the client address, which is right only behind exactly one proxy that overwrites the header (docs/self-host.md).'
     )
   }
   if (role === 'api') {
@@ -299,6 +323,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
   return {
     deps,
     plan,
+    verifyDatabaseRole: () => assertRuntimeRole(database.db),
     close: async () => {
       mailer.close()
       redis?.close()

@@ -106,6 +106,7 @@ describeUserRepository('PostgresUserRepository on a real server', async () => ({
   users: new PostgresUserRepository(db),
   factors: new PostgresFactorStore(db),
   passkeys: new PostgresPasskeyStore(db),
+  sessions: new PostgresSessionStore(db),
   log,
   ...(await tenants()),
 }))
@@ -322,6 +323,7 @@ describeScimStore('Postgres on a real server', async () => {
       )
       return id
     },
+    deleteOrganization: removeOrganization,
     user: (tenant) =>
       withTenant(db, tenant.environmentId, async (tx) => {
         const id = Bun.randomUUIDv7()
@@ -501,6 +503,15 @@ async function seedOrganization(tenant: {
   return id
 }
 
+/** Deletes an organization, so the foreign keys' cascades run. */
+async function removeOrganization(tenant: { environmentId: string }, id: string): Promise<void> {
+  await withTenant(db, tenant.environmentId, (tx) =>
+    tx
+      .delete(organizations)
+      .where(and(eq(organizations.id, id), eq(organizations.environmentId, tenant.environmentId)))
+  )
+}
+
 // Fresh tenants per test, as for the stores above. The SSO suite includes the group-to-role
 // mapping (`organization_group_roles`, TULA-144).
 describeSsoConnectionStore('Postgres on a real server', async () => {
@@ -512,6 +523,7 @@ describeSsoConnectionStore('Postgres on a real server', async () => {
         .map((entry) => entry.type)
         .reverse(),
     organization: seedOrganization,
+    deleteOrganization: removeOrganization,
     user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
@@ -527,6 +539,7 @@ describeSetupLinkStore('Postgres on a real server', async () => {
         .map((entry) => entry.type)
         .reverse(),
     organization: seedOrganization,
+    deleteOrganization: removeOrganization,
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

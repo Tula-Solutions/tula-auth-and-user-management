@@ -289,8 +289,9 @@ export function secureStoreKey(key: string): string {
  * A write the store refuses is tried again, twice ({@link SECURE_WRITE_RETRY_DELAYS_MS}),
  * before it rejects: the token being written has already replaced the stored one on the
  * server. After it has rejected, the same value is offered to the store twice more, later
- * ({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A read and a delete
- * are asked once.
+ * ({@link SECURE_REWRITE_DELAYS_MS}), without anybody waiting for it. A delete is tried again
+ * the same way as a write, so that a refusal does not leave a token on the device after a
+ * sign-out (stopped if a newer write came meanwhile). A read is asked once.
  *
  * A write that is *waiting* to be tried again, now or later, gives up when a newer write or
  * a delete of the same entry was asked for meanwhile: a waiting try never undoes a sign-out
@@ -432,8 +433,26 @@ export function secureStoreStorage(
     },
     async remove(key) {
       const entry = secureStoreKey(key)
-      claim(stateOf(entry), true)
-      await store.deleteItemAsync(entry, itemOptions())
+      const state = stateOf(entry)
+      const turn = claim(state, true)
+      // A delete the store refuses is asked again like a write (H-322): a token left on the
+      // device after sign-out is the thing to avoid. Stopped if a newer write came in, since
+      // deleting then would take the new session's token. The last refusal is thrown.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await store.deleteItemAsync(entry, itemOptions())
+          return
+        } catch (cause) {
+          const delay = SECURE_WRITE_RETRY_DELAYS_MS[attempt]
+          if (delay === undefined) {
+            throw cause
+          }
+          await wait(schedule, delay)
+          if (state.turn !== turn) {
+            throw cause
+          }
+        }
+      }
     },
   }
 }

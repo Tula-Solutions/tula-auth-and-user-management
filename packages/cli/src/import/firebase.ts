@@ -35,17 +35,27 @@ export function parseHashConfig(source: string): {
   memCost?: number
 } {
   const values = new Map<string, string>()
+  // A repeated key is refused, not last-wins: the file would import with a parameter its owner may not have meant.
+  const put = (key: string, value: string) => {
+    const name = key.replace(/[_-]/g, '').toLowerCase()
+    if (values.has(name)) {
+      throw new UsageError(
+        `The Firebase hash config file names ${name} twice. Keep one value and run the command again.`
+      )
+    }
+    values.set(name, value)
+  }
   const trimmed = source.trim()
   const json = trimmed.startsWith('{') ? objectOf(trimmed) : undefined
   if (json !== undefined) {
     for (const [key, value] of Object.entries(json)) {
       if (typeof value === 'string' || typeof value === 'number') {
-        values.set(key.replace(/[_-]/g, '').toLowerCase(), String(value))
+        put(key, String(value))
       }
     }
   } else {
     for (const match of trimmed.matchAll(/([A-Za-z_][\w-]*)\s*[:=]\s*"?([^\s",}]+)"?/g)) {
-      values.set((match[1] as string).replace(/[_-]/g, '').toLowerCase(), match[2] as string)
+      put(match[1] as string, match[2] as string)
     }
   }
   const signerKey = values.get('base64signerkey') ?? values.get('signerkey')

@@ -4,6 +4,9 @@ import { basename } from 'node:path'
 import { UsageError } from './args'
 import type { Host, RunResult } from './host'
 
+/** The most a file or standard input the CLI reads may hold: a key, a config or a secrets file is far smaller. */
+export const MAX_INPUT_BYTES = 1024 * 1024
+
 /** What is said when a file the CLI would write or re-mode turns out to be a symbolic link. */
 function linkRefusal(path: string): UsageError {
   return new UsageError(
@@ -181,6 +184,9 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         return null
       }
       try {
+        if ((await file.stat()).size > MAX_INPUT_BYTES) {
+          throw new Error(`${path} is larger than ${MAX_INPUT_BYTES} bytes.`)
+        }
         return await file.readFile('utf8')
       } finally {
         await file.close()

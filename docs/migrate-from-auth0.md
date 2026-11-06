@@ -46,7 +46,9 @@ no address and no hash.
 
 Each entry of the hash file is matched to a user by `auth0|<_id>`, which is the user's `user_id`.
 If the id does not match, an address that **exactly one** entry has is used. The report says how
-many entries matched no user, and how many database users had no hash. Without
+many entries matched no user, and how many database users had no hash. The address fallback means two files from different tenants can
+attach one entry's hash to another tenant's user: use the hash file of the tenant the user file
+came from, and read the unmatched counts. Without
 `--password-hashes`, the database users are imported without a password and the report says so.
 
 A user may also carry Auth0's own import field, `custom_password_hash`, in the user file; a

@@ -29,6 +29,8 @@ export interface IdTokenSignInInput {
  *   Go on with `flow`.
  * - `cancelled`: the user dismissed the sheet, or nobody answered it in time. Not an error
  *   and not a sign-in: nothing was sent to prove anything, and the action works again.
+ * - `no_account`: the device has no account of the provider to sign in with (Google's
+ *   `noSavedCredentialFound`). Not a dismissal: offer another way in.
  *
  * @example
  * ```ts
@@ -40,6 +42,7 @@ export type IdTokenOutcome =
   | { readonly status: 'complete'; readonly flow: SignInFlow }
   | { readonly status: 'needs_step'; readonly flow: SignInFlow }
   | { readonly status: 'cancelled' }
+  | { readonly status: 'no_account' }
 
 /**
  * The longest a provider's sheet holds its place, in milliseconds: five minutes, half the
@@ -59,7 +62,7 @@ function answered(
   sheet: IdTokenSheet,
   nonce: string,
   schedule: Schedule
-): Promise<IdTokenCredential | null> {
+): Promise<IdTokenCredential | null | 'no_account'> {
   return new Promise((resolve, reject) => {
     let over = false
     const end = (finish: () => void) => {
@@ -71,7 +74,7 @@ function answered(
     const stop = schedule(() => end(() => resolve(null)), ID_TOKEN_SHEET_CEILING_MS)
     // Started inside a promise: a module that throws at the call rejects like one that
     // rejects.
-    new Promise<IdTokenCredential | null>((start) => {
+    new Promise<IdTokenCredential | null | 'no_account'>((start) => {
       start(sheet.signIn({ nonce }))
     }).then(
       (value) => {
@@ -148,7 +151,7 @@ export async function signInWithIdToken(
     // Apple's token carries the hash of the nonce its request was given; the server
     // compares it with the hash of its own (ADR 0047). The app's side of that is here.
     const nonce = provider === 'apple' ? sha256Hex(pending.nonce) : pending.nonce
-    let credential: IdTokenCredential | null
+    let credential: IdTokenCredential | null | 'no_account'
     try {
       credential = await answered(sheet, nonce, host.schedule)
     } catch {
@@ -158,6 +161,9 @@ export async function signInWithIdToken(
     }
     if (credential === null) {
       return { status: 'cancelled' }
+    }
+    if (credential === 'no_account') {
+      return { status: 'no_account' }
     }
     if (typeof credential?.idToken !== 'string' || credential.idToken === '') {
       throw toTulaError(new Error('The sheet handed over no ID token.'))

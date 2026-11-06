@@ -27106,7 +27106,7 @@
           "MFA"
         ],
         "summary": "Confirm the authenticator app",
-        "description": "Confirms the pending authenticator with the 6-digit code it shows, turning two-step verification on, and returns ten backup codes **once**. Every other session of the user ends; this one stays signed in. A wrong code is `mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing pending, or after ten minutes, it is `mfa.enrolment_expired` (410).",
+        "description": "Confirms the pending authenticator with the 6-digit code it shows, turning two-step verification on, and returns ten backup codes **once**. Every other session of the user ends; this one stays signed in. A wrong code is `mfa.invalid_code` and counts against the user’s second-factor lockout; with nothing pending, or after ten minutes, it is `mfa.enrolment_expired` (410). Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include the second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
         "security": [
           {
             "publishableKey": [],
@@ -38100,7 +38100,7 @@
           "Organizations"
         ],
         "summary": "Accept an invitation",
-        "description": "The signed-in user joins the organization with the invitation’s role. Only the account the invitation was sent to may accept it: its **verified** email must be the invited address (`organization.invitation_wrong_account`, `organization.invitation_email_unverified`; 403). The invitation is used up and the membership created in one transaction. A role deleted since the invitation was sent answers `organization.invitation_role_gone` (409): the invitation is never given another role. A user who is a member already answers `organization.member_exists` (409). Refuses with `organization.invitation_not_found` (404) for a token nothing was issued for; `organization.invitation_expired`, `organization.invitation_revoked` and `organization.invitation_used` (410) for one that can no longer be used. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "description": "The signed-in user joins the organization with the invitation’s role. Only the account the invitation was sent to may accept it: its **verified** email must be the invited address (`organization.invitation_wrong_account`, `organization.invitation_email_unverified`; 403). The invitation is used up and the membership created in one transaction. A role deleted since the invitation was sent answers `organization.invitation_role_gone` (409): the invitation is never given another role, and a role that now holds a permission its inviter lacks answers `organization.role_not_assignable` (403). A user who is a member already answers `organization.member_exists` (409). Refuses with `organization.invitation_not_found` (404) for a token nothing was issued for; `organization.invitation_expired`, `organization.invitation_revoked` and `organization.invitation_used` (410) for one that can no longer be used. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
         "security": [
           {
             "publishableKey": [],
@@ -42486,7 +42486,7 @@
           "Organizations"
         ],
         "summary": "Change an SSO connection",
-        "description": "Changes the fields sent and keeps the rest, as the admin route does. Switching enforcement off, trusting the provider for MFA and naming a break-glass role are weakenings: they need a **recent authentication** (`auth.step_up_required`, 403) and the audit entry says `weakened: true`. Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
+        "description": "Changes the fields sent and keeps the rest, as the admin route does. Activating a connection, changing what an active one accepts (issuer, secret, domains, mapping), switching enforcement off, trusting the provider for MFA and naming a break-glass role are weakenings: they need a **recent authentication** (`auth.step_up_required`, 403) and the audit entry says `weakened: true`. Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
         "security": [
           {
             "publishableKey": [],
@@ -44513,7 +44513,7 @@
           "SSO setup links"
         ],
         "summary": "Create an SSO setup link for my organization",
-        "description": "Creates a setup link; the token and its address are in this answer and nowhere else. The caller must be a member whose role holds `org:sys:sso:manage` **now** (read from the role on every request, never from the token): `organization.not_a_member` (403) for an organization they do not belong to, and `auth.forbidden` (403) for a member without the permission.",
+        "description": "Creates a setup link; the token and its address are in this answer and nowhere else. The caller must be a member whose role holds `org:sys:sso:manage` **now** (read from the role on every request, never from the token): `organization.not_a_member` (403) for an organization they do not belong to, and `auth.forbidden` (403) for a member without the permission. Minting or revoking a link needs a **recent authentication** (`auth.step_up_required`, 403): a link lets its holder configure the organization’s single sign-on.",
         "security": [
           {
             "publishableKey": [],
@@ -44681,7 +44681,7 @@
           "SSO setup links"
         ],
         "summary": "Revoke one of my organization’s SSO setup links",
-        "description": "Revokes a link that is not revoked yet. The caller must be a member whose role holds `org:sys:sso:manage` **now** (read from the role on every request, never from the token): `organization.not_a_member` (403) for an organization they do not belong to, and `auth.forbidden` (403) for a member without the permission.",
+        "description": "Revokes a link that is not revoked yet. The caller must be a member whose role holds `org:sys:sso:manage` **now** (read from the role on every request, never from the token): `organization.not_a_member` (403) for an organization they do not belong to, and `auth.forbidden` (403) for a member without the permission. Minting or revoking a link needs a **recent authentication** (`auth.step_up_required`, 403): a link lets its holder configure the organization’s single sign-on.",
         "security": [
           {
             "publishableKey": [],

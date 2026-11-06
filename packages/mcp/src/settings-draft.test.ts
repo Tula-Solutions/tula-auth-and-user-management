@@ -320,17 +320,17 @@ describe('draft_settings_change: a provider’s secret is a reference and nothin
   test.each([
     [
       'a new provider with no client id',
-      { provider: 'github', secretEnv: 'A' },
+      { provider: 'github', secretEnv: 'X_SECRET' },
       'providers.github.clientId',
     ],
     [
       'a team id on a provider that has none',
-      { provider: 'google', teamId: 'ABCDE12345', secretEnv: 'A' },
+      { provider: 'google', teamId: 'ABCDE12345', secretEnv: 'X_SECRET' },
       'providers.google.teamId',
     ],
     [
       'Microsoft with no tenant',
-      { provider: 'microsoft', clientId: 'ms', secretEnv: 'A' },
+      { provider: 'microsoft', clientId: 'ms', secretEnv: 'X_SECRET' },
       'providers.microsoft.tenant',
     ],
     [
@@ -338,7 +338,7 @@ describe('draft_settings_change: a provider’s secret is a reference and nothin
       {
         provider: 'google',
         additionalClientIds: ['client-id.apps.example'],
-        secretEnv: 'A',
+        secretEnv: 'X_SECRET',
       },
       'providers.google.additionalClientIds.0',
     ],
@@ -569,7 +569,7 @@ describe('draft_settings_change: what the schema refuses, before any request', (
     ],
     ['a name that starts with a digit', { providers: [{ ...provider, secretEnv: '1SECRET' }] }],
     ['an empty name', { providers: [{ ...provider, secretEnv: '' }] }],
-    ['a name past the cap', { providers: [{ ...provider, secretEnv: 'A'.repeat(129) }] }],
+    ['a name past the cap', { providers: [{ ...provider, secretEnv: 'X_SECRET'.repeat(129) }] }],
   ])('%s', async (_name, args) => {
     const { client, requests, logs } = await world()
     let failed: string
@@ -628,18 +628,25 @@ describe('draft_settings_change: what the schema refuses, before any request', (
     }
   )
 
-  test.each([
-    'GOOGLE_CLIENT_SECRET',
-    'TULA_GOOGLE_SECRET',
-    'APPLE_PRIVATE_KEY',
-    'TULA_SECRET_KEYS',
-    'MY_DATABASE_URL',
-    'TULA_PUBLISHABLE_KEY',
-  ])('%s is a name a provider’s secret may be read from', (secretEnv) => {
-    expect(
-      draftSettingsChangeInput.safeParse({ providers: [{ provider: 'google', secretEnv }] }).success
-    ).toBe(true)
-  })
+  test.each(['GOOGLE_CLIENT_SECRET', 'TULA_GOOGLE_SECRET', 'APPLE_PRIVATE_KEY'])(
+    '%s is a name a provider’s secret may be read from',
+    (secretEnv) => {
+      expect(
+        draftSettingsChangeInput.safeParse({ providers: [{ provider: 'google', secretEnv }] })
+          .success
+      ).toBe(true)
+    }
+  )
+
+  test.each(['AWS_ACCESS_KEY_ID', 'MY_DATABASE_URL', 'TULA_SECRET_KEYS', 'GITHUB_TOKEN'])(
+    'H-255: %s, a name that is not a provider secret’s shape, is refused',
+    (secretEnv) => {
+      expect(
+        draftSettingsChangeInput.safeParse({ providers: [{ provider: 'google', secretEnv }] })
+          .success
+      ).toBe(false)
+    }
+  )
 
   test('the notes tell the reader to read every variable’s name before applying', async () => {
     const { client } = await world()
@@ -916,7 +923,7 @@ describe('draft_settings_change: it only reads', () => {
       ],
     })
     await callTool(client, TOOL, { settings: [{ path: 'mfa.policy', value: 'nope' }] })
-    await callTool(client, TOOL, { providers: [{ provider: 'github', secretEnv: 'A' }] })
+    await callTool(client, TOOL, { providers: [{ provider: 'github', secretEnv: 'X_SECRET' }] })
     expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
       SETTINGS,
       PROVIDERS,

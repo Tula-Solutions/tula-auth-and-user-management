@@ -38,6 +38,9 @@ async function load(deps: Deps, ctx: ScimContext, id: string) {
   return group
 }
 
+/** The most members one PATCH may add: each is a store lookup, so the request is bounded. */
+const MAX_MEMBERS_PER_REQUEST = 1000
+
 /** Members must be users this directory manages; one the directory has not pushed is a 400. */
 async function checkMembers(deps: Deps, ctx: ScimContext, ids: string[]) {
   for (const id of new Set(ids)) {
@@ -340,6 +343,9 @@ export async function patch(
       case 'members': {
         const ids = idsOf(value)
         if (op === 'add') {
+          if (ids.length > MAX_MEMBERS_PER_REQUEST) {
+            throw invalidValue(`At most ${MAX_MEMBERS_PER_REQUEST} members may be added at once.`)
+          }
           next.memberIds.push(...ids)
         } else if (op === 'remove') {
           next.memberIds =

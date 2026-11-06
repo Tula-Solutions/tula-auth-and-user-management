@@ -494,6 +494,24 @@ describe('sign-out', () => {
     ])
   })
 
+  test('an explicit refresh() while the sign-out request is in flight asks nothing and installs nothing', async () => {
+    // A browser's session lives in a cookie, so a refresh in this window would reach the server.
+    const w = world()
+    const { tula, states } = tab(w, 'web')
+    await tula.load()
+    const held = deferred<Response>()
+    w.api.on(SIGN_OUT, () => held.promise)
+    const refreshCalls = w.api.calls(REFRESH).length
+    const signingOut = tula.session.signOut()
+    await Promise.resolve()
+    expect(await tula.session.refresh()).toBeNull()
+    expect(w.api.calls(REFRESH)).toHaveLength(refreshCalls)
+    held.resolve(new Response(null, { status: 204 }))
+    await signingOut
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(states.slice(1)).toEqual([{ status: 'signed-out' }])
+  })
+
   test('a refresh that fails after sign-out changes nothing; the known token is revoked', async () => {
     const w = world()
     const { tula, states } = await signedIn(w)
@@ -630,7 +648,7 @@ describe('a sign-out the server never heard of can be sent again (review E1)', (
     expect(w.api.calls(SIGN_OUT)).toHaveLength(1)
   })
 
-  test('a new sign-in forgets it: the next sign-out ends the new session only', async () => {
+  test('a new sign-in keeps it: the next sign-out ends both sessions, once (H-315)', async () => {
     const w = world()
     const storage = memoryStorage()
     await storage.set(STORAGE_KEY, 'rt_0')
@@ -645,6 +663,7 @@ describe('a sign-out the server never heard of can be sent again (review E1)', (
     expect(w.api.calls(SIGN_OUT).map((request) => request.body)).toEqual([
       { refreshToken: 'rt_1' },
       { refreshToken: 'rt_new' },
+      { refreshToken: 'rt_1' },
     ])
   })
 
@@ -664,10 +683,11 @@ describe('a sign-out the server never heard of can be sent again (review E1)', (
     expect(session.state()).toMatchObject({ status: 'signed-in', sessionId: 'session_2' })
     w.api.on(SIGN_OUT, () => new Response(null, { status: 204 }))
     await session.signOut()
-    // The old session's token was forgotten with the sign-in; only the new one is presented.
+    // H-315: the old session's token that never arrived is revoked too, after the new one's.
     expect(w.api.calls(SIGN_OUT).map((request) => request.body)).toEqual([
       { refreshToken: 'rt_1' },
       { refreshToken: 'rt_new' },
+      { refreshToken: 'rt_1' },
     ])
   })
 })

@@ -434,6 +434,8 @@ export async function addMember(
  * @throws AuthError `organization.disabled` while organizations are switched off.
  * @throws NotFoundError when the organization is not this environment's or the user is not a member.
  * @throws AuthError `organization.role_unknown` when no role has that key.
+ * @throws AuthError `organization.permission_required` when a setup link's actor asks for a
+ *   privileged role.
  * @throws AuthError `organization.last_manager` when the member is the last to hold
  *   `org:sys:memberships:manage` and the new role does not.
  * @throws ConflictError when the membership changed between the read and the write.
@@ -455,6 +457,13 @@ export async function changeMemberRole(
   const role = await requireRole(deps, tenant, input.role)
   if (role.id === current.roleId) {
     return membershipView(current)
+  }
+  // Defence in depth (TULA-157, H-064): a setup link's holder never raises anyone to a role that
+  // does more than read, whatever the caller above checked. A directory actor is not refused here:
+  // its token does not say whether a link minted it, so the SCIM role code's `assertAppliable`
+  // holds that.
+  if (actor.type === 'setup_link' && role.permissions.some(isMutatingSystemKey)) {
+    throw new AuthError('organization.permission_required')
   }
   const result = await deps.organizations.changeRole(
     tenant.environmentId,
@@ -578,6 +587,11 @@ export async function listForUser(
   }
 }
 
+/** Whether a permission key is a system permission that does more than read. */
+function isMutatingSystemKey(key: string): boolean {
+  return key.startsWith('org:sys:') && !key.endsWith(':read')
+}
+
 /**
  * Whether a role holds a system permission that does more than read (`org:sys:*` not ending in
  * `:read`); a role that does not exist does not. The built-in `member` holds
@@ -595,7 +609,7 @@ export async function isPrivilegedRole(
 ): Promise<boolean> {
   try {
     const found = await requireRole(deps, tenant, role)
-    return found.permissions.some((key) => key.startsWith('org:sys:') && !key.endsWith(':read'))
+    return found.permissions.some(isMutatingSystemKey)
   } catch (error) {
     if (error instanceof AuthError && error.code === 'organization.role_unknown') {
       return false

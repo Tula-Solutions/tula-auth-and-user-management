@@ -375,7 +375,7 @@ export function describeActivityLog(
           userId,
           activity(ctx.a, 'user.deleted', { type: 'user', id: userId })
         )
-      expect(await remove()).toEqual({ outcome: 'deleted' })
+      expect(await remove()).toMatchObject({ outcome: 'deleted' })
       expect(await remove()).toEqual({ outcome: 'not_found' })
       expect(await ctx.users.findById(ctx.a.environmentId, userId)).toBeNull()
       expect(await recorded(ctx.a, userId)).toEqual(['user.deleted'])

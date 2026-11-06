@@ -295,6 +295,9 @@ sign a throwaway user up and in and delete it, where the environment allows it
 proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
 tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 
+Started with only a secret key, the server holds the whole admin read client; an agent key is the safer
+credential for an assistant ([docs/mcp.md](mcp.md)).
+
 | Option | |
 | --- | --- |
 | `--env <name>` | Read `TULA_API_URL_<NAME>` and `TULA_SECRET_KEY_<NAME>` first. |
@@ -421,6 +424,7 @@ One guide per provider says what to export and what is and is not carried:
 | `--from <provider>` | `clerk`, `auth0`, `firebase`, `supabase` or `better-auth`. Required. |
 | `<export file>` | The provider's user export (JSON, NDJSON or CSV, by provider). |
 | `--yes` | Import. Without it only the report is printed, and no key is needed. |
+| `--no-trust-verified` | Import every address as unverified, whatever the export says. Use it for an export from a source you do not control or that anyone edited: a verified address lets its owner skip the emailed code. |
 | `--password-hashes <file>` | Auth0: the hash export that Auth0 support sends. |
 | `--accounts <file>` | better-auth: the `account` table. |
 | `--organizations <file>`, `--memberships <file>` | Clerk: its organizations and their members, imported through the organization admin routes. |

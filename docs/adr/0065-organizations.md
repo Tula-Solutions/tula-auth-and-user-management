@@ -138,6 +138,20 @@ dropped, the session stays). **A removal or a demotion therefore takes effect at
 refresh, within the access token's life, and does not revoke the session**: the user is still
 who they were.
 
+A role's key deleted and created again (TULA-157, H-091) leaves no membership dangling: a role
+a member holds cannot be deleted (`organization.role_in_use`). A token already issued is not
+re-read, though: it keeps the `org_role` and `org_perms` it was signed with until it expires,
+so an application that reads `org_perms` may honour the old role's permissions for at most the
+access token's life. The next refresh, and a stateful session's next request, read the
+membership and the role as they are then. An application that cannot accept that window
+checks the role on its own backend.
+
+Decision (TULA-157, H-233): the window is the same for a removed member and a changed role, and
+it is by design. Bearer verification (`sessionAuth`) checks the signature and the denylist and
+does no database lookup, so an access token carrying `org_id`, `org_role` or `org_perms` stays
+valid, claims included, until its `exp` (about 60 seconds). Nothing revokes it early; a
+stateful session's next request reads the membership as it is then.
+
 #### As built in Orgs 02 (TULA-112)
 
 - **The cap.** `MAX_ORGANIZATION_CLAIMS_BYTES` is 2,560; the true maximum the grammar allows is

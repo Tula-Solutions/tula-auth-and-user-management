@@ -9,6 +9,7 @@ import {
   SsoTestResultSchema,
   SsoTestStartSchema,
 } from '@tula-tech/contract'
+import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { describeRoute, resolver, validator } from 'hono-openapi'
@@ -16,7 +17,7 @@ import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { setupLinkActor } from '~/lib/actor'
 import { byEnvironment, byIp, rateLimit } from '~/middleware/rate-limit'
-import { SETUP_IP_RATE_LIMIT, setupLink } from '~/middleware/setup-link'
+import { SETUP_IP_RATE_LIMIT, type SetupLinkVariables, setupLink } from '~/middleware/setup-link'
 import { CreatedScimTokenSchema } from '~/modules/scim-token/schema'
 import { SsoConnectionIdParamSchema, SsoTestIdParamSchema } from '~/modules/sso-connection/schema'
 import * as openapi from '~/openapi'
@@ -27,6 +28,19 @@ const REFRESH_RATE_LIMIT = 10
 
 /** SCIM tokens a minute per environment: each one is a credential handed out. */
 const SCIM_TOKEN_RATE_LIMIT = 20
+
+/**
+ * What one link may do a minute of the three above, beside the environment's budget: a holder
+ * who spends its own cannot spend the one other organizations' links share (H-048).
+ */
+const LINK_SCIM_TOKEN_RATE_LIMIT = 12
+const LINK_REFRESH_RATE_LIMIT = 3
+const LINK_TEST_RATE_LIMIT = 5
+
+/** Bucket by the setup link (mount after `setupLink()`). */
+function byLink(c: Context<AppEnv>): string {
+  return `link:${(c.var as unknown as SetupLinkVariables).setupLink.linkId}`
+}
 
 /** Test sign-ins a minute per environment: each one makes the server call the provider. */
 const TEST_RATE_LIMIT = 20
@@ -147,6 +161,12 @@ router.post(
     window: '1m',
     key: byEnvironment,
   }),
+  rateLimit({
+    name: 'setup_scim_token_link',
+    limit: LINK_SCIM_TOKEN_RATE_LIMIT,
+    window: '1m',
+    key: byLink,
+  }),
   validator('json', SetupScimTokenCreateSchema, validationHook),
   async (c) => {
     const created = await Portal.createScimToken(
@@ -247,6 +267,12 @@ router.post(
     window: '1m',
     key: byEnvironment,
   }),
+  rateLimit({
+    name: 'sso_refresh_metadata_link',
+    limit: LINK_REFRESH_RATE_LIMIT,
+    window: '1m',
+    key: byLink,
+  }),
   validator('param', SsoConnectionIdParamSchema, validationHook),
   async (c) => {
     const refreshed = await Portal.refreshMetadata(
@@ -345,6 +371,7 @@ router.post(
   ipLimit,
   setupLink(),
   rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
+  rateLimit({ name: 'sso_test_link', limit: LINK_TEST_RATE_LIMIT, window: '1m', key: byLink }),
   validator('param', SsoConnectionIdParamSchema, validationHook),
   async (c) => {
     const started = await Portal.startTest(

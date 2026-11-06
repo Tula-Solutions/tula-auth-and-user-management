@@ -1,4 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type { SetupLinkRecord, SetupLinkStore } from '~/ports/setup-link-store'
 
@@ -8,9 +9,20 @@ export class MemorySetupLinkStore implements SetupLinkStore {
   readonly #activityLog: MemoryActivityLog
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    organizations: MemoryOrganizationStore | null = null
+  ) {
     this.#links = new Map()
     this.#activityLog = activityLog
+    // The foreign key cascades an organization's setup links.
+    organizations?.onDelete((environmentId, organizationId) => {
+      for (const [key, one] of this.#links) {
+        if (one.environmentId === environmentId && one.organizationId === organizationId) {
+          this.#links.delete(key)
+        }
+      }
+    })
   }
 
   #record(recorded: Recorded): void {

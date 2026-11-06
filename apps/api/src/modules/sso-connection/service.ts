@@ -85,8 +85,10 @@ export function samlUrls(
 
 /**
  * A fingerprint of everything a test sign-in exercises: the protocol, the provider's values,
- * the client, the role, the domains and the attribute mapping. A passing test is good for exactly the settings that
+ * the client, the role, the domains, the attribute mapping and the policy flags (`enforced`, `trustIdpMfa`, `breakGlassRole`). A passing test is good for exactly the settings that
  * hash to the value it stored, so any change to them is a reset with nothing to clear.
+ * The client secret enters as its **sealed** form, which is different on every seal: saving the
+ * same secret again also resets a passing test, by design (TULA-157, H-039).
  *
  * @param record - A connection, or what it would be after a change.
  * @returns A SHA-256 hex digest.
@@ -102,6 +104,9 @@ export function fingerprint(
     | 'defaultRole'
     | 'domains'
     | 'attributeMapping'
+    | 'enforced'
+    | 'trustIdpMfa'
+    | 'breakGlassRole'
   >
 ): string {
   return sha256Hex(
@@ -118,6 +123,11 @@ export function fingerprint(
       record.defaultRole,
       [...record.domains].sort(),
       record.attributeMapping,
+      // What the sign-in policy decides about the people who pass through it (H-011). Group
+      // roles are the organization's, not the connection's, so they are not here.
+      record.enforced,
+      record.trustIdpMfa,
+      record.breakGlassRole,
     ])
   )
 }
@@ -243,6 +253,10 @@ export async function resolveSaml(
         ssoUrl: input.ssoUrl,
         certificates: input.certificates,
       }
+    }
+    // The same caps as the manual input (contract `sso-connection`): metadata is the other way in.
+    if (values.idpEntityId.length > 1024 || values.ssoUrl.length > 2048) {
+      throw new AuthError('sso.saml_invalid', { reason: 'too_long' })
     }
     // The browser is sent here: plain http is for the local tier only, as for any address we call.
     const scheme = URL.canParse(values.ssoUrl) ? new URL(values.ssoUrl).protocol : null
@@ -574,6 +588,9 @@ export function weakens(current: SsoConnectionRecord, changes: SsoConnectionChan
  * @param id - The connection.
  * @param input - The fields to change.
  * @param actor - Who changes it, for the audit log.
+ * @param guard - Run on the very record the change is computed from, before anything is
+ *   written: the organization's member routes check ownership, step-up and roles there, so the
+ *   check and the write read the connection once (TULA-157, H-030).
  * @returns The connection as it is now.
  * @throws AuthError `sso.connection_not_found`, `sso.invalid_transition`, `sso.domain_taken`,
  *   `sso.name_taken`, `sso.domain_not_verified`, `sso.issuer_not_allowed`.
@@ -594,10 +611,12 @@ export async function update(
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   id: string,
   input: UpdateSsoConnectionRequest,
-  actor: Actor
+  actor: Actor,
+  guard?: (current: SsoConnectionRecord) => Promise<void>
 ): Promise<SsoConnection> {
   await requireEnabled(deps, tenant)
   const current = await requireConnection(deps, tenant, id)
+  await guard?.(current)
   const changes: SsoConnectionChanges = {}
   const changed: SsoConnectionField[] = []
   if (input.name !== undefined && input.name !== current.name) {
@@ -615,6 +634,15 @@ export async function update(
   }
   if (input.saml !== undefined) {
     const next = await resolveSaml(deps, input.saml)
+    // Re-reading the address already kept must name the same IdP: a hijacked metadata URL could
+    // otherwise rebind the issuer under signed-in organizations (TULA-168, H-005).
+    if (
+      input.saml.metadataUrl !== undefined &&
+      input.saml.metadataUrl === current.saml?.metadataUrl &&
+      next.idpEntityId !== current.saml.idpEntityId
+    ) {
+      throw new AuthError('sso.saml_invalid', { reason: 'entity_id_changed' })
+    }
     if (JSON.stringify(next) !== JSON.stringify(current.saml)) {
       changes.saml = next
       changes.issuer = next.idpEntityId

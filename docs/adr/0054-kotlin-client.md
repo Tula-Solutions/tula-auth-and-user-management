@@ -420,3 +420,13 @@ client's state takes the address from that answer, with no second request.
 - Two things are care and not checks: the JVM module's use of Java APIs that Android has,
   and that the client's rules stay those of `@tula/core` beyond the one constant a test
   holds equal. A change to `@tula/core`'s session rules is made here in the same change.
+
+## Decisions (TULA-157)
+
+- **Decision (TULA-157, H-323): record, do not yet expose, whether the Android device key is
+  StrongBox-backed.** `KeystoreDeviceKeyStore` falls back from StrongBox to the software-backed
+  Keystore without saying which. Recommendation: read `KeyInfo.isInsideSecureHardware` after
+  generation and offer it to the app as a property of the store, never to the server (a client's
+  claim about its hardware is worth nothing without Key Attestation, see ADR 0043, H-316).
+  Not changed: `KeyInfo` behaves differently by device and OS version and can only be checked on
+  one (device, TULA-195).

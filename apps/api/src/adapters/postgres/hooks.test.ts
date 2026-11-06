@@ -90,7 +90,7 @@ test('the store cannot write a deadline past five seconds: the database refuses 
       store.update(
         a.environmentId,
         stored.id,
-        { enabled: true, failureMode: 'deny' },
+        stored,
         { deadlineMs: 60_000 },
         new Date(),
         Audit.none('fixture')

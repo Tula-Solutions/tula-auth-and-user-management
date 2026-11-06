@@ -162,9 +162,9 @@ function jwtSpans(text: string): Span[] {
  * space by now.
  */
 const SECRET_SHAPES: readonly ((text: string) => Span[])[] = [
-  spansOf(/tula_sk_[a-z]+_[A-Za-z0-9_-]{8,}/g),
+  spansOf(/tula_sk_[a-z0-9]+_[A-Za-z0-9_-]{8,}/g),
   // An agent key (ADR 0053): it reads everything a secret key reads.
-  spansOf(/tula_ak_[a-z]+_[A-Za-z0-9_-]{8,}/g),
+  spansOf(/tula_ak_[a-z0-9]+_[A-Za-z0-9_-]{8,}/g),
   jwtSpans,
   spansOf(/\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g),
   spansOf(/otpauth:\/\/[^\s"']+/g),
@@ -528,7 +528,7 @@ export function bound(output: Record<string, unknown>): Record<string, unknown> 
  * Make a function that replaces the server's own credentials wherever they appear in a value.
  * Nothing puts them there; this is the last step of every result and log line all the same.
  *
- * @param secrets - The secret key, the admin token. Empty and very short values are ignored
+ * @param secrets - The secret key, the admin token. Empty values and values under four characters are ignored
  *   (replacing a three-letter string would mangle ordinary text).
  * @returns The function.
  *
@@ -540,7 +540,7 @@ export function bound(output: Record<string, unknown>): Record<string, unknown> 
  */
 export function redactor(secrets: readonly (string | undefined)[]): <T>(value: T) => T {
   const known = secrets.filter(
-    (secret): secret is string => typeof secret === 'string' && secret.length >= 8
+    (secret): secret is string => typeof secret === 'string' && secret.length >= 4
   )
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {

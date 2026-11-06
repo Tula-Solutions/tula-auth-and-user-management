@@ -35,6 +35,23 @@ export const EMAIL_ADDITION_EMAILS_PER_HOUR = 5
  */
 export const EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR = 5
 
+/**
+ * Emails of this kind one environment sends in an hour, whoever asks and to whom. The
+ * per-user and per-address limits do not bound many accounts each writing to many
+ * addresses, so this caps the mail (and the sender reputation) an environment can spend.
+ */
+export const EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR = 500
+
+/**
+ * The limiter key of the environment-wide cap. Ids only: limiter keys may live in Redis.
+ *
+ * @param environmentId - The environment.
+ * @returns The key for `deps.rateLimiter`.
+ */
+export function environmentLimitKey(environmentId: string): string {
+  return `email_addition_environment:${environmentId}`
+}
+
 /** Keyed-hash purpose of the per-address limiter key. */
 export const ADDRESS_LIMIT_HASH_PURPOSE = 'email-addition-limits'
 
@@ -183,6 +200,14 @@ export async function request(
       )
       if (!decision.allowed) {
         throw new RateLimitError(decision.retryAfterMs)
+      }
+      const environment = await deps.rateLimiter.hit(
+        environmentLimitKey(scope.environmentId),
+        EMAIL_ADDITION_EMAILS_PER_ENVIRONMENT_PER_HOUR,
+        3_600_000
+      )
+      if (!environment.allowed) {
+        throw new RateLimitError(environment.retryAfterMs)
       }
     },
     deliver: ({ to, code, ttlMinutes }) =>

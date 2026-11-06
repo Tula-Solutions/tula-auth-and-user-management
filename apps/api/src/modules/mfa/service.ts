@@ -1170,13 +1170,31 @@ export async function confirmSms(
     throw new AuthError('mfa.enrolment_expired')
   }
   await deps.lockout.clear(lockKey)
+  // Fails closed, as `confirmTotp` does (H-094, ADR 0016): a session that never proved the
+  // factor must not survive it being on. One retry, then the factor goes again and the user
+  // enrols afresh (`method: 'self'`: the event has no value for an incomplete enrolment, and
+  // a contract change is not worth one for this).
   try {
     await sweep()
-  } catch (error) {
-    logger.warn('could not sweep the sessions again after turning a texted second factor on', {
-      environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
-    })
+  } catch {
+    try {
+      await sweep()
+    } catch (error) {
+      await deps.users.disableSmsFactor(
+        scope.environmentId,
+        userId,
+        deps.clock.now(),
+        Audit.entry(deps, scope, {
+          type: 'user.sms_factor_removed',
+          actor,
+          target: { type: 'user', id: userId },
+          data: { method: 'self' },
+        })
+      )
+      throw new ServiceUnavailableError({
+        internalMessage: `could not end the sessions after turning a texted second factor on: ${error instanceof Error ? error.name : 'unknown'}`,
+      })
+    }
   }
   try {
     // The session that enrolled has just proven the factor. `sms`, never `mfa`.
@@ -1796,6 +1814,12 @@ export async function stepUp(
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)
   }
+  // A revoked or expired session must not spend a proof (a backup code, a passkey challenge, an
+  // emailed or texted code, a guess of the lockout budget): check it before any is taken.
+  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  if (!current || current.userId !== userId || !isActive(current, deps.clock.now())) {
+    throw new AuthError('session.revoked')
+  }
   if (proof.method === 'password' || proof.method === 'email_code') {
     const lockKey = stepUpLockKey(scope.environmentId, userId)
     const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
@@ -1803,11 +1827,6 @@ export async function stepUp(
       throw new RateLimitError(lock.retryAfterMs)
     }
     if (proof.method === 'email_code') {
-      // A revoked or expired session must not spend the code: check it before the token.
-      const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-      if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-        throw new AuthError('session.revoked')
-      }
       const token = await Verification.verifyCode(deps, scope, {
         purpose: 'step_up',
         subject: { userId },
@@ -1845,11 +1864,6 @@ export async function stepUp(
     }
     await requireSmsFactor(deps, scope, user.phoneNumber)
     const smsLockKey = await countGuess(deps, scope, userId)
-    // A revoked or expired session must not spend the code.
-    const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
-    if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
-      throw new AuthError('session.revoked')
-    }
     const texted = await verifySmsCode(deps, scope, userId, {
       purpose: SMS_STEP_UP_PURPOSE,
       askedBy: { sessionId: self.sessionId },

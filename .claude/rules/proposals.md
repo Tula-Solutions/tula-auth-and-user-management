@@ -111,6 +111,12 @@ decision in ADR 0053.
   scenario and per operation): a step that asks for another has to fit the ten, is added
   to that table, and is left to a route test where one shows the same. Never raise either
   limit for a scenario.
+  **Decision (TULA-157, H-262): the volume is bounded by those two counts and by nothing
+  else.** At most ten proposals a minute per environment wait for a person, and a proposal
+  that is never approved expires on its own (`expiresAt`); no cap on the total
+  pending is added, because a person who sees a flood rejects or ignores it and the
+  per-minute counts already stop a loop from growing it faster than that. Recommendation:
+  add a cap on pending proposals only if operators report a queue they cannot clear.
 - **Approval is a human's credential and only that** (`PROPOSAL_APPROVER_TYPES`: `admin`,
   a secret key, and `instance_admin`, a dashboard session). The approve route is a `POST`
   under `/v1/admin/`, which the middleware already refuses to an agent key, and
@@ -266,3 +272,38 @@ decision in ADR 0053.
   residual as closed. No real MCP client has been connected to either server
   (`docs/plans/phase-2-unverified.md`, "Step 2.17"): do not describe how a client shows a
   proposal until one has.
+
+- Decision (TULA-157, H-182): the gap between `requireAccepted` (a fresh read of the
+  setting) and the approval's compare-and-set is accepted. They are separate transactions, so
+  a setting switched off in between still lets one approval land. The approval is a human's
+  act on a proposal that was valid when made, the operation is reversible, and it is
+  audited; closing the gap would hold the environment lock across the operation. Recommend
+  leaving it; no code changed.
+- Decision (TULA-157, H-183): recommend a route that rejects (cancels) a pending proposal
+  (`POST /v1/admin/proposals/:id/reject`, behind `secretKey()`, an audit entry, a new
+  `rejected` status the store's compare-and-set also checks). Today a pending proposal only
+  expires. This is a usability gap, not a security one, and it changes the contract, the SDKs
+  and ADR 0053 ("dismissal is not built"), so it is recorded and not built.
+## Decisions from the TULA-157 hardening audit
+
+- Decision (TULA-157, H-121): API keys, agent keys and SCIM tokens do not expire and are not
+  rotated by the server. Recommendation: an optional `expiresAt` per key, checked in
+  `resolveApiKey` (and a SCIM token's lookup), with the key list showing it. Reason: a
+  schema, contract and dashboard change that needs the owner; today an operator rotates by
+  creating a new key and revoking the old one (`revokeApiKey`), which the audit log records.
+  Recorded only; no code changed.
+- Decision (TULA-157, H-125): an agent key keeps reading every admin `GET`/`HEAD`, not an
+  allowlist. Recommendation: keep it. Reason: the walk in `agent-key.test.ts` pins that a
+  read changes and records nothing, and that every other method is refused by `secretKey()`
+  before the route; an allowlist would be a second list to forget when a read route is added,
+  and the admin reads hold no secret (a secret is answered once, `Cache-Control: no-store`,
+  on the write that makes it). Recorded only.
+- Decision (TULA-157, H-136): the CLI and the MCP server do not check that an agent key
+  belongs to the environment they were pointed at; the server does, because the key resolves
+  its own environment and `x-tula-environment` is refused with a key. Recommendation: leave
+  the client without the check, since a client-side check is advice and the server's is the
+  enforcement. Recorded only.
+- Test (TULA-157, H-126, H-127, H-139): `agent-key.test.ts` walks the route table. Every
+  non-read route refuses an agent key, every admin read answers it and records nothing, and
+  every `/v1/agent/*` route refuses a secret key and no key (a route added there without
+  `agentKey()` fails it).

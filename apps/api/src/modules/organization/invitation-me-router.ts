@@ -263,7 +263,8 @@ router.post(
       '`organization.invitation_email_unverified`; 403). The invitation is used up and the ' +
       'membership created in one transaction. A role deleted since the invitation was sent ' +
       'answers `organization.invitation_role_gone` (409): the invitation is never given ' +
-      'another role. A user who is a member already answers `organization.member_exists` ' +
+      'another role, and a role that now holds a permission its inviter lacks answers ' +
+      '`organization.role_not_assignable` (403). A user who is a member already answers `organization.member_exists` ' +
       `(409). Refuses with ${refusals} ${disabled}`,
     security: openapi.security.session,
     responses: {

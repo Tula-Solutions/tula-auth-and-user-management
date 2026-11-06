@@ -79,3 +79,20 @@ nothing.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.
   `/v1/admin/*` and `/v1/instance/*` follow the deployment's `CORS_ORIGINS` only.
+- Decision (TULA-157, H-184): `x-tula-managed-by` and `x-tula-config-hash` are advisory. Any
+  holder of the secret key (a dashboard operator too) can send or omit them, so they set or
+  clear `managedBy.drifted` and the audit entry's `outsideConfig`, and nothing else: no
+  authorization, policy or other code may read them as proof of who changed the settings.
+  Recommend keeping it so.
+- **Settings are read in two ways, and the difference is a window.** `Settings.get(…, true)`
+  reads past the cache; the plain read can be stale for up to
+  `ENVIRONMENT_SETTINGS_VERSION_CHECK_MS` (5 s) with Redis, and up to
+  `ENVIRONMENT_SETTINGS_CACHE_TTL_MS` (30 s) without Redis or while it is down. A change is
+  therefore not instant across instances, and a test that changes a setting and expects
+  another instance to follow waits for it. Where a switch-off must take hold at once, read
+  fresh: `Settings.get(…, true)` is used by the proposal service (create and approve), the
+  sign-in test, the last-sign-in-method check of `OAuth.update` and the retention job, and
+  `modules/settings/fresh-reads.test.ts` holds that list. Every other consumer, including
+  the sign-in flow, accepts the window. The Postgres store has no cache of its own, so its
+  `get` is always fresh; the cache wrapper (`cacheEnvironmentSettings`) is what honours the
+  `fresh` argument.

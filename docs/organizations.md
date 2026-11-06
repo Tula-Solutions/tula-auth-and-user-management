@@ -168,6 +168,11 @@ The errors you will meet:
 Every organization keeps at least one member whose role holds `org:sys:memberships:manage`; the
 server refuses a removal, a demotion or a user deletion that would break that.
 
+That guarantee covers `org:sys:memberships:manage` only. The other system permissions, such as
+`org:sys:organization:delete` and `org:sys:sso:manage`, can be taken from the last role or member
+that holds them, so an organization can end up with nobody who can delete it or manage its SSO. An
+administrator restores the permission by editing the role again.
+
 ## Reading the organization in your app
 
 Three claims say where a request acts, and they are the only thing your backend needs:
