@@ -24,7 +24,7 @@ describe('the page anatomy', () => {
     const crumb = password().match(/<nav class="breadcrumb"[\s\S]*?<\/nav>/)?.[0] as string
     expect(crumb).toContain('aria-label="Breadcrumb"')
     expect(crumb).toContain('<a href="/docs-site/methods/password/">Guides</a>')
-    expect(crumb).toContain('<span>Sign-in methods</span>')
+    expect(crumb).toContain('<a href="/docs-site/methods/password/">Sign-in methods</a>')
     expect(crumb).toContain('<span aria-current="page">Password</span>')
   })
 

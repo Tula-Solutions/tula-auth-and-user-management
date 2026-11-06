@@ -324,7 +324,18 @@ test.describe('the end of a page', () => {
     const crumb = page.getByRole('navigation', { name: 'Breadcrumb' })
     await expect(crumb.locator('li')).toHaveText(['Guides', 'Sign-in methods', 'Password'])
     await expect(crumb.locator('[aria-current="page"]')).toHaveText('Password')
-    await expect(crumb.getByRole('link')).toHaveCount(1)
+    await expect(crumb.getByRole('link')).toHaveCount(2)
+  })
+
+  test('the breadcrumb group is a link that lands on a page of that group', async ({ page }) => {
+    await page.goto(PASSWORD)
+    const crumb = page.getByRole('navigation', { name: 'Breadcrumb' })
+    await crumb.getByRole('link', { name: 'Sign-in methods' }).click()
+    await expect(page).toHaveURL(/\/methods\/[^/]+\/$/)
+    await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).locator('li')).toContainText([
+      'Guides',
+      'Sign-in methods',
+    ])
   })
 
   test('every page links to its source on GitHub, a file that exists', async ({ request }) => {
