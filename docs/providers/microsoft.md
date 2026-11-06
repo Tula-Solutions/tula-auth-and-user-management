@@ -42,9 +42,11 @@ Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
    `email`. Tula asks for nothing else and calls no Microsoft API with the token.
 6. **Give Tula the credentials**, with the tenant that matches step 2:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/microsoft" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/microsoft" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<application (client) id>", "clientSecret": "<secret value>", "tenant": "organizations" }'
 ```

@@ -9,6 +9,8 @@ entry first, in pages of 1,000 so that nothing is held in memory. The same rows 
 It is a `POST` on purpose: a secret key and a dashboard session may call it, an agent key may
 not (an agent key is accepted for `GET` and `HEAD` only, and this route is neither).
 
+The samples use the setup in [Calling the admin API](admin-api.md).
+
 <!-- tabs -->
 ```sh
 curl -sN -X POST "$TULA_API_URL/v1/admin/audit-logs/export" \

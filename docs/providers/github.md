@@ -15,9 +15,11 @@ What an operator does once per environment.
 3. **Generate a client secret** on the app's page and copy it at once: GitHub shows it once.
 4. **Give Tula the credentials**:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/github" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/github" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
 ```

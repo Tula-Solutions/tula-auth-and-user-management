@@ -21,11 +21,13 @@ Apple Developer account.
 5. **Give Tula the credentials**. `privateKey` is the `.p8` file's whole text, line breaks
    included:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
 jq -n --rawfile key AuthKey_XXXXXXXXXX.p8 \
   '{ clientId: "com.example.web", teamId: "<team id>", keyId: "<key id>", privateKey: $key }' |
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/apple" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/apple" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' -d @-
 ```
 

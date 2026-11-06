@@ -1053,7 +1053,7 @@ describe('language tabs', () => {
     const path = /\/v1\/[\w\-/.]+/.exec(code)?.[0]
     const method =
       lang === 'python'
-        ? /method="(\w+)"/.exec(code)?.[1]
+        ? (/method="(\w+)"/.exec(code)?.[1] ?? (code.includes('data=') ? 'POST' : 'GET'))
         : (/-X (\w+)/.exec(code)?.[1] ?? (code.includes(' -d ') ? 'POST' : 'GET'))
     return path && method ? `${method.toUpperCase()} ${path}` : undefined
   }

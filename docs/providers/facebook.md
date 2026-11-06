@@ -17,9 +17,11 @@ What an operator does once per environment.
    `clientId` and the app secret the `clientSecret`.
 5. **Give Tula the credentials**:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/facebook" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/facebook" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<app id>", "clientSecret": "<app secret>" }'
 ```

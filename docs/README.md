@@ -13,6 +13,7 @@ published: those are still used from a checkout of the repository
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
+| [Calling the admin API](admin-api.md) | The secret key, your first call in cURL, TypeScript and Python, errors and rate limits. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
 
 ## Sign-in methods

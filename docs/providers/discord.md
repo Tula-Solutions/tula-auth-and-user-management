@@ -13,9 +13,11 @@ What an operator does once per environment.
    once: the portal shows it once.
 5. **Give Tula the credentials**:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/discord" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/discord" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
 ```

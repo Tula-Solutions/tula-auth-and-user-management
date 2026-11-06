@@ -19,9 +19,11 @@ environment uses its own.
    testing.
 4. **Give Tula the credentials**:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/google" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<client id>.apps.googleusercontent.com", "clientSecret": "<client secret>" }'
 ```
@@ -80,7 +82,7 @@ redirect URL to allow and no client secret on the device.
 
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/google" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<web client id>.apps.googleusercontent.com",
         "additionalClientIds": ["<android client id>.apps.googleusercontent.com",

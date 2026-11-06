@@ -18,9 +18,11 @@ What an operator does once per environment.
    key secret of the same app, which belong to OAuth 1.0a and are not used here.
 6. **Give Tula the credentials**:
 
+The samples use the setup in [Calling the admin API](../admin-api.md).
+
 <!-- tabs -->
 ```sh
-curl -X PUT "$TULA_URL/v1/admin/oauth-providers/x" \
+curl -X PUT "$TULA_API_URL/v1/admin/oauth-providers/x" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
 ```
