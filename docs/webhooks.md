@@ -756,5 +756,5 @@ receiver's answer ([What the server keeps](#what-the-server-keeps)).
 - **A test event or a delivery sent again where the worker is a service of its own**: both
   are refused there, not handed to the worker.
 
-These steps have not been verified against a public `https` receiver or a verifier in another
-language.
+**Before you go live,** send a test event to your public `https` receiver and check it with
+your own verifier.

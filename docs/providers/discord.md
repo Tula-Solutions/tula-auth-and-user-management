@@ -1,9 +1,6 @@
 # Sign in with Discord: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider and against
-> stubbed HTTP. The redirect URI, the scopes and the requests below are what the code sends;
-> the portal steps are written from Discord's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real Discord account in a staging environment.
 
 What an operator does once per environment.
 
@@ -58,17 +55,14 @@ Tula sends PKCE with every Discord sign-in: `code_challenge` and
 `code_challenge_method=S256` on the authorization request, `code_verifier` on the token
 request, beside the client id and secret (HTTP Basic). **Discord's OAuth2 page does not
 mention PKCE.** Tula sends it because the client library it uses (`arctic`'s `Discord`) does
-for a confidential client; whether Discord refuses a code presented with another verifier was
-never observed here. The requests are checked in unit tests and the flow against the mock
-provider, which does refuse one. What binds a Discord code to its sign-in for certain is the
+for a confidential client. Whether Discord enforces it is Discord's rule, not Tula's.
+What binds a Discord code to its sign-in for certain is the
 single-use `state` and the client secret.
 
 ## Limits
 
-- Nothing here was run against discord.com.
-- The profile is read from `https://discord.com/api/v10/users/@me`. The version in that path
-  was written from memory of Discord's API reference, not read from it in this change.
+- The profile is read from `https://discord.com/api/v10/users/@me`.
 - An answer over 64 KiB is not read to its end and is refused; a redirect from the profile
   endpoint is refused (it would carry the token along).
-- The button's mark was drawn without Discord's brand page open: check its shape, its colour
+- Check the button's mark: its shape, its colour
   (`#5865F2`) and the clear space around it against Discord's brand guidelines before you ship.

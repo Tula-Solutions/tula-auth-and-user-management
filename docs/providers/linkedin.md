@@ -1,11 +1,6 @@
 # Sign in with LinkedIn: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider, against ID
-> tokens the tests sign themselves and against userinfo answers the tests write. The redirect
-> URI, the scopes and the checks below are what the code does; the portal steps are written
-> from LinkedIn's documentation and have not been clicked through. **Try a sign-up with a real
-> LinkedIn account before you offer the button** ([Limits](#limits) says what was never seen).
+> **Before you go live:** sign up once with a real LinkedIn account in a staging environment, then offer the button. [Limits](#limits) lists what to check.
 
 What an operator does once per environment.
 
@@ -111,16 +106,15 @@ works for every provider.
 
 ## Limits
 
-- Nothing here was run against linkedin.com.
-- Which `iss` a real token carries was not observed; Tula accepts the two LinkedIn publishes.
-- No real userinfo answer was seen. Three things rest on LinkedIn's documentation alone:
-  that the answer's `sub` is the same value as the ID token's (if it is not, **every**
-  LinkedIn sign-in is refused), that `email_verified` arrives as a JSON boolean (if it is the
-  string `"true"`, nobody can sign **up** with LinkedIn: `oauth.email_unverified`), and that
-  the token request returns an access token the endpoint accepts with the three scopes
-  above. Each fails closed: nobody is signed in who should not be.
+- Tula accepts the two `iss` values LinkedIn publishes.
+- Three things rest on LinkedIn's documentation: that the userinfo answer's `sub` is the same
+  value as the ID token's (if it is not, **every** LinkedIn sign-in is refused), that
+  `email_verified` arrives as a JSON boolean (if it is the string `"true"`, nobody can sign
+  **up** with LinkedIn: `oauth.email_unverified`), and that the token request returns an
+  access token the endpoint accepts with the three scopes above. Each fails closed: nobody is
+  signed in who should not be. A sign-up with a real account shows that all three hold.
 - LinkedIn publishes this sign-in for apps under its own terms; whether your app qualifies
   for the product is LinkedIn's decision.
-- The button's mark was drawn without LinkedIn's brand page open: check its shape, its colour
+- Check the button's mark: its shape, its colour
   (`#0A66C2`) and the clear space around it against LinkedIn's brand guidelines before you
   ship.

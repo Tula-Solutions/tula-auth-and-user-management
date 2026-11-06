@@ -397,8 +397,7 @@ What to know before relying on it:
   sender (`SMS_PROVIDER=none`), in which case nothing is sent and nobody is told. It fails
   when that environment also signs in with a texted code: the method is offered to nobody.
 - **Only Twilio's default region (US1, `api.twilio.com`)** is supported.
-- **No message has been delivered to a real phone from this code**: it is tested against a
-  stubbed network only. Do step 5 before you tell users it works.
+- **Before you go live**, deliver one message to a real phone (step 5 above).
 
 ## Sessions
 

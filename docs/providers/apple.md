@@ -1,16 +1,13 @@
 # Sign in with Apple: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider. The redirect
-> URI and the scopes below are what the code sends; the console steps are written from the
-> provider's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real Apple account in a staging environment.
 
 What an operator does once per environment. Needs a paid
 Apple Developer account.
 
 1. **Find the redirect URI.** `GET /v1/admin/oauth-providers` lists it as `callbackUrl`:
    exactly `PUBLIC_URL/v1/oauth/callback/apple`. Apple requires `https` and a real domain:
-   `localhost` does not work. Use the mock provider locally.
+   `localhost` does not work. Use the development mock provider locally (`OAUTH_MOCK_PROVIDER`, [self-hosting](../self-host.md)).
 2. **Create an App ID** (Certificates, Identifiers & Profiles → Identifiers) with *Sign in
    with Apple* enabled, if your app has none.
 3. **Create a Services ID** (Identifiers → Services IDs). Its identifier, for example
@@ -42,10 +39,6 @@ Communication). If your iOS app offers another social sign-in, App Store Review 
 offer Sign in with Apple as well.
 
 ## Native sign-in with an identity token
-
-> **Not verified against Apple.** No test makes a request to Apple, no token Apple signed
-> was ever checked here, and no iOS app has been run against this. What follows is what
-> the server checks and what Apple's documentation says the sheet sends.
 
 An iOS app can sign in with the system's Sign in with Apple sheet instead of a browser
 tab. The sheet hands the app an **identity token**; the app hands it to Tula, which

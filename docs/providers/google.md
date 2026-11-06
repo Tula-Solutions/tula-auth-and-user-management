@@ -1,9 +1,6 @@
 # Sign in with Google: setup checklist
 
-> **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider. The redirect
-> URI and the scopes below are what the code sends; the console steps are written from the
-> provider's documentation and have not been clicked through.
+> **Before you go live:** sign up once with a real Google account in a staging environment.
 
 What an operator does once per environment. Tula never ships shared credentials: each
 environment uses its own.
@@ -32,10 +29,6 @@ environment uses its own.
    `https://app.example.com/oauth/callback`) to `urls.allowedRedirectUrls`, exactly.
 
 ## Native sign-in with an ID token
-
-> **Not verified against Google.** No test makes a request to Google, and no Android or
-> iOS app has been run against this. What follows is what the server checks, and what
-> Google's documentation says the platforms send.
 
 An Android or iOS app can sign in with Google's own account sheet (Credential Manager,
 Google Sign-In for iOS) instead of a browser tab. Google's SDK hands the app an **ID

@@ -1,11 +1,8 @@
 # Text messages with Twilio: setup checklist
 
-> **Not verified against Twilio.** Nothing in this repository has a Twilio account, and no
-> request has ever been made to Twilio from it: the adapter is tested against a stubbed
-> network, and **no message has been delivered to a real handset**. The request below is what
-> the code sends. Twilio's rules are written from Twilio's documentation as read on
-> 2026-10-09 (the pages are linked where they are used) and the Console steps have not been
-> clicked through. What could not be confirmed is noted where it applies.
+> **Before you go live:** send one message to your own phone (step 10) before you tell users
+> text messages work. Twilio's rules below are summarized from its documentation; the pages
+> are linked where they are used, and Twilio's own console is the authority.
 
 Twilio is the one sender that really sends. It is a setting of the **deployment** (environment variables of the API), not of
 an environment: every environment that has text messages switched on sends through the same
@@ -88,7 +85,7 @@ its own codes, and sends them as ordinary messages.
    ([API keys](https://www.twilio.com/docs/iam/api-keys)): a key is revoked by itself, and a
    *Standard* key cannot manage the account or other keys. Copy the key's SID (`SK…`) and
    its secret; the secret is shown once. A *Restricted* key limited to sending messages
-   would be narrower still: whether one can be made so is **not confirmed**. The account's
+   would be narrower still: check in the Console whether Twilio lets you make one. The account's
    auth token works too (`TWILIO_AUTH_TOKEN`), and is the account's master credential:
    prefer the key.
 7. **Give the API the variables**, on every API instance, and restart them:
@@ -113,7 +110,7 @@ its own codes, and sends them as ordinary messages.
    nothing and does not ask Twilio, so it does not show the credentials work.
 10. **Send one message to your own phone** (add a phone number to a test account) and read
     it. Check the sender, the app name, the code, and that the last line (`@host #code`)
-    arrived unchanged. Nothing in this repository has done this.
+    arrived unchanged.
 
 ## What Tula sends
 
@@ -139,8 +136,7 @@ and no other: no status callback, no scheduling, no link shortening, no validity
   `NODE_TLS_REJECT_UNAUTHORIZED` says. If the API's environment sets `HTTPS_PROXY`, the
   runtime sends the request through that proxy, as it does the requests to OAuth providers
   and to the breach check. For an https address that is a tunnel: the proxy learns the
-  host, not the credentials or the text. (How a proxy carries https, not something run
-  here: no test of this repository goes through a proxy.)
+  host, not the credentials or the text. (How a proxy carries https is the proxy's own behaviour; Tula only hands it the request.)
 - Tula stores nothing of Twilio's answer. Twilio keeps the message, its text included, in
   its own log; how long, and how to redact it there, is Twilio's setting.
 

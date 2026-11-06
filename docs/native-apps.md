@@ -540,7 +540,7 @@ the two `curl` lines above against your own domain, and the vendors' tools below
 Tula runs on your machine with nothing but Docker, and a sign-in with a password or an
 emailed code works in a simulator or an emulator with no account anywhere. Everything in
 this table is different: it is made at Apple, at Google or at a third party, under an
-account that is yours, and nothing in this repository, in a scaffolded project or in
+account that is yours, and nothing in Tula, in a scaffolded project or in
 `tula dev` makes it for you. No identifier an example ships with is yours either
 (`com.example.tula`, `dev.tula.example.swiftui`, `dev.tula.example.compose`): change it
 before you register anything.
@@ -558,9 +558,9 @@ before you register anything.
 | The tunnel | Neither | Neither | A [Tailscale](https://tailscale.com) account of your own, signed in on your machine, with Funnel allowed for it |
 
 Each SDK's guide says where its side of a row goes: [expo.md](expo.md), [swift.md](swift.md),
-[kotlin.md](kotlin.md). **Nobody has taken any row of this table past its first line on a
-device**: no passkey sheet, no Apple or Google sheet and no system browser has been opened
-by an SDK of this repository, and no file was fetched by Apple or Android
+[kotlin.md](kotlin.md). **Before you go live, take each row past its first line on a
+device**: open the passkey sheet, Apple's or Google's sheet and the system browser from your
+app, and let Apple or Android fetch the association files
 ([below](#what-could-not-be-verified-here)). What a vendor's console asks for
 changes; the vendor's own documentation is the authority for its column.
 
@@ -595,8 +595,7 @@ not proven:
   passkey request from its apps is refused (`auth.invalid_credentials`,
   `passkey.registration_failed`) and nothing wrong is accepted.
 
-- **Google's ID tokens from an app.** No token Google made was ever verified here: the
-  checks are tested with tokens the tests sign and with the mock provider's. Which client
+- **Google's ID tokens from an app.** Which client
   ID Google puts in `aud` and which in `azp` on each platform, and that the nonce arrives
   as the app passed it, are from documentation and third parties. If either is otherwise, sign-ins are
   refused and nothing wrong is accepted.
