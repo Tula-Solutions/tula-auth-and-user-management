@@ -97,6 +97,7 @@ the operation and the target the question showed. The answer is said as it is:
 | Approved; nothing changed | `executed` with `changed: false`: the target was already so. |
 | Approved, and not carried out | `failed`: the target no longer exists, the change would leave no way to sign in, or the operation failed. The proposal is spent. |
 | Approved, and only partly carried out | `failed` with `incomplete`: for a ban, the user is banned and their sessions were not ended; the screen links to the user's page to end them. |
+| Rejected | `rejected`: you turned it down. Nothing was changed, the proposal is spent, and the agent sees `rejected` when it reads it. |
 | Not approved | The server refused: expired, already approved, the agent key revoked, not the proposal that was shown, or a production environment that does not accept proposals. Nothing was changed. |
 
 A request that got no answer, or a server error, may still have been taken: the screen
@@ -154,8 +155,13 @@ shows: that a credential the agent's tools do not hold was used
   after the other ways went is `failed` with `failureReason: "last_sign_in_method"`. The
   provider is still on, and the proposal is spent.
 
+To turn one down, `POST /v1/admin/proposals/<id>/reject` (a secret key; it takes no
+body). A proposal that is not
+pending is refused as an approval would be, and an approval and a rejection at once cannot
+both succeed.
+
 A proposal's `status` is `pending`, `expired` (with `expiryReason`: `time`, or
-`agent_key_revoked`), `approved` (approved, the operation not finished), `executed` or
+`agent_key_revoked`), `rejected` (a person turned it down), `approved` (approved, the operation not finished), `executed` or
 `failed` (with `failureReason`: `target_not_found`, `last_sign_in_method`, `error` or
 `incomplete`).
 
@@ -210,6 +216,7 @@ Every step is in the environment's audit log (and is an event a
 | --- | --- | --- |
 | `proposal.created` | the agent (its key's id) | the operation and the target |
 | `proposal.approved` | you (the secret key's id, or the dashboard session's) | the same, and which agent asked |
+| `proposal.rejected` | you, the same | the same |
 | `user.banned`, `user.unbanned`, `session.revoked` (reason `revoked_by_admin`) or `oauth_provider.updated` (`changed: ["enabled"]`) | the agent | `proposalId`, and `approvedBy` |
 | `proposal.executed` or `proposal.failed` | the agent | `approvedBy`, and for a failure why |
 

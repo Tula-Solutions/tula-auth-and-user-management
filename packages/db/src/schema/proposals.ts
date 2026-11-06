@@ -43,7 +43,7 @@ export const proposals = tula.table(
     targetId: text('target_id').notNull(),
     /** The agent key that asked. */
     proposedBy: uuid('proposed_by').notNull(),
-    status: text('status', { enum: ['pending', 'approved', 'executed', 'failed'] })
+    status: text('status', { enum: ['pending', 'approved', 'rejected', 'executed', 'failed'] })
       .notNull()
       .default('pending'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -59,17 +59,18 @@ export const proposals = tula.table(
   (t) => [
     check(
       'proposals_status_known',
-      sql`${t.status} in ('pending', 'approved', 'executed', 'failed')`
+      sql`${t.status} in ('pending', 'approved', 'rejected', 'executed', 'failed')`
     ),
     check('proposals_operation_shape', sql`${t.operation} ~ '^[a-z_]{1,64}$'`),
     check('proposals_target_type_shape', sql`${t.targetType} ~ '^[a-z_]{1,64}$'`),
     // What an id or a provider's name is made of, and nothing a sentence needs (no space,
     // no upper case, no punctuation but the two an id has).
     check('proposals_target_id_shape', sql`${t.targetId} ~ '^[a-z0-9_-]{1,64}$'`),
-    // Pending means nobody approved; anything else means somebody did, at a known time.
+    // Pending and rejected mean nobody approved; anything else means somebody did, at a known
+    // time. A rejection's author is in the audit entry, not in the row.
     check(
       'proposals_approval_whole',
-      sql`(${t.status} = 'pending') = (${t.approvedAt} is null) and (${t.status} = 'pending') = (${t.approvedByType} is null) and (${t.approvedByType} is null or ${t.approvedByType} in ('admin', 'instance_admin')) and (${t.approvedById} is null or (${t.approvedByType} is not null and char_length(${t.approvedById}) between 1 and 128))`
+      sql`(${t.status} in ('pending', 'rejected')) = (${t.approvedAt} is null) and (${t.status} in ('pending', 'rejected')) = (${t.approvedByType} is null) and (${t.approvedByType} is null or ${t.approvedByType} in ('admin', 'instance_admin')) and (${t.approvedById} is null or (${t.approvedByType} is not null and char_length(${t.approvedById}) between 1 and 128))`
     ),
     check(
       'proposals_failure_whole',

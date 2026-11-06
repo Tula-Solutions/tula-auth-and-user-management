@@ -97,6 +97,7 @@ function failureWords(proposal: Proposal): string {
 const STATUS_WORDS: Readonly<Record<string, string>> = {
   pending: 'waiting for approval',
   expired: 'expired',
+  rejected: 'rejected by a person',
   approved: 'approved, its operation not finished',
   executed: 'approved and carried out',
   failed: 'approved, and its operation did not end as carried out',

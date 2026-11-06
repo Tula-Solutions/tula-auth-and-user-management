@@ -7,7 +7,7 @@ import type {
 import type { Recorded } from '~/ports/activity-log'
 
 /** What a stored proposal's `status` can be. "Expired" is not stored: it is read from `expiresAt`. */
-export type StoredProposalStatus = 'pending' | 'approved' | 'executed' | 'failed'
+export type StoredProposalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'failed'
 
 /** A proposal as stored (ADR 0053): what an agent asked for, and what became of it. */
 export interface ProposalRecord {
@@ -127,6 +127,25 @@ export interface ProposalStore {
     environmentId: string,
     id: string,
     approval: ProposalApproval,
+    at: Date,
+    activity: Recorded
+  ): Promise<ProposalRecord | null>
+
+  /**
+   * Reject a proposal, **only if it is still pending and has not expired**. The same
+   * compare-and-set as `approve`, so of a rejection and an approval at once one is written.
+   * The agent key's state does not matter: rejecting what a revoked key asked for is harmless.
+   * The row keeps no approver; who rejected is in the audit entry.
+   *
+   * @param environmentId - The environment. A proposal of another is not touched.
+   * @param id - The proposal.
+   * @param at - When: the proposal must expire strictly after it.
+   * @param activity - Recorded in the same transaction, only if the row was written.
+   * @returns The proposal as it is now, or `null` when nothing was written.
+   */
+  reject(
+    environmentId: string,
+    id: string,
     at: Date,
     activity: Recorded
   ): Promise<ProposalRecord | null>

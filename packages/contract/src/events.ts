@@ -940,6 +940,15 @@ export const EVENT_DATA_SCHEMAS = {
       proposedBy: id(),
     }
   ),
+  'proposal.rejected': data(
+    'ProposalRejected',
+    'A human rejected an agent’s proposal. The actor is the human; nothing was carried out.',
+    {
+      ...proposed,
+      /** The agent that asked: the id of the credential it holds. */
+      proposedBy: id(),
+    }
+  ),
   'proposal.executed': data(
     'ProposalExecuted',
     'An approved proposal’s operation was carried out. The actor is the agent that asked.',

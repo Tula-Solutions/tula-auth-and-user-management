@@ -273,7 +273,7 @@ is refused before any request.
 - More operations (TULA-24), and `test_signin` (TULA-41).
 - Narrower read scopes for an agent key; a key per agent identity beyond "one key is one
   agent"; a limit per agent key rather than per environment.
-- Rejecting a proposal (today one is left to expire), and an end for decided proposals.
+- An end for decided proposals. (Rejecting one is built: "Rejecting a proposal" below.)
 
 ## Alternatives considered
 
@@ -793,20 +793,30 @@ proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
   `proposedBy` or `proposalId` says "Approved by …", "Asked for by agent …" and "Carried
   out proposal …", the type and the id through `printable()`.
 
-### Dismissing a proposal: not built
+### Rejecting a proposal (H-183)
 
-The ticket left open whether a person can dismiss a pending proposal. It was not built.
-A dismissal is not a small addition here: it needs a status (or a decision column) the
-closed list `PROPOSAL_STATUSES` does not have, which `tula approve` and `@tula/mcp` read;
-a change to the two checks of the table (`proposals_status_known`,
-`proposals_approval_whole`) in a new migration; a compare-and-set beside `approve`'s in
-both adapters and the shared suite; an answer to who dismissed (an approver's type, and
-whether an agent may withdraw its own); a `proposal.dismissed` event with its schema and
-fixture; a refusal reason for approving a dismissed proposal; a conformance scenario and
-its entry for every client. And what it would buy is small: a proposal that nobody
-approves does nothing and is gone in ten minutes, and a person who wants an agent's
-proposals ended now revokes its key, which ends all of them with no window. The screen
-says both. A dismissal remains a decision of its own.
+A person can turn down a pending proposal: `POST /v1/admin/proposals/:id/reject` behind
+`secretKey()` (an agent key is refused, like every write there). It takes no body. What "Dismissing a proposal: not built"
+once listed is now built, as follows.
+
+- **A status**, `rejected`, in `PROPOSAL_STATUSES`. It is terminal and holds no approver:
+  `proposals_approval_whole` (migration 0061) lets `pending` and `rejected` both have no
+  approver and no time. The rejecter is in the audit entry only.
+- **One compare-and-set**, `reject`, beside `approve`'s in both adapters and the shared
+  suite: `status = 'pending'` and not expired, so the row leaves `pending` once and an
+  approval and a rejection at once cannot both win (`races.integration.ts` runs them against
+  Postgres). The entry `proposal.rejected` is written in the same transaction.
+- **The same refusals as an approval** for a proposal that is not pending. One difference:
+  reject, unlike approve, does not refuse a proposal whose agent key was revoked (turning it
+  down is harmless).
+- **Deviation from the first plan: no reason is taken**, because free text may not reach an
+  event payload.
+- **Who**: a person only. An agent may not withdraw its own; revoking its key still ends all
+  its proposals at once.
+- **The agent sees it** as `status: "rejected"` on the routes it reads and in
+  `@tula-tech/mcp`; no reason is kept.
+- The dashboard's Proposals screen has a Reject button with a confirmation (the id typed in
+  production), and `tula approve` names the status in words.
 
 ### Not verified
 

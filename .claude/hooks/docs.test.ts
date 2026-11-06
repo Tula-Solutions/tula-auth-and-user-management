@@ -994,3 +994,11 @@ describe('commands that fetch a package by name', () => {
     expect(untagged('import { x } from "@tula-tech/core"')).toEqual([])
   })
 })
+
+describe('the dashboard page and proposals (TULA-198)', () => {
+  test('says a waiting proposal can be rejected, not that it cannot be dismissed', () => {
+    const page = readFileSync(join(root, 'docs/dashboard.md'), 'utf8')
+    expect(page).not.toMatch(/cannot be dismissed/i)
+    expect(page).toMatch(/\breject/i)
+  })
+})
