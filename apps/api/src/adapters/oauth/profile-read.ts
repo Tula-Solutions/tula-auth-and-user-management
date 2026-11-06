@@ -10,9 +10,11 @@ export const MAX_PROFILE_BYTES = 64 * 1024
 /**
  * Read a response body as text, up to a number of bytes.
  *
+ * @param response - The provider's answer.
+ * @param maxBytes - The most bytes read before the body is refused.
  * @returns The text, or `null` when the body is longer: the rest is cancelled, not read.
  */
-async function boundedText(response: Response, maxBytes: number): Promise<string | null> {
+export async function boundedText(response: Response, maxBytes: number): Promise<string | null> {
   const reader = response.body?.getReader()
   if (!reader) {
     return ''

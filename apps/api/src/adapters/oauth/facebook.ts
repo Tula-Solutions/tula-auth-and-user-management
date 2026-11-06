@@ -14,7 +14,7 @@ import {
   type ProviderOptions,
   withDeadline,
 } from './id-token'
-import { MAX_PROFILE_BYTES, readProfile } from './profile-read'
+import { boundedText, MAX_PROFILE_BYTES, readProfile } from './profile-read'
 
 /**
  * What is asked of Facebook: `public_profile` and nothing else. **Never `email`**: Tula takes
@@ -92,7 +92,8 @@ function client(credentials: OAuthCredentials, redirectUri: string): OAuth2Clien
  */
 async function accessTokenOf(
   credentials: OAuthCredentials,
-  exchange: OAuthCodeExchange
+  exchange: OAuthCodeExchange,
+  timeoutMs: number
 ): Promise<string> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -107,9 +108,20 @@ async function accessTokenOf(
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body,
       redirect: 'error',
+      // Cancelled at the deadline, so a request Facebook never answers is not left running.
+      signal: AbortSignal.timeout(timeoutMs),
     })
   )
-  const data: unknown = await response.json().catch(() => null)
+  const text = await boundedText(response, MAX_PROFILE_BYTES)
+  if (text === null) {
+    throw new OAuthProviderError('unavailable')
+  }
+  let data: unknown = null
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = null
+  }
   const record = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
   if ((response.status === 400 || response.status === 401) && typeof record.error === 'string') {
     throw new OAuthProviderError('invalid_grant')
@@ -172,7 +184,7 @@ export function createFacebookProvider(options: ProviderOptions = {}): OAuthProv
     ): Promise<OAuthProfile> {
       let accessToken: string
       try {
-        accessToken = await withDeadline(accessTokenOf(credentials, exchange), timeoutMs)
+        accessToken = await withDeadline(accessTokenOf(credentials, exchange, timeoutMs), timeoutMs)
       } catch (error) {
         throw exchangeFailure(error)
       }

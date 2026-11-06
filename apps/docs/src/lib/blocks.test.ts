@@ -171,6 +171,21 @@ describe(':::steps', () => {
   })
 })
 
+describe('a tabs group is closed by its own marker', () => {
+  const code = '```sh\ncurl x\n```\n\n```ts\nx()\n```'
+  test('<!-- tabs --> closed by ::: is an error', () => {
+    expect(failure(`# T\n\n<!-- tabs -->\n${code}\n\n:::\n`).message).toContain('<!-- /tabs -->')
+  })
+  test(':::code-group closed by <!-- /tabs --> is an error', () => {
+    expect(failure(`# T\n\n:::code-group\n\n${code}\n<!-- /tabs -->\n`).message).toContain(':::')
+  })
+  test('html other than the snippet markers inside a tabs group is an error', () => {
+    expect(
+      failure(`# T\n\n<!-- tabs -->\n${code}\n\n<div>stray</div>\n\n<!-- /tabs -->\n`).message
+    ).toContain('fenced code blocks only')
+  })
+})
+
 describe(':::tabs and :::code-group', () => {
   test('tabs are panels labelled by their headings, which are not headings of the page', () => {
     const out = html('# T\n\n:::tabs{sync="fw"}\n\n#### Next.js\n\nA.\n\n#### Vite\n\nB.\n\n:::\n')

@@ -10,6 +10,7 @@ import {
   FACEBOOK_SCOPES,
   isFacebookUserId,
 } from './facebook'
+import { MAX_PROFILE_BYTES } from './profile-read'
 
 const REDIRECT_URI = 'https://auth.northline.app/v1/oauth/callback/facebook'
 const CLIENT_ID = '1234567890123456'
@@ -68,7 +69,7 @@ function facebook(overrides: Record<string, Answer> = {}): Call[] {
         url,
         body: input instanceof Request ? await input.clone().text() : '',
         headers: input instanceof Request ? input.headers : new Headers(init?.headers),
-        signal: init?.signal ?? undefined,
+        signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
       })
       const route = routes[url]
       if (!route) {
@@ -458,6 +459,27 @@ describe('a Facebook that never answers', () => {
       await failureOf(createFacebookProvider(TIMEOUT).exchange(credentials, exchangeInput))
     ).toBe('unavailable')
     expect(performance.now() - since).toBeLessThan(2000)
+  })
+
+  test('the token request is cancelled at the deadline, not left running', async () => {
+    const calls = facebook({ [TOKEN_URL]: hang })
+    expect(
+      await failureOf(createFacebookProvider(TIMEOUT).exchange(credentials, exchangeInput))
+    ).toBe('unavailable')
+    await Bun.sleep(30)
+    expect(calls.find((call) => call.url === TOKEN_URL)?.signal?.aborted).toBe(true)
+  })
+
+  test('a token answer over the size cap is unavailable', async () => {
+    const calls = facebook({
+      [TOKEN_URL]: () =>
+        jsonResponse({ access_token: ACCESS_TOKEN, padding: 'a'.repeat(MAX_PROFILE_BYTES) }),
+    })
+    expect(await failureOf(createFacebookProvider().exchange(credentials, exchangeInput))).toBe(
+      'unavailable'
+    )
+    // Refused at the token answer: the profile is never asked for with such a token.
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL])
   })
 
   test('a body that never finishes is unavailable too', async () => {

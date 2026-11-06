@@ -92,8 +92,8 @@ Neither the access token nor the proof is stored, logged or returned.
 
 All three requests Tula makes to Meta (the login dialog, the token endpoint and the profile
 read) use one pinned Graph API version: `v25.0` (`FACEBOOK_GRAPH_VERSION` in
-`apps/api/src/adapters/oauth/facebook.ts`). Meta keeps a version for at least two years and
-then stops serving it. **Raising that constant before then is a maintenance task of every
+`apps/api/src/adapters/oauth/facebook.ts`). Meta retires a version about two years after its release.
+**Raising that constant before then is a maintenance task of every
 Tula release**: check Meta's changelog for the dialog, the token endpoint, `/me`, `id` and
 `name`, change the constant, and run the adapter's tests. The three requests follow the one
 constant, so nothing else changes.

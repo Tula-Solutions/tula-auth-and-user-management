@@ -349,6 +349,9 @@ function steps(open: Open): RootContent {
   )
 }
 
+/** A marker `bun run docs:generate` writes around a copied sample: `<!-- snippet: … -->`, `<!-- /snippet -->`. */
+const SNIPPET_MARKER = /^<!--\s*\/?snippet\b[^>]*-->$/
+
 /** The tabs of a group: a panel each, headed by its label (what a reader without script sees). */
 function panels(
   open: Open,
@@ -402,9 +405,10 @@ function codeGroup(open: Open): RootContent {
   if (open.children.length === 0) {
     throw new BlockError(open.fence.line, 'the code group is empty')
   }
-  // The snippet markers the docs generator writes around a fence are not content.
+  // The snippet markers the docs generator writes around a fence are not content; any other
+  // html in a tabs group is refused below, like any other non-code child.
   const children = open.fence.languages
-    ? open.children.filter((child) => child.type !== 'html')
+    ? open.children.filter((child) => !(child.type === 'html' && SNIPPET_MARKER.test(child.value)))
     : open.children
   const entries = children.map((child) => {
     const line = lineOf(child, open.fence.line)
@@ -569,6 +573,15 @@ function group(source: string, parent: Parent): void {
       const open = stack.pop()
       if (open === undefined) {
         throw new BlockError(fence.line, 'a closing ::: with no block open')
+      }
+      // A tabs group ends at <!-- /tabs --> and a ::: block at :::, never the other way round.
+      if (Boolean(open.fence.languages) !== Boolean(fence.languages)) {
+        throw new BlockError(
+          fence.line,
+          open.fence.languages
+            ? 'the tabs group opened here ends with <!-- /tabs -->, not :::'
+            : `the block opened on line ${open.fence.line} ends with :::, not <!-- /tabs -->`
+        )
       }
       into(build(open))
     }

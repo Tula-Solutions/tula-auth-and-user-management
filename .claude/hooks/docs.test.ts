@@ -1073,6 +1073,14 @@ describe('language tabs', () => {
     )
   }
 
+  test('no Python bytecode is tracked', () => {
+    const tracked = Bun.spawnSync(['git', 'ls-files', '*.pyc', '**/__pycache__/**'], {
+      cwd: root,
+      timeout: 20_000,
+    })
+    expect(tracked.stdout.toString()).toBe('')
+  })
+
   test('every sample of a tabs group calls the same method and path', () => {
     let groups = 0
     for (const file of markdownFiles()) {
