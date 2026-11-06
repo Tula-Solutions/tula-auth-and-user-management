@@ -1,4 +1,5 @@
 import type { Element, Root } from 'hast'
+import { toString as hastText } from 'hast-util-to-string'
 import rehypeParse from 'rehype-parse'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
@@ -172,17 +173,12 @@ function checkBreadcrumb(label: string, nav: Element): void {
       (child) => child.type === 'element' && child.properties?.ariaCurrent === 'page'
     )
     if (!hasLink && !current) {
-      throw new RenderError(label, `has a breadcrumb step "${textOf(item)}" that is not a link`)
+      throw new RenderError(
+        label,
+        `has a breadcrumb step "${hastText(item).trim()}" that is not a link`
+      )
     }
   })
-}
-
-function textOf(node: Element): string {
-  let text = ''
-  visit(node, 'text', (t: { value: string }) => {
-    text += t.value
-  })
-  return text.trim()
 }
 
 /** A section may pass the cap only as one top-level element (`wrapSections` cuts the rest). */
