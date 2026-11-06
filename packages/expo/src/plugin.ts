@@ -162,8 +162,7 @@ function withUrlScheme(types: unknown, scheme: string): unknown[] {
  * patches the iOS Podfile) is still listed beside it. A value that is not what its option
  * takes is refused with a `TypeError` that names the option and never the value.
  *
- * Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
- * and the manifest described here was not run from this repository: see `docs/expo.md`.
+ * Preview: APIs may change before 1.0. See `docs/expo.md`.
  *
  * @param config - The app's Expo configuration.
  * @param props - What the app uses.

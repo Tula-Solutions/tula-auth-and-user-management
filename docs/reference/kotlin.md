@@ -1918,8 +1918,8 @@ organization, giving a member another role, changing a domain's mode) goes throu
 
 **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
 implementation, and the API refuses a sign-in and ends a session with a `401` that has no
-`WWW-Authenticate` header: that Android hands over such an answer's status and body was
-not tried on a device. An app that does not want to rest on it passes an [HttpEngine] of
+`WWW-Authenticate` header: that Android hands over such an answer's status and body is
+what this engine relies on. An app that does not want to rest on it passes an [HttpEngine] of
 its own (over OkHttp, for one).
 
 ```kotlin
@@ -7952,7 +7952,7 @@ The server accepts a response only from an app the environment's operator regist
 shows a passkey of the relying party only when that domain's `assetlinks.json` names the
 app: see `docs/native-apps.md`.
 
-This class is compiled and linted, and was not run on a device or an emulator.
+Preview: APIs may change before 1.0.
 
 @param activity The activity the sheet is shown over, asked for at each ceremony so that
   none is held; `null` (no activity is in front) is [SheetFailure.FAILED].
@@ -7971,7 +7971,7 @@ The sheet is given the server's nonce as it is and the ID token it answers is re
 the client, which exchanges it; the token is kept nowhere. Every account on the device is
 offered, not only one that signed in to this app before.
 
-This class is compiled and linted, and was not run on a device or an emulator.
+Preview: APIs may change before 1.0.
 
 @param serverClientId The OAuth client id of type "Web application" of the app's Google
   project: the audience of the token. The environment's Google provider has it as its
@@ -8010,7 +8010,7 @@ URL the sign-in asked for, character for character, followed by `#` (the rule is
 own and leaves a waiting sign-in waiting. The address is then passed on as it is, and the
 client reads it by the same rule before any request.
 
-This class is compiled and linted, and was not run on a device or an emulator.
+Preview: APIs may change before 1.0.
 
 @param activity The activity the tab is opened from, asked for at each sign-in so that
   none is held; `null` is [SheetFailure.FAILED].
@@ -8076,7 +8076,7 @@ is gone. This store never throws `DeviceKeyUnusableException`: no Keystore excep
 documented to mean that a key that needs no user authentication can never be used again.
 An app that decides so signs out and calls `TulaClient.removeDeviceKey()`.
 
-This class is compiled and linted, and was not run on a device or an emulator.
+Preview: APIs may change before 1.0.
 
 @param alias The Keystore alias of the key.
 

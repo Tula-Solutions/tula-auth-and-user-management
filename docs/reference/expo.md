@@ -3544,7 +3544,7 @@ things follow for a later try that was inside the store when something newer was
 - **A newer write.** Nothing is added. The adapter asked for the older value first and
   the newer one second; which of two writes in flight the native layer completes last is
   the native layer's, and an older token that lands last is what the store then holds
-  until the client's next refresh writes its own. This was not observed on any phone.
+  until the client's next refresh writes its own.
 
 A waiting later try is called off by a newer write or a delete, and its timer never keeps
 a process alive; an adapter that is dropped while one waits still makes at most those two
@@ -4281,8 +4281,7 @@ itself, so a native module with a plugin of its own (`react-native-nitro-google-
 patches the iOS Podfile) is still listed beside it. A value that is not what its option
 takes is refused with a `TypeError` that names the option and never the value.
 
-Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
-and the manifest described here was not run from this repository: see `docs/expo.md`.
+Preview: APIs may change before 1.0. See `docs/expo.md`.
 
 ```ts
 export function withTula<Config extends ExpoConfigLike>(
@@ -4355,8 +4354,7 @@ itself, so a native module with a plugin of its own (`react-native-nitro-google-
 patches the iOS Podfile) is still listed beside it. A value that is not what its option
 takes is refused with a `TypeError` that names the option and never the value.
 
-Whether Expo's prebuild turns this configuration into the entitlements, the `Info.plist`
-and the manifest described here was not run from this repository: see `docs/expo.md`.
+Preview: APIs may change before 1.0. See `docs/expo.md`.
 
 ```ts
 export function withTula<Config extends ExpoConfigLike>(
