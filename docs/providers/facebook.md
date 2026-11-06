@@ -16,11 +16,46 @@ What an operator does once per environment.
 4. **Copy the app id and the app secret** (App settings → Basic). In Tula the app id is the
    `clientId` and the app secret the `clientSecret`.
 5. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/facebook" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<app id>", "clientSecret": "<app secret>" }'
-   ```
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/facebook" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<app id>", "clientSecret": "<app secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#facebook -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'facebook' },
+  body: {
+    clientId: '<app id>',
+    clientSecret: '<app secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#facebook -->
+```python
+body = {
+    "clientId": "<app id>",
+    "clientSecret": "<app secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/facebook",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 6. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 7. **Consider switching on "Require App Secret"** (App settings → Advanced). Tula sends the
    proof it asks for with its one Graph API call (below), so the setting does not break

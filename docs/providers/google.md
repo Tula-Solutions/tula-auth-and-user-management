@@ -18,13 +18,49 @@ environment uses its own.
    and `profile` (the only ones Tula asks for). Publish it, or add test users while it is in
    testing.
 4. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>.apps.googleusercontent.com", "clientSecret": "<client secret>" }'
-   ```
-   The secret is stored encrypted and never returned. Send `"enabled": false` to store it
-   without offering it yet.
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>.apps.googleusercontent.com", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#google -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'google' },
+  body: {
+    clientId: '<client id>.apps.googleusercontent.com',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#google -->
+```python
+body = {
+    "clientId": "<client id>.apps.googleusercontent.com",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/google",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
+The secret is stored encrypted and never returned. Send `"enabled": false` to store it
+without offering it yet.
+
 5. **Allow your app's landing page**: add the page that renders `<OAuthCallback>` (for example
    `https://app.example.com/oauth/callback`) to `urls.allowedRedirectUrls`, exactly.
 
@@ -41,28 +77,70 @@ redirect URL to allow and no client secret on the device.
    it, and on Android it is what the app asks tokens for.
 2. **Tell Tula which client IDs are yours.** The web client ID is the provider's
    `clientId`. The others go in `additionalClientIds`:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<web client id>.apps.googleusercontent.com",
-           "additionalClientIds": ["<android client id>.apps.googleusercontent.com",
-                                   "<ios client id>.apps.googleusercontent.com"] }'
-   ```
-   The request replaces the provider's record: leave `clientSecret` out to keep the stored
-   one, and **send the whole list every time** (a request without it stores none). At most
-   eight, each once, and **not the web client ID itself** (it is accepted already; listing
-   it again is refused). They are not secrets. In the dashboard it is the field under the
-   client ID on Google's card; in `tula.config.ts` it is
-   [`providers.google.additionalClientIds`](../config.md).
 
-   A token is accepted when its audience (`aud`) is one of these client IDs and, if it
-   names the app that asked (`azp`), that is one of them too. List the client ID of every
-   app that signs in, whichever of the two Google puts it in.
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/google" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<web client id>.apps.googleusercontent.com",
+        "additionalClientIds": ["<android client id>.apps.googleusercontent.com",
+                                "<ios client id>.apps.googleusercontent.com"] }'
+```
 
-   **Adding a client ID widens who can sign in**: every token Google makes for that client
-   ID becomes a sign-in. The audit log records the change as one that weakens security, the
-   dashboard asks first, and `tula apply --yes` needs `--allow-weaker`. List only client
-   IDs of your own project.
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#google-additional-client-ids -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'google' },
+  body: {
+    clientId: '<web client id>.apps.googleusercontent.com',
+    additionalClientIds: [
+      '<android client id>.apps.googleusercontent.com',
+      '<ios client id>.apps.googleusercontent.com',
+    ],
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#google-additional-client-ids -->
+```python
+body = {
+    "clientId": "<web client id>.apps.googleusercontent.com",
+    "additionalClientIds": [
+        "<android client id>.apps.googleusercontent.com",
+        "<ios client id>.apps.googleusercontent.com",
+    ],
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/google",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
+The request replaces the provider's record: leave `clientSecret` out to keep the stored
+one, and **send the whole list every time** (a request without it stores none). At most
+eight, each once, and **not the web client ID itself** (it is accepted already; listing
+it again is refused). They are not secrets. In the dashboard it is the field under the
+client ID on Google's card; in `tula.config.ts` it is
+[`providers.google.additionalClientIds`](../config.md).
+
+A token is accepted when its audience (`aud`) is one of these client IDs and, if it
+names the app that asked (`azp`), that is one of them too. List the client ID of every
+app that signs in, whichever of the two Google puts it in.
+
+**Adding a client ID widens who can sign in**: every token Google makes for that client
+ID becomes a sign-in. The audit log records the change as one that weakens security, the
+dashboard asks first, and `tula apply --yes` needs `--allow-weaker`. List only client
+IDs of your own project.
+
 3. **In the app**, start the sign-in, give Google's SDK the nonce, and hand the token back
    ([the calls](../methods/oauth.md#from-a-native-app-with-googles-id-token)):
    - Android: `GetGoogleIdOption.Builder().setServerClientId(<web client id>).setNonce(nonce)`.

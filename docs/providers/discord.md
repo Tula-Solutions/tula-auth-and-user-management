@@ -12,11 +12,46 @@ What an operator does once per environment.
 4. **Copy the client id and reset the client secret** on the same page. Copy the secret at
    once: the portal shows it once.
 5. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/discord" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
-   ```
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/discord" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#discord -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'discord' },
+  body: {
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#discord -->
+```python
+body = {
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/discord",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 6. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Tula asks for the scopes `identify` and `email` and nothing else: not `guilds`, not

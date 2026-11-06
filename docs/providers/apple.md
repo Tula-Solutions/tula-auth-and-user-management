@@ -20,14 +20,57 @@ Apple Developer account.
    right of the developer account page.
 5. **Give Tula the credentials**. `privateKey` is the `.p8` file's whole text, line breaks
    included:
-   ```bash
-   jq -n --rawfile key AuthKey_XXXXXXXXXX.p8 \
-     '{ clientId: "com.example.web", teamId: "<team id>", keyId: "<key id>", privateKey: $key }' |
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/apple" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' -d @-
-   ```
-   A key that is not a P-256 PKCS#8 key is refused at once. The key is stored encrypted and
-   never returned; Tula signs a five-minute client secret with it for each sign-in.
+
+<!-- tabs -->
+```sh
+jq -n --rawfile key AuthKey_XXXXXXXXXX.p8 \
+  '{ clientId: "com.example.web", teamId: "<team id>", keyId: "<key id>", privateKey: $key }' |
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/apple" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' -d @-
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#apple -->
+```ts
+const key = readFileSync('AuthKey_XXXXXXXXXX.p8', 'utf8')
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'apple' },
+  body: {
+    clientId: 'com.example.web',
+    teamId: '<team id>',
+    keyId: '<key id>',
+    privateKey: key,
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#apple -->
+```python
+with open("AuthKey_XXXXXXXXXX.p8") as file:
+    key = file.read()
+body = {
+    "clientId": "com.example.web",
+    "teamId": "<team id>",
+    "keyId": "<key id>",
+    "privateKey": key,
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/apple",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
+A key that is not a P-256 PKCS#8 key is refused at once. The key is stored encrypted and
+never returned; Tula signs a five-minute client secret with it for each sign-in.
+
 6. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Things specific to Apple: it sends the browser back with a cross-site **form post**, which the

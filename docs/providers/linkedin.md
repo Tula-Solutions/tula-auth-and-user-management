@@ -14,11 +14,46 @@ What an operator does once per environment.
    for your app): the `callbackUrl`, character for character.
 5. **Copy the client id and the client secret** from the same tab.
 6. **Give Tula the credentials**:
-   ```bash
-   curl -X PUT "$TULA_URL/v1/admin/oauth-providers/linkedin" \
-     -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
-     -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
-   ```
+
+<!-- tabs -->
+```sh
+curl -X PUT "$TULA_URL/v1/admin/oauth-providers/linkedin" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "<client id>", "clientSecret": "<client secret>" }'
+```
+
+<!-- snippet: examples/docs-snippets/oauth-providers.ts#linkedin -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'linkedin' },
+  body: {
+    clientId: '<client id>',
+    clientSecret: '<client secret>',
+  },
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/oauth_providers.py#linkedin -->
+```python
+body = {
+    "clientId": "<client id>",
+    "clientSecret": "<client secret>",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/oauth-providers/linkedin",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="PUT",
+)
+urllib.request.urlopen(request).close()
+```
+<!-- /snippet -->
+<!-- /tabs -->
+
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
 Tula asks for the scopes `openid`, `profile` and `email` and nothing else. The one LinkedIn
