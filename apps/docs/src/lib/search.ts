@@ -27,6 +27,12 @@ export interface IndexablePage {
 export const MAX_TEXT = 1200
 
 /**
+ * The score of a page whose own title starts with the query (`passkey` for Passkeys): above
+ * every section, even a heading equal to the query (a reference section named `passkey`).
+ */
+const PAGE_PREFIX_SCORE = 2000
+
+/**
  * Build the index.
  *
  * @param pages - Every page with its sections (error codes are sections of their page, with the code as id).
@@ -57,9 +63,9 @@ function matches(haystack: string, term: string): boolean {
 /**
  * Score an entry for a query; 0 means it does not match.
  *
- * Every word of the query must appear in the title, the page title or the text. A title equal
- * to the query (an error code typed in full) outranks everything, then a title that contains
- * it, a page title, and last the prose.
+ * Every word of the query must appear in the title, the page title or the text. The order is:
+ * a page whose title starts with the query, a section title equal to it (an error code typed
+ * in full), a title that contains it, a page title, and last the prose.
  *
  * @param entry - An index entry.
  * @param query - What the reader typed.
@@ -78,9 +84,8 @@ export function score(entry: SearchEntry, query: string): number {
   // A page whose title starts with the query (`passkey` for Passkeys, `self-host` for
   // Self-hosting) leads, ahead of any section that merely contains the word. A page's own
   // entry is the one with no anchor.
-  // It outranks even a heading equal to the query (a reference section named `passkey`).
   if (!entry.u.includes('#') && loose(title).startsWith(loose(whole))) {
-    total = 2000
+    total = PAGE_PREFIX_SCORE
   }
   if (total === 0 && matches(title, whole)) {
     total += 100
