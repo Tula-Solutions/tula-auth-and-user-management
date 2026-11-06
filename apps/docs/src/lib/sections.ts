@@ -31,7 +31,7 @@ export const SECTION_RULES: readonly SectionRule[] = [
   {
     id: 'start',
     label: 'Get started',
-    routes: ['/quickstart/', '/playground/'],
+    routes: ['/quickstart/', '/playground/', '/admin-api/'],
     routesTitle: 'Start here',
   },
   {
