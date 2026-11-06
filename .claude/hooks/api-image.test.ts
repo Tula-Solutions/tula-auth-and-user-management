@@ -291,7 +291,7 @@ describe('the image workflow', () => {
   // until that run is run again. The runbook has to say so.
   test('the runbook says what to do about a run that was cancelled by a later push', () => {
     expect(source).toContain('cancel-in-progress: false')
-    const doc = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const doc = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(doc).toContain('**One release at a time.**')
     expect(doc).toMatch(/cancelled[^.]*\. Run it again from the Actions page/)
   })

@@ -92,7 +92,7 @@ Alternatives:
 
 - **Depend on published artifacts** (a pod, a Maven coordinate). The right shape once the
   native SDKs are published; today there is nothing to depend on, and publishing them is a
-  release decision of its own ([releasing.md](../releasing.md)). When they are, the vendored
+  release decision of its own ([releasing.md](../internal/releasing.md)). When they are, the vendored
   directories give way to two dependencies and this section is rewritten.
 - **A path from the app into a checkout** (a `:path` pod, an included Gradle build). Works
   only for an app inside this repository.

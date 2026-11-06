@@ -268,7 +268,7 @@ describe('where the docs say the site is published', () => {
     const readme = read('apps/docs/README.md').replace(/\s+/g, ' ')
     expect(readme).toContain('push to `main`')
     expect(readme).toContain(`${PAGES_URL}next/`)
-    const releasing = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const releasing = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(releasing).toContain('.github/workflows/docs-pages.yml')
     // Not as a link: the released build checks every address of its own, and `next/` is not its file.
     expect(releasing).toContain('with `next/` added')

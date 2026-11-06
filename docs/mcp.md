@@ -366,7 +366,7 @@ rendered), or what your webhook receiver did with the events.
 `framework` is `nextjs` (App Router), `react-vite`, `expo`, `swiftui` or `compose`. The files
 are the ones the example apps and `create-tula` use, byte for byte. **`expo` is answered
 with the error `scaffold.not_released` and no file**: its scaffold needs `@tula-tech/expo`,
-which is held back from npm ([releasing.md](releasing.md)), and a tool that told an
+which is held back from npm ([releasing.md](internal/releasing.md)), and a tool that told an
 assistant to install it would send it to a package that is not there. `create-tula`
 refuses the Expo template for the same reason. **The server writes
 nothing**: your client writes the files, after you agree. `detect_framework` reads one

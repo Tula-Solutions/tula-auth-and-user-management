@@ -4,7 +4,7 @@ name: Back-merge
 # pull request) this opens, or updates, ONE pull request from `main` back into `develop`, so
 # that `develop` gets the release's version bumps and CHANGELOGs and the two branches do not
 # drift apart. Merge it with a MERGE COMMIT, not a squash: that keeps `main`'s commits in
-# `develop`'s history (docs/releasing.md, "The release flow").
+# `develop`'s history (docs/internal/releasing.md, "The release flow").
 #
 # The pull request's head is the branch `back-merge/main`, a copy of `main`'s tip, and not
 # `main` itself: the repository deletes a pull request's head branch when it is merged, and

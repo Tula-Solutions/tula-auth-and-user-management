@@ -24,7 +24,7 @@ export type PublishableDir = (typeof PUBLISHABLE_PACKAGES)[number]
 /**
  * Publishable packages that are held back: built and checked like the others, never
  * published, and `"private": true` so that npm itself refuses them. The two Expo packages
- * have never been run on a device (docs/releasing.md).
+ * have never been run on a device (docs/internal/releasing.md).
  *
  * Releasing one is deleting its line here, removing `"private": true` from its manifest and
  * taking its name out of `create-tula`'s `UNRELEASED_TULA_PACKAGES`; the guardrail test

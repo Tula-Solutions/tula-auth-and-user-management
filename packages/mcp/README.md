@@ -148,7 +148,7 @@ Four tools run at once and sixteen wait; the next call is answered `busy`.
 - [`@tula-tech/admin`](../admin/README.md): the typed client these tools read through.
 - [`@tula-tech/config`](../config/README.md): the file `draft_settings_change` describes edits to.
 - Native apps and the files the scaffolds assume: [docs/native-apps.md](../../docs/native-apps.md).
-- Releases and what is published: [docs/releasing.md](../../docs/releasing.md).
+- Releases and what is published: [docs/internal/releasing.md](../../docs/internal/releasing.md).
 
 The tools, client configuration and exactly what is returned: [docs/mcp.md](../../docs/mcp.md).
 The design: [ADR 0033](../../docs/adr/0033-mcp-server.md),

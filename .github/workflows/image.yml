@@ -8,7 +8,7 @@ name: API image
 #
 # `<version>` is the API's own (`apps/api/package.json`), which a test holds equal to every
 # released package's: a project made by `create-tula` names the image of its own version
-# (docs/releasing.md, "The API image").
+# (docs/internal/releasing.md, "The API image").
 #
 # It is a workflow of its own, not a job of `release.yml`, because that file is held to
 # having no credential at all and one permission to write. This one pushes with the run's own
@@ -25,7 +25,7 @@ name: API image
 #
 # The last job pulls the image as a stranger would. A package is PRIVATE when GitHub first
 # creates it, and nothing here can change that: after the first release a person makes it
-# public once, in the package's settings (docs/releasing.md).
+# public once, in the package's settings (docs/internal/releasing.md).
 
 on:
   push:

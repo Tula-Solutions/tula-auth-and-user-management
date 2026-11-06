@@ -13,7 +13,7 @@ static HTML. Its commands are in its README.
 ## Documentation site (`apps/docs`)
 
 - **`docs/**/*.md` is the only source, and the site holds no copy of it.** Every Markdown file
-  of `docs/` has a page except `docs/plans/`, `docs/adr/` and `docs/codebase-map/`
+  of `docs/` has a page except `docs/plans/`, `docs/adr/`, `docs/codebase-map/` and `docs/internal/`
   (`EXCLUDED_DIRECTORIES` in `src/lib/config.ts`: a decision to leave a directory out is made
   there and in nowhere else). A page's route follows its path (`docs/methods/password.md` is
   `/methods/password/`, a `README.md` is its directory's index, `docs/README.md` is `/docs/`;

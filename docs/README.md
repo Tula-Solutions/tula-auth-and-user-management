@@ -2,7 +2,7 @@
 
 Tula Auth is a self-hosted authentication and user-management server with SDKs for the web.
 The web SDKs and the tooling are released to npm as early `0.x` versions, and the server's image to
-GitHub's container registry with them ([releasing](releasing.md)), so a web project is made
+GitHub's container registry with them ([releasing](internal/releasing.md)), so a web project is made
 with `bunx create-tula@latest` and needs no checkout. The Expo and native SDKs are not
 published: those are still used from a checkout of the repository
 ([quickstart](quickstart.md)).
@@ -138,5 +138,5 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 | [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
 | [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
 | [Writing docs](writing-docs.md) | Every component the documentation site adds to Markdown (callouts, steps, tabs and code groups, code blocks, file trees, parameter tables), with its source and its result, and what the build refuses. |
-| [Releasing](releasing.md) | How the packages are built, packed and checked. |
-| [Business plan](business-plan.md) | Product context. |
+| [Releasing](internal/releasing.md) | How the packages are built, packed and checked. |
+| [Business plan](internal/business-plan.md) | Product context. |

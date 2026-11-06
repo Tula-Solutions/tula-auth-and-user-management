@@ -10,7 +10,7 @@ method under [methods/](README.md#sign-in-methods)). Administration is through t
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
 [config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **The image is published
 with each release** as `ghcr.io/tula-solutions/tula-api:<version>`, for amd64 and arm64
-([releasing.md](releasing.md#the-api-image)); the steps below build it from this repository
+([releasing.md](internal/releasing.md#the-api-image)); the steps below build it from this repository
 instead, which is how the Compose file here runs it. What has only been tested against a
 stand-in (real providers, a physical passkey authenticator, and more) is listed in
 [plans/phase-1-unverified.md](plans/phase-1-unverified.md).

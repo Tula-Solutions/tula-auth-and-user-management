@@ -97,7 +97,7 @@ describe('artifact uploads', () => {
   })
 })
 
-// Nine packages are released to npm and two are held back (docs/releasing.md). These tests
+// Nine packages are released to npm and two are held back (docs/internal/releasing.md). These tests
 // are the tripwire around that: what may be published, by whom, with which credential and
 // from what. Changing any of it means changing a test here on purpose, in the same change.
 describe('only the released packages can be published', () => {
@@ -338,7 +338,7 @@ describe('only the released packages can be published', () => {
   })
 
   test('the runbook hands over to an environment that only main can deploy to', async () => {
-    const doc = await read('docs/releasing.md')
+    const doc = await read('docs/internal/releasing.md')
     const handOver = doc
       .slice(doc.indexOf('**Hand over to the workflow.**'))
       .replace(/[ \t]*\n[ \t]*(?!\d+\. )/g, ' ')

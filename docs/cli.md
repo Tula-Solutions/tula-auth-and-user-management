@@ -3,7 +3,7 @@
 `tula` (the `@tula-tech/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
 in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
 Both are released to npm (`bun add -d @tula-tech/cli@latest`, then `bunx tula <command>`;
-[releasing.md](releasing.md)). **Run `bunx tula` only in a project that has the CLI
+[releasing.md](internal/releasing.md)). **Run `bunx tula` only in a project that has the CLI
 installed**: anywhere else the name resolves to an unrelated npm package called `tula`. Outside a
 project, name the package: `bunx --package @tula-tech/cli@latest tula <command>`. Inside this
 repository run `bun run tula -- <command>`, and see

@@ -90,7 +90,7 @@ no native module by itself. Why these modules, and what was read of each, is in
 was ever installed or called for this package.
 
 `@tula-tech/expo` and `@tula-tech/expo-screens` are held back from npm until they have been run on a
-device ([releasing.md](releasing.md)); the
+device ([releasing.md](internal/releasing.md)); the
 [example app](../examples/expo/README.md) installs the packed packages of a checkout.
 
 ## The client and the provider

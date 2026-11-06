@@ -649,7 +649,7 @@ describe('the workflows', () => {
   })
 
   test('the docs say plainly that a merge to main publishes with no approval, and how to add a gate back', () => {
-    const doc = read('docs/releasing.md').replace(/\s+/g, ' ')
+    const doc = read('docs/internal/releasing.md').replace(/\s+/g, ' ')
     expect(doc).toContain('publishes to npm with no further approval')
     expect(doc).toContain('Adding a required reviewer')
     expect(doc).not.toMatch(/waits in the `npm-publish` environment for/)

@@ -710,7 +710,7 @@ describe('what a person reads first', () => {
         'DRY RUN: publish @tula-tech/contract@0.1.1  .release/tula-tech-contract-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
         'DRY RUN: publish @tula-tech/core@0.1.1  .release/tula-tech-core-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
         'DRY RUN: publish @tula-tech/react@0.1.1  .release/tula-tech-react-0.1.1.tgz  2.0 kB, 5 files, tag latest, sha256 abababababababab…',
-        'DRY RUN: nothing was published. 3 packages would be; uploading takes `bun run release:publish` (docs/releasing.md).',
+        'DRY RUN: nothing was published. 3 packages would be; uploading takes `bun run release:publish` (docs/internal/releasing.md).',
         '',
       ].join('\n')
     )

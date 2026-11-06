@@ -4,7 +4,7 @@ You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
 > [!NOTE]
 > **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
-> ([releasing.md](releasing.md)), so for a web app steps 2 and 3
+> ([releasing.md](internal/releasing.md)), so for a web app steps 2 and 3
 > can be `bunx create-tula@latest my-app --framework react-vite`. **The Tula API image is
 > published too**, from `0.1.1` on
 > (`ghcr.io/tula-solutions/tula-api:<version>`): a project made that way names it and
