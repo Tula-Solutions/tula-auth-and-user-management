@@ -808,16 +808,16 @@ describe('reading', () => {
   })
 })
 
-function reject(proposal: Pick<Proposal, 'id'>, key: string = SK, body: unknown = {}) {
-  return call('POST', `/v1/admin/proposals/${proposal.id}/reject`, key, body)
+function reject(proposal: Pick<Proposal, 'id'>, key: string = SK) {
+  return call('POST', `/v1/admin/proposals/${proposal.id}/reject`, key)
 }
 
 describe('rejecting', () => {
-  test('a rejected proposal changes nothing, is rejected for good and is recorded with its reason', async () => {
+  test('a rejected proposal changes nothing, is rejected for good and is recorded', async () => {
     const maya = await createUser()
     const proposal = await propose(maya.id)
     const before = types()
-    const res = await reject(proposal, SK, { reason: 'not needed' })
+    const res = await reject(proposal)
     expect(res.status).toBe(200)
     expect(await json<Proposal>(res)).toMatchObject({
       id: proposal.id,
@@ -836,7 +836,6 @@ describe('rejecting', () => {
           targetType: 'user',
           targetId: maya.id,
           proposedBy: agentKeyId,
-          reason: 'not needed',
         },
       },
     ])
@@ -878,12 +877,5 @@ describe('rejecting', () => {
     expect(expired.status).toBe(409)
     expect((await refusal(expired)).params?.reason).toBe('expired')
     expect((await reject({ id: UNKNOWN })).status).toBe(404)
-  })
-
-  test('a reason that is empty or long is refused', async () => {
-    const proposal = await propose((await createUser()).id)
-    expect((await reject(proposal, SK, { reason: '' })).status).toBe(422)
-    expect((await reject(proposal, SK, { reason: 'x'.repeat(201) })).status).toBe(422)
-    expect((await reject(proposal)).status).toBe(200)
   })
 })

@@ -831,7 +831,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutProposal,
-    data: { ...proposed, proposedBy: AGENT, reason: 'not needed' },
+    data: { ...proposed, proposedBy: AGENT },
   },
   'proposal.executed': {
     id: eventId(42),

@@ -6584,10 +6584,6 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "reason": {
-            "type": "string",
-            "maxLength": 200
           }
         },
         "required": [
@@ -17049,17 +17045,6 @@
           "operation",
           "target"
         ],
-        "additionalProperties": false
-      },
-      "RejectProposalRequest": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        },
         "additionalProperties": false
       },
       "SignInTestStepResult": {
@@ -47330,17 +47315,7 @@
             },
             "required": true
           }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RejectProposalRequest"
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/v1/agent/sign-in-tests": {

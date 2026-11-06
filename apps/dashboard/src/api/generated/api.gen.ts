@@ -3003,8 +3003,6 @@ export interface ProposalRejectedEventData {
   targetId: string | OAuthProvider;
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   proposedBy: string;
-  /** @maxLength 200 */
-  reason?: string;
 }
 
 export type ProposalRejectedEventTarget = {
@@ -7505,14 +7503,6 @@ export interface ProposalList {
 export interface ApproveProposalRequest {
   operation: ProposalOperation;
   target: ProposalTarget;
-}
-
-export interface RejectProposalRequest {
-  /**
-     * @minLength 1
-     * @maxLength 200
-     */
-  reason?: string;
 }
 
 export type SignInTestStepResultStep = typeof SignInTestStepResultStep[keyof typeof SignInTestStepResultStep];
@@ -16888,29 +16878,14 @@ export const getRejectProposalUrl = (id: string,) => {
  * Reject a pending proposal: nothing is carried out and the proposal is decided for good (`rejected`). It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`). The body may hold a short `reason`, kept in the audit entry. Refused with `resource.conflict` and a fixed `params.reason`: `already_decided` (approved or rejected before) or `expired`. Nothing is changed by a refused rejection. A rejection and an approval at the same moment: one succeeds.
  * @summary Reject a proposal
  */
-export const rejectProposal = async (id: string,
-    rejectProposalRequest: RejectProposalRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+export const rejectProposal = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return dashboardFetch<Proposal>(getRejectProposalUrl(id),
+  return dashboardFetch<Proposal>(getRejectProposalUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(rejectProposalRequest)
+    method: 'POST'
+
+
   }
 );}
 
@@ -16935,9 +16910,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectProposal>>, RejectProposalMutationVariables> = (props) => {
-          const {id,data} = props ?? {};
+          const {id} = props ?? {};
 
-          return  rejectProposal(id,data,requestOptions)
+          return  rejectProposal(id,requestOptions)
         }
 
 
@@ -16948,9 +16923,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RejectProposalMutationResult = NonNullable<Awaited<ReturnType<typeof rejectProposal>>>
-    export type RejectProposalMutationBody = RejectProposalRequest
+
     export type RejectProposalMutationError = ErrorEnvelope
-    export type RejectProposalMutationVariables = {id: string;data: RejectProposalRequest}
+    export type RejectProposalMutationVariables = {id: string}
 
     /**
  * @summary Reject a proposal

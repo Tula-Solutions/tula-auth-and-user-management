@@ -102,7 +102,7 @@ export function describeProposalStore(
         type,
         actor: admin,
         target,
-        data: { ...proposed, proposedBy: AGENT, reason: 'not needed' },
+        data: { ...proposed, proposedBy: AGENT },
       })
     }
     if (type === 'proposal.executed') {

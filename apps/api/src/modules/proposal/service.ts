@@ -14,7 +14,6 @@ import {
   type ProposalFailureReason,
   type ProposalTargetType,
   proposalSummary,
-  type RejectProposalRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import {
@@ -534,7 +533,6 @@ async function changeIsThere(
  * @param deps - Proposal store, environments, settings and clock.
  * @param tenant - The environment the administrator acts in.
  * @param id - The proposal.
- * @param body - The optional short reason, kept in the audit entry.
  * @param actor - The administrator, as their router built it.
  * @returns The proposal, `rejected`.
  * @throws NotFoundError when the proposal is not of this environment.
@@ -545,7 +543,6 @@ export async function reject(
   deps: Pick<Deps, 'proposals' | 'clock' | 'ids'>,
   tenant: Scope,
   id: string,
-  body: RejectProposalRequest,
   actor: Actor
 ): Promise<Proposal> {
   const found = await deps.proposals.find(tenant.environmentId, id)
@@ -563,7 +560,6 @@ export async function reject(
       data: {
         ...proposed(found),
         proposedBy: found.proposedBy,
-        ...(body.reason !== undefined && { reason: body.reason }),
       },
     })
   )

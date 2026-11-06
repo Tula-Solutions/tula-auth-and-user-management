@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "a person rejects an agent's proposal, once, and an approved one cannot be rejected",
-  "description": "An agent key asks for a ban and cannot reject its own proposal. A secret key rejects it with a reason: the proposal reads `rejected` to the agent, nothing changes, it can then be neither approved nor rejected, and the audit log records the rejection. A second proposal is approved and carried out, and a rejection after that is refused with the same reason. Each run leaves one revoked agent key behind.",
+  "description": "An agent key asks for a ban and cannot reject its own proposal. A secret key rejects it: the proposal reads `rejected` to the agent, nothing changes, it can then be neither approved nor rejected, and the audit log records the rejection. A second proposal is approved and carried out, and a rejection after that is refused with the same reason. Each run leaves one revoked agent key behind.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -102,14 +102,11 @@
       }
     },
     {
-      "name": "a person rejects it, with a reason",
+      "name": "a person rejects it",
       "request": {
         "method": "POST",
         "path": "/v1/admin/proposals/{{proposalId}}/reject",
-        "auth": "secret",
-        "body": {
-          "reason": "not now"
-        }
+        "auth": "secret"
       },
       "expect": {
         "status": 200,

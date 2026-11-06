@@ -97,7 +97,7 @@ the operation and the target the question showed. The answer is said as it is:
 | Approved; nothing changed | `executed` with `changed: false`: the target was already so. |
 | Approved, and not carried out | `failed`: the target no longer exists, the change would leave no way to sign in, or the operation failed. The proposal is spent. |
 | Approved, and only partly carried out | `failed` with `incomplete`: for a ban, the user is banned and their sessions were not ended; the screen links to the user's page to end them. |
-| Rejected | `rejected`: you turned it down (with a short reason, if you gave one). Nothing was changed, the proposal is spent, and the agent sees `rejected` when it reads it. |
+| Rejected | `rejected`: you turned it down. Nothing was changed, the proposal is spent, and the agent sees `rejected` when it reads it. |
 | Not approved | The server refused: expired, already approved, the agent key revoked, not the proposal that was shown, or a production environment that does not accept proposals. Nothing was changed. |
 
 A request that got no answer, or a server error, may still have been taken: the screen
@@ -216,7 +216,7 @@ Every step is in the environment's audit log (and is an event a
 | --- | --- | --- |
 | `proposal.created` | the agent (its key's id) | the operation and the target |
 | `proposal.approved` | you (the secret key's id, or the dashboard session's) | the same, and which agent asked |
-| `proposal.rejected` | you, the same | the same, and the short reason if one was given |
+| `proposal.rejected` | you, the same | the same |
 | `user.banned`, `user.unbanned`, `session.revoked` (reason `revoked_by_admin`) or `oauth_provider.updated` (`changed: ["enabled"]`) | the agent | `proposalId`, and `approvedBy` |
 | `proposal.executed` or `proposal.failed` | the agent | `approvedBy`, and for a failure why |
 

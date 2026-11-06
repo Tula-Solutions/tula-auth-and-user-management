@@ -1493,7 +1493,6 @@ export interface Schemas {
     targetType: 'user' | 'session' | 'oauth_provider'
     targetId: string | Schemas['OAuthProvider']
     proposedBy: string
-    reason?: string
   }
   ProposalStatus: 'pending' | 'expired' | 'approved' | 'executed' | 'failed' | 'rejected'
   ProposalTarget: {
@@ -1501,9 +1500,6 @@ export interface Schemas {
     id: string | 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   }
   RedirectUrl: string
-  RejectProposalRequest: {
-    reason?: string
-  }
   RevokedSessions: {
     revoked: number
   }
@@ -2866,7 +2862,7 @@ export interface Operations {
   /** Read a SAML connection’s metadata address again (`POST /v1/admin/sso-connections/{id}/refresh-metadata`). */
   refreshSsoConnectionMetadata: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnection'] }
   /** Reject a proposal (`POST /v1/admin/proposals/{id}/reject`). */
-  rejectProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['RejectProposalRequest']; response: Schemas['Proposal'] }
+  rejectProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
   /** Remove a domain (`DELETE /v1/admin/organizations/{id}/domains/{domainId}`). */
   removeOrganizationDomain: { params: { id: string; domainId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a member from an organization (`DELETE /v1/admin/organizations/{id}/memberships/{userId}`). */

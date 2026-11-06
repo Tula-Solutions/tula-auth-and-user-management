@@ -947,8 +947,6 @@ export const EVENT_DATA_SCHEMAS = {
       ...proposed,
       /** The agent that asked: the id of the credential it holds. */
       proposedBy: id(),
-      /** The short reason the human gave, if any. Never a secret. */
-      reason: z.string().max(200).optional(),
     }
   ),
   'proposal.executed': data(

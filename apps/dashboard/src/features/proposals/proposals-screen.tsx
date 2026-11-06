@@ -233,7 +233,7 @@ export function ProposalsScreen() {
     setRunning(shown.id)
     setRunningMode('reject')
     reject.mutate(
-      { id: shown.id, data: {} },
+      { id: shown.id },
       {
         onSuccess: () => {
           // Started, not awaited: the answer is shown at once.

@@ -14,7 +14,6 @@ import {
   ProposalIdParamSchema,
   ProposalListSchema,
   ProposalSchema,
-  RejectProposalRequestSchema,
 } from './schema'
 
 const router = new Hono<AppEnv>()
@@ -241,13 +240,11 @@ router.post(
   adminRateLimit(),
   secretKey(),
   validator('param', ProposalIdParamSchema, validationHook),
-  validator('json', RejectProposalRequestSchema, validationHook),
   async (c) => {
     const proposal = await Proposals.reject(
       c.get('deps'),
       c.get('tenant'),
       c.req.valid('param').id,
-      c.req.valid('json'),
       adminActor(c)
     )
     return c.json(ProposalSchema.parse(proposal))

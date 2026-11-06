@@ -283,7 +283,7 @@ decision in ADR 0053.
   `POST /v1/admin/proposals/:id/reject`, behind `secretKey()` (an agent key is refused). The
   `rejected` status leaves `pending` through the store's own compare-and-set, the same one an
   approval takes, so the two never both succeed; the `proposal.rejected` entry is written in
-  that transaction, and its optional `reason` (at most 200 characters) never holds a secret.
+  that transaction, and it holds no text a person wrote (no reason is taken: free text in an event is refused).
   Rejecting a proposal that is not pending gives an approval's refusals. The rejecter is in
   the audit entry, not in the row; an agent cannot reject. ADR 0053, "Rejecting a proposal".
 ## Decisions from the TULA-157 hardening audit

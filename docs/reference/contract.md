@@ -7711,27 +7711,6 @@ token travels in an httpOnly cookie that JavaScript cannot read.
 const RefreshTokenRequestSchema: z.ZodObject<{ refreshToken: z.ZodOptional<z.ZodString>; }, z.core.$strip>
 ```
 
-### `RejectProposalRequest`
-
-_type_, defined in `packages/contract/src/proposal.ts`
-
-Body of a rejection.
-
-```ts
-export type RejectProposalRequest = z.infer<typeof RejectProposalRequestSchema>
-```
-
-### `RejectProposalRequestSchema`
-
-_constant_, defined in `packages/contract/src/proposal.ts`
-
-Body of `POST /v1/admin/proposals/{id}/reject`: an optional short reason, which only the
-audit entry keeps. Never put a secret in it: the proposal itself still holds no text.
-
-```ts
-const RejectProposalRequestSchema: z.ZodObject<{ reason: z.ZodOptional<z.ZodString>; }, z.core.$strict>
-```
-
 ### `RevokedSessions`
 
 _type_, defined in `packages/contract/src/session.ts`

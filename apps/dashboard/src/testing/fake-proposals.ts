@@ -1,8 +1,4 @@
-import {
-  ApproveProposalRequestSchema,
-  proposalSummary,
-  RejectProposalRequestSchema,
-} from '@tula-tech/contract'
+import { ApproveProposalRequestSchema, proposalSummary } from '@tula-tech/contract'
 import { z } from 'zod'
 import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
 import { invalid } from './fake-webhooks'
@@ -246,10 +242,6 @@ export function proposalRoutes(state: FakeProposalState): [string, RegExp, FakeH
         const params = ProposalParams.safeParse({ id: match[1] })
         if (!params.success) {
           return invalid(params.error)
-        }
-        const body = RejectProposalRequestSchema.safeParse(call.body)
-        if (!body.success) {
-          return invalid(body.error)
         }
         const proposal = find(call, params.data.id)
         if (!proposal) {

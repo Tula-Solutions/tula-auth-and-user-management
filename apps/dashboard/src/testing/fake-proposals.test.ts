@@ -111,11 +111,10 @@ describe('what the API refuses, the fake refuses the same way', () => {
     const waiting = fakeProposal()
     fake.state.proposals.push(waiting)
     expect((await call('POST', `${ROOT}/not-an-id/reject`, {})).status).toBe(422)
-    expect((await call('POST', `${ROOT}/${waiting.id}/reject`, { extra: 1 })).status).toBe(422)
-    expect(
-      (await call('POST', `${ROOT}/${waiting.id}/reject`, { reason: 'no' }, IDS.production)).status
-    ).toBe(404)
-    const first = await call('POST', `${ROOT}/${waiting.id}/reject`, { reason: 'no' })
+    expect((await call('POST', `${ROOT}/${waiting.id}/reject`, {}, IDS.production)).status).toBe(
+      404
+    )
+    const first = await call('POST', `${ROOT}/${waiting.id}/reject`, {})
     expect(ProposalSchema.parse(first.body).status).toBe('rejected')
     const second = await call('POST', `${ROOT}/${waiting.id}/approve`, BAN)
     expect([second.status, reason(second)]).toEqual([409, 'already_decided'])
