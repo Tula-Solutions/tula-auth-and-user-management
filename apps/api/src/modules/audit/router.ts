@@ -4,6 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { RateLimitError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { adminActor } from '~/lib/actor'
+import * as logger from '~/lib/logger'
 import { adminRateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as Audit from '~/modules/audit/service'
@@ -12,11 +13,15 @@ import { AuditExportRequestSchema, AuditLogListSchema, AuditLogQuerySchema } fro
 
 const router = new Hono<AppEnv>()
 
-/** Exports one environment may have streaming at once on this instance (H-168). */
+/** Exports one environment may have streaming at once, across every instance (H-168). */
 export const MAX_CONCURRENT_EXPORTS = 2
-// shortcut: counted per process, not across instances; move to the rate limiter's store if
-// several instances must share one cap.
-const exportsInFlight = new Map<string, number>()
+
+/**
+ * How long a slot lasts without a renewal: a process that dies mid-export frees its slot after
+ * this. A live export renews it while it streams (`EXPORT_RENEW_MS`).
+ */
+const EXPORT_LEASE_MS = 10 * 60_000
+const EXPORT_RENEW_MS = EXPORT_LEASE_MS / 3
 
 router.get(
   '/',
@@ -88,42 +93,66 @@ router.post(
   adminRateLimit(),
   secretKey(),
   validator('json', AuditExportRequestSchema, validationHook),
-  (c) => {
+  async (c) => {
     const body = c.req.valid('json')
+    const deps = c.get('deps')
     const environmentId = c.get('tenant').environmentId
-    const running = exportsInFlight.get(environmentId) ?? 0
-    if (running >= MAX_CONCURRENT_EXPORTS) {
+    const leaseId = await deps.exportLeases.acquire(
+      environmentId,
+      MAX_CONCURRENT_EXPORTS,
+      EXPORT_LEASE_MS
+    )
+    if (leaseId === null) {
       // Each export holds a database cursor and a stream open: a few at once is a client bug
       // or an attempt to starve the pool, so the rest wait for one to end.
       throw new RateLimitError(5_000)
     }
-    exportsInFlight.set(environmentId, running + 1)
     let released = false
-    const release = () => {
+    const release = async () => {
       if (released) {
         return
       }
       released = true
-      const left = (exportsInFlight.get(environmentId) ?? 1) - 1
-      if (left > 0) {
-        exportsInFlight.set(environmentId, left)
-      } else {
-        exportsInFlight.delete(environmentId)
+      // A failed release must not mask what ended the stream: the lease expires on its own.
+      await deps.exportLeases.release(environmentId, leaseId).catch(() => undefined)
+    }
+    let renewedAt = deps.clock.now().getTime()
+    const renew = async () => {
+      const now = deps.clock.now().getTime()
+      if (now - renewedAt < EXPORT_RENEW_MS) {
+        return
+      }
+      renewedAt = now
+      // A renewal that fails is retried at the next chunk; the lease's term covers the gap.
+      const kept = await deps.exportLeases
+        .renew(environmentId, leaseId, EXPORT_LEASE_MS)
+        .catch(() => true)
+      if (!kept) {
+        // The lease ran out (a client that stalled past its term): this export no longer
+        // counts toward the cap. It is let finish rather than cut off mid-file.
+        logger.warn('audit export lease lost', { environmentId })
       }
     }
-    const chunks = Audit.exportEntries(c.get('deps'), c.get('tenant'), adminActor(c), body)
+    let chunks: ReturnType<typeof Audit.exportEntries>
+    try {
+      chunks = Audit.exportEntries(deps, c.get('tenant'), adminActor(c), body)
+    } catch (error) {
+      await release()
+      throw error
+    }
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller) {
+        await renew()
         let next: IteratorResult<string>
         try {
           next = await chunks.next()
         } catch (error) {
-          release()
+          await release()
           throw error
         }
         if (next.done) {
-          release()
+          await release()
           controller.close()
         } else {
           controller.enqueue(encoder.encode(next.value))
@@ -134,7 +163,7 @@ router.post(
         try {
           await chunks.return(undefined)
         } finally {
-          release()
+          await release()
         }
       },
     })
