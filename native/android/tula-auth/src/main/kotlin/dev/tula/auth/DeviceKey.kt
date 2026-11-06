@@ -64,7 +64,7 @@ class DevicePublicKey(x: ByteArray, y: ByteArray) {
 }
 
 /**
- * A key a session can be bound to (ADR 0043): its public half, and a way to sign with the
+ * A key a session can be bound to: its public half, and a way to sign with the
  * private half that never hands the private half out.
  */
 interface DeviceKey {
@@ -227,7 +227,7 @@ class SoftwareDeviceKeyStore : DeviceKeyStore {
 internal fun base64Url(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
 /**
- * The proofs of a client (RFC 9449, ADR 0043): which requests carry one, the key that signs
+ * The proofs of a client (RFC 9449): which requests carry one, the key that signs
  * them and the server's newest nonce.
  *
  * The nonce is held here, in memory, and nowhere else. A proof is made for one request and

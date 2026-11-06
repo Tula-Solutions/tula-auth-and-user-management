@@ -9,7 +9,7 @@ import AppKit
 #endif
 
 // The parts the screens are made of: the colours and type of a resolved theme, the field,
-// the buttons, and the four parts an app can replace (ADR 0057, "Slots").
+// the buttons, and the four parts an app can replace.
 
 // MARK: Theme
 
@@ -564,7 +564,7 @@ struct SetupView<Action: Hashable & Sendable>: View {
         }
         .privacySensitive()
         // The app switcher's snapshot is taken as the scene leaves `.active`: the key is
-        // not in it (H-311).
+        // not in it.
         .redacted(reason: scenePhase == .active ? [] : .privacy)
     }
 }
@@ -675,7 +675,7 @@ enum Pasteboard {
         #elseif canImport(AppKit)
         // AppKit has no expiry for a pasteboard's contents: only "this Mac" is asked for, and
         // the copy is cleared after `TulaCopyRule.lifetime` unless something else was copied
-        // since (its change count moved), so a person's own later copy is never lost (H-319).
+        // since (its change count moved), so a person's own later copy is never lost.
         let board = NSPasteboard.general
         board.prepareForNewContents(with: TulaCopyRule.localOnly ? .currentHostOnly : [])
         board.setString(text, forType: .string)

@@ -8,7 +8,7 @@ import kotlin.math.min
 // 40 (ISO/IEC 18004). It is a port of `packages/react/src/qr/encode.ts`, which a scanner reads
 // back in that package's tests; the two are held to each other by one corpus,
 // `packages/react/src/qr/qr-cases.json`, read by both suites. Android has no encoder of its
-// own, and a library for 300 lines would be the package's first dependency (ADR 0062).
+// own, and a library for 300 lines would be the package's first dependency.
 //
 // What is encoded here is an `otpauth://` address, which holds an authenticator's setup key:
 // nothing in this file logs, keeps or repeats its input.

@@ -8,7 +8,7 @@ import {
 } from './organization-permissions'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PaginationMetaSchema } from './user'
 
-// Organizations (ADR 0065): the companies, teams and workspaces an operator's users belong to.
+// Organizations: the companies, teams and workspaces an operator's users belong to.
 // An organization is a tenant row of an environment; a user holds one role in each
 // organization they belong to; a role is a set of permission keys. Everything an app or a
 // Tula route asks about access is a permission key, so the grammar of a key, the system
@@ -56,7 +56,7 @@ export const PermissionKeySchema = z
 /**
  * The permissions a **custom** role holds: at most {@link MAX_PERMISSIONS_PER_ROLE} keys, each
  * of the grammar, none twice, and none of the reserved `sys` feature that Tula does not define
- * (`rolePermissionRefusal`, ADR 0065). A role may hold any of Tula's own system permissions.
+ * (`rolePermissionRefusal`). A role may hold any of Tula's own system permissions.
  */
 export const RolePermissionsSchema = z
   .array(z.string())
@@ -96,7 +96,7 @@ export const OrganizationSlugSchema = z
   .meta({ ref: 'OrganizationSlug' })
 
 // Operator or user text: trimmed, never empty, no control character (a name reaches emails and
-// the dashboard as untrusted text, ADR 0065).
+// the dashboard as untrusted text).
 const OrganizationName = z
   .string()
   .trim()
@@ -189,7 +189,7 @@ export const UpdateOrganizationMemberRequestSchema = z
   .meta({ ref: 'UpdateOrganizationMemberRequest' })
 
 /**
- * An organization the signed-in user belongs to, with their role in it (ADR 0065, Orgs 02).
+ * An organization the signed-in user belongs to, with their role in it.
  * What `GET /v1/client/me/organizations` lists and `POST` creates. No creator and no other
  * member: a user is told about their own membership and nothing of anyone else's.
  */
@@ -244,7 +244,7 @@ export const ActiveOrganizationSchema = z
   .meta({ ref: 'ActiveOrganization' })
 
 /**
- * A member of an organization as another member sees them (ADR 0065, Orgs 07): who they are
+ * A member of an organization as another member sees them: who they are
  * and the key of their role. The name and the address are shown so that a member list can be
  * read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
  * to nobody else, and never into an event or an audit entry.

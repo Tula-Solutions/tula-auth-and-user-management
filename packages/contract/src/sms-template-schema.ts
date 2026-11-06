@@ -7,7 +7,7 @@ import {
 } from './sms-template'
 
 /**
- * An environment's wording for one kind of text message (ADR 0042): the sentence that
+ * An environment's wording for one kind of text message: the sentence that
  * carries the code.
  *
  * **Plain text on one line, with `{{name}}` placeholders and nothing else**, at most

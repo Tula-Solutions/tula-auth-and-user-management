@@ -9,7 +9,7 @@ import {
 import { clientError, toTulaError } from './errors'
 import { type ExpoHost, hostOf } from './host'
 
-// Signing in with a provider from an app: the API's own round trip (ADR 0026), with the
+// Signing in with a provider from an app: the API's own round trip, with the
 // system browser where a page would navigate. `@tula-tech/core` starts it and exchanges the
 // ticket; this module opens the browser between the two and decides whether what came back
 // is worth a request at all.

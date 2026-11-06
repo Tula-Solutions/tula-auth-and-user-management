@@ -1,6 +1,6 @@
 package dev.tula.auth.ui
 
-// The strings of the screens that came after the first ones (TULA-61, ADR 0062): the ways to
+// The strings of the screens that came after the first ones: the ways to
 // sign in that are not typed, a texted code, the second step, an authenticator app set up
 // inside a sign-in, and the account screen. Three tables nested in `TulaStrings`; a
 // translation sets them as it sets the rest.
@@ -9,7 +9,7 @@ package dev.tula.auth.ui
  * The first screen's other ways to sign in (a passkey, a provider, a texted code).
  *
  * **A texted sign-in code's screens never say that a message was sent**: a number that signs
- * nobody in is answered like one that does and is texted nothing (ADR 0037), so the words are
+ * nobody in is answered like one that does and is texted nothing, so the words are
  * "if this number can sign in".
  */
 data class TulaWayStrings(
@@ -180,7 +180,7 @@ data class TulaAccountStrings(
     val sessionsTitle: String = "Where you’re signed in",
     /** Marks the session this app holds. */
     val thisDevice: String = "This device",
-    /** Marks a session bound to a device key. Never more than that of a device (ADR 0043). */
+    /** Marks a session bound to a device key. Never more than that of a device. */
     val deviceBound: String = "Bound to a device key",
     /** `{date}` is when the session was signed in. */
     val signedInOn: String = "Signed in {date}",

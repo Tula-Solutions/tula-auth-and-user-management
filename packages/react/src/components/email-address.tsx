@@ -12,7 +12,7 @@ import { Button, Form, FormError, Heading, Status, TextField, useUi } from './ui
 type View = 'summary' | 'address' | 'code'
 
 /**
- * "Email address", for an account that has none (ADR 0059): one made by a first sign-in
+ * "Email address", for an account that has none: one made by a first sign-in
  * with a provider that gives no address (X, Facebook).
  *
  * Adding is two steps the server decides: an email goes to the address, and the code in it

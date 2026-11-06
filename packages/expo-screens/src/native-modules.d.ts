@@ -1,7 +1,7 @@
 // The native modules this package imports, declared as far as it uses them.
 //
-// The repository does not install React Native or Expo (about 500 packages for two imports;
-// ADR 0046), so their own declarations are not there to check against. These are the
+// The repository does not install React Native or Expo (about 500 packages for two imports), so
+// their own declarations are not there to check against. These are the
 // members `index.ts` reads, copied from `react-native` 0.86.3
 // (`Libraries/Utilities/Platform.d.ts`) and from `expo` 57.0.28 (`build/Expo.d.ts`, which
 // re-exports `expo-modules-core` 57.0.22: `build/requireNativeModule.d.ts`,
@@ -11,7 +11,7 @@
 //
 // These are narrower than the real declarations and were never compiled against them. A
 // difference between the two shows only when an application compiles against the real
-// packages, which nobody has done (`docs/plans/phase-2-unverified.md`).
+// packages, which nobody has done.
 
 declare module 'react-native' {
   /** The platform the app runs on. */

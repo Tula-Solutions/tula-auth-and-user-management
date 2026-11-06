@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /**
  * Why a test sign-in of an SSO connection failed, each with a sentence for the person setting
- * the connection up (ADR 0067). **This is the one place a verifier's reason is shown:** a real
+ * the connection up. **This is the one place a verifier's reason is shown:** a real
  * sign-in answers `sso.provider_error` for every refusal and only logs the reason.
  */
 export const SSO_TEST_REASONS = {

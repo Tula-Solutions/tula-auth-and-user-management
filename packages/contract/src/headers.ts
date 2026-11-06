@@ -42,7 +42,7 @@ export const CLIENT_HEADER = 'x-tula-client'
  * It is a request, not a choice: the session gets that profile only when the environment marks
  * it `clientSelectable`. Any other name (unknown, not offered, a built-in) is ignored and the
  * session gets the profile of its client kind, so a client can never give itself a
- * longer-lived session than the operator offered (ADR 0028).
+ * longer-lived session than the operator offered.
  *
  * @example
  * ```ts
@@ -102,7 +102,7 @@ export const CAN_STILL_SIGN_IN_HEADER = 'x-tula-can-still-sign-in'
  * Sent together with {@link CONFIG_HASH_HEADER}. The API records both with the settings and
  * returns them as `managedBy`, so a dashboard can say "these settings come from a config file"
  * and warn when they were changed around it. A replace without the header keeps the record,
- * which then shows as drifted. See ADR 0030.
+ * which then shows as drifted.
  *
  * @example
  * ```ts
@@ -136,7 +136,7 @@ export const CONFIG_UNMANAGED = 'none'
 
 /**
  * Request header every call the dashboard makes with its session cookie must carry, with the
- * value {@link DASHBOARD_HEADER_VALUE} (ADR 0032).
+ * value {@link DASHBOARD_HEADER_VALUE}.
  *
  * A browser attaches a cookie whoever wrote the page. This header is what a form cannot send
  * and what a cross-origin `fetch` may send only after a preflight, which the API answers for
@@ -201,7 +201,7 @@ export const DASHBOARD_SESSION_COOKIE = 'tula_dashboard'
 export const EMAIL_LINK_TOKEN_PARAM = 'tula_link'
 
 /**
- * Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+ * Name of the URL-fragment parameter carrying an organization invitation's token
  * Orgs 04).
  *
  * The link in the invitation email is the app's own redirect URL followed by
@@ -228,7 +228,7 @@ export const EMAIL_LINK_ATTEMPT_PARAM = 'tula_attempt'
 
 /**
  * Name of the URL-fragment parameter carrying the single-use ticket an OAuth sign-in returns to
- * the app's page with (ADR 0026).
+ * the app's page with.
  *
  * The API redirects to the app's URL followed by `#tula_ticket=<ticket>&tula_attempt=<attempt
  * id>`. The page's script removes the fragment from the address and posts the ticket, with the
@@ -254,7 +254,7 @@ export const OAUTH_TICKET_PARAM = 'tula_ticket'
 export const OAUTH_ERROR_PARAM = 'tula_error'
 
 /**
- * The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+ * The header that carries a setup link's token to `/v1/setup/*`. The portal reads
  * the token from the page address's fragment, which a browser never sends, and puts it here:
  * it is never in a path or a query, so no access log or `Referer` holds it.
  */

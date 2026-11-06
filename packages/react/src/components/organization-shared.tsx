@@ -13,7 +13,7 @@ import { useClientConfig } from '../hooks/use-password-checklist'
 import type { FieldResolver } from './form-errors'
 import { Button, Card, FormError, useUi } from './ui'
 
-// What the three organization components share (ADR 0065, Orgs 07): which organization a
+// What the three organization components share: which organization a
 // component acts on and what the user may do in it, a guard that keeps a result with the session
 // it was asked for, and the few controls the sections have in common.
 
@@ -439,7 +439,8 @@ export function Confirmation(props: {
     }
   }
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a labelled question with its two answers, not a form's fieldset
+    // biome-ignore lint/a11y/useSemanticElements: a labelled question with its two answers, not a
+    // form's fieldset
     <div {...el('confirmation')} ref={group} role='group' aria-labelledby={questionId}>
       <p className='tula-text' id={questionId}>
         {props.question}

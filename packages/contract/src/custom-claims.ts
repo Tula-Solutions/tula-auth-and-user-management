@@ -10,7 +10,7 @@ import {
 } from './organization-permissions'
 
 /**
- * The one top-level claim every custom claim is nested under (ADR 0036).
+ * The one top-level claim every custom claim is nested under.
  *
  * An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
  * with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
@@ -24,10 +24,10 @@ import {
  */
 export const CUSTOM_CLAIMS_CLAIM = 'ext'
 
-/** The access token's claim naming the active organization (ADR 0065, "Token claims"). */
+/** The access token's claim naming the active organization. */
 export const ORGANIZATION_ID_CLAIM = 'org_id'
 
-/** The access token's claim naming the SSO connection a session was signed in through (ADR 0067). */
+/** The access token's claim naming the SSO connection a session was signed in through. */
 export const SSO_CONNECTION_CLAIM = 'sso_conn'
 
 /** The access token's claim holding the key of the member's role in the active organization. */
@@ -68,7 +68,7 @@ export const RESERVED_CLAIM_NAMES = [
   'amr',
   'sp',
   'cnf',
-  // The active organization (ADR 0065): top level, never inside `ext`, and never an
+  // The active organization: top level, never inside `ext`, and never an
   // operator's to set.
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
@@ -160,7 +160,8 @@ const ORGANIZATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
  *
  * @example
  * ```ts
- * readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+ * readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read']
+ * })
  * // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
  * readOrganizationClaims({ org_id: 'o1' }) // null
  * ```

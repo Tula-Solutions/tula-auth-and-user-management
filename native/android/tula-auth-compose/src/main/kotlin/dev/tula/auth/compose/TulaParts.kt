@@ -89,7 +89,7 @@ private const val QUIET_ZONE = 4
  * It is called only when a person presses "Copy". **Android has no expiry for a clip**, so after
  * a minute the app clears the clipboard itself, but only when the clip is still the text it
  * wrote (a later copy of the person's own is never lost). That timer lives in the process: if
- * the process ends first, the copy stays until something else is copied (TULA-157, H-320). Before
+ * the process ends first, the copy stays until something else is copied. Before
  * Android 13 the sensitive mark is not read. The screens say "Copied." and nothing more.
  *
  * @param context A context.

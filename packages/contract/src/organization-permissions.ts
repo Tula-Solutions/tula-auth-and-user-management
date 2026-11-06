@@ -1,11 +1,11 @@
-// The grammar of an organization's permissions and roles (ADR 0065), with no dependency:
+// The grammar of an organization's permissions and roles, with no dependency:
 // the entry point an SDK loads at run time for `has({ permission })` and a form validates a
 // role with, without pulling Zod into an application's bundle. The Zod schemas of a role's
 // requests are in `./organization`, built from these.
 
 /**
  * How many permissions one role can hold. The permissions of the active organization's role are
- * a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+ * a claim of every access token, so the number is capped.
  */
 export const MAX_PERMISSIONS_PER_ROLE = 32
 
@@ -27,7 +27,7 @@ export const MAX_PERMISSION_KEY_LENGTH = 100
 export const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_]{0,31}$/
 
 /**
- * The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+ * The grammar of a permission key: `org:<feature>:<action>`, each of the last two
  * a lower-case letter followed by lower-case letters, digits and underscores (at most 32
  * characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
  * No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
@@ -48,7 +48,7 @@ export const PERMISSION_KEY_PATTERN =
   /^org:(?:sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31}$/
 
 /**
- * The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+ * The permissions Tula's own organization routes check. The same keys an app's
  * server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
  * also give a role.
  */
@@ -75,21 +75,21 @@ export const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission = 'org:sys:membersh
 
 /**
  * The permission that lets a member claim, verify, change and remove the organization's
- * domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+ * domains through the client routes. Read from the member's
  * role at the time of the request, never from a token.
  */
 export const DOMAINS_MANAGE_PERMISSION: SystemPermission = 'org:sys:domains:manage'
 
 /**
  * The permission that lets a member invite people to the organization and withdraw
- * invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+ * invitations. Checked on the server from the membership as it is now,
  * never from a token's claims alone.
  */
 export const INVITATIONS_MANAGE_PERMISSION: SystemPermission = 'org:sys:invitations:manage'
 
 /**
- * The permission that lets a member rename the organization through the client routes
- * (ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+ * The permission that lets a member rename the organization through the client routes.
+ * Read from the membership now, never from a token's claims alone.
  */
 export const ORGANIZATION_MANAGE_PERMISSION: SystemPermission = 'org:sys:organization:manage'
 
@@ -101,13 +101,13 @@ export const ORGANIZATION_DELETE_PERMISSION: SystemPermission = 'org:sys:organiz
 
 /**
  * The permission that lets a member read the organization's member list through the client
- * routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+ * routes. `org:sys:memberships:manage` also reads it.
  */
 export const MEMBERSHIPS_READ_PERMISSION: SystemPermission = 'org:sys:memberships:read'
 
 /**
- * The permission that lets a member manage the organization's single sign-on connections
- * (ADR 0067). Read from the membership now, never from a token's claims alone.
+ * The permission that lets a member manage the organization's single sign-on connections.
+ * Read from the membership now, never from a token's claims alone.
  */
 export const SSO_MANAGE_PERMISSION: SystemPermission = 'org:sys:sso:manage'
 
@@ -119,7 +119,7 @@ export interface BuiltInRole {
 }
 
 /**
- * The two roles every environment has (ADR 0065): `admin` holds every system permission,
+ * The two roles every environment has: `admin` holds every system permission,
  * `member` may read the member list. They cannot be deleted, renamed or given other
  * permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
  * membership refers to a role the way it does to a custom one.
@@ -166,7 +166,7 @@ export function isBuiltInRoleKey(key: string): boolean {
 export type RolePermissionRefusal = 'grammar' | 'reserved'
 
 /**
- * Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+ * Whether a **custom** role may hold a permission key.
  *
  * A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
  * any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.

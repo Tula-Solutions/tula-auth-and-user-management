@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { OAUTH_PROVIDERS } from './oauth'
 
-// A proposal (ADR 0053): a change an AI agent has asked for and that has not happened. It
+// A proposal: a change an AI agent has asked for and that has not happened. It
 // happens only when a human approves it, with a credential the agent never holds.
 
 /**

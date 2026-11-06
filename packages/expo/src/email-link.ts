@@ -2,7 +2,7 @@ import type { FlowStep, SignInFlow, TulaClient, TulaError } from '@tula-tech/cor
 import { clientError, toTulaError } from './errors'
 import { type ExpoHost, hostOf } from './host'
 
-// Signing in with an emailed link from an app (ADR 0055): `@tula-tech/core` asks for the link,
+// Signing in with an emailed link from an app: `@tula-tech/core` asks for the link,
 // keeps its binding and presents the link; this module decides whether a URL the app was
 // opened with is worth a request at all, and has the sign-in that asked finish itself.
 

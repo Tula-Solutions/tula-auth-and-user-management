@@ -1,6 +1,6 @@
 import Foundation
 
-// Signing in with a provider, the two ways a native app has (ADR 0045, ADR 0047, ADR 0044):
+// Signing in with a provider, the two ways a native app has:
 // handing the server an ID token the platform gave the app, and a round trip through the
 // system's browser session that comes back to the app by a link.
 

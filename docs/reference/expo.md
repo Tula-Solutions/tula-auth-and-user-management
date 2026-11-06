@@ -38,7 +38,7 @@ The client's authentication state: small, immutable and serialisable.
 - `signed-out`: nobody is signed in.
 - `signed-in`: a session exists. `user` is `null` only until it has been fetched, or if
   fetching it failed; `user.get()` fetches it again. `organizationId` is the organization
-  the session acts in (ADR 0065), `null` for the personal account. For a session with an
+  the session acts in, `null` for the personal account. For a session with an
   access token it is read from the token's `org_id` claim (unverified: for showing, never
   for authorizing) and so follows every refresh; a browser's `stateful` session has no
   token, so it is known after `organizations.list()` or `organizations.setActive()`.
@@ -121,7 +121,7 @@ const config: ClientConfig = await tula.config.get()
 _constant_, defined in `packages/expo/src/device-key-store.ts`
 
 The name the device's key is kept under. One key for the installed app: it binds every
-session the app starts and earns nothing by itself (ADR 0043: a device does not outlive
+session the app starts and earns nothing by itself (a device does not outlive
 its session).
 
 ```ts
@@ -1018,7 +1018,8 @@ export interface TulaClient {
   readonly state: AuthState
   /**
    * What a server rendered for this client, when a framework integration knows it
-   * (`@tula-tech/nextjs` sets it from the request's session). `@tula-tech/react` uses it as the state
+   * (`@tula-tech/nextjs` sets it from the request's session). `@tula-tech/react` uses it as the
+   * state
    * during server rendering and hydration instead of `loading`. `createTulaClient` never sets
    * it.
    */
@@ -1199,7 +1200,8 @@ export interface TulaClient {
      */
     withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
     /**
-     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
+     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in
+     * that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -1283,7 +1285,7 @@ export interface TulaClient {
      * An access token to send to your own backend, refreshed first when it is missing or about
      * to expire. Any number of concurrent calls share one refresh.
      *
-     * **`null` while signed in on a `stateful` session profile** (ADR 0028). Such a session is
+     * **`null` while signed in on a `stateful` session profile**. Such a session is
      * an httpOnly cookie the browser holds and this client never sees: there is no token, so
      * there is nothing to return and nothing is asked of the API. Use `state.status` to know
      * whether the user is signed in; a backend on the API's own host receives the cookie and
@@ -1407,7 +1409,7 @@ export interface TulaClient {
     prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /**
-   * The signed-in user's organizations and the one the session acts in (ADR 0065). While the
+   * The signed-in user's organizations and the one the session acts in. While the
    * environment's `organizations.enabled` setting is off, each call answers
    * `organization.disabled`.
    */
@@ -1457,7 +1459,7 @@ export interface TulaClient {
     setActive(organizationId: string | null): Promise<ActiveOrganization>
     /**
      * The organizations the user may join because their **verified** email address is on a
-     * domain the organization verified (ADR 0065, "Verified domains"): its id, name and slug,
+     * domain the organization verified: its id, name and slug,
      * nothing of its members. Empty for a user with no verified address, for one already in
      * the organization and for a domain that is not exactly the address's.
      *
@@ -1594,7 +1596,7 @@ export interface TulaClient {
       remove(organizationId: string, userId: string): Promise<void>
     }
     /**
-     * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by
+     * An organization's domains: the organization claims one by
      * a code emailed to an address on it, and a verified one suggests or joins the people who
      * sign up with a verified address on it. Needs `org:sys:domains:manage`, which the API
      * reads from the user's membership on every call.
@@ -1679,7 +1681,7 @@ export interface TulaClient {
       remove(organizationId: string, domainId: string): Promise<void>
     }
     /**
-     * An organization's single sign-on (ADR 0067), for a member whose role holds
+     * An organization's single sign-on, for a member whose role holds
      * `org:sys:sso:manage`, which the API reads from the membership on every call. The client
      * secret is write-only: no answer returns it. Switching enforcement off, trusting the
      * identity provider for MFA and naming a break-glass role need a recent sign-in
@@ -1718,7 +1720,8 @@ export interface TulaClient {
        * @returns The connection.
        * @example
        * ```ts
-       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret })
+       * await tula.organizations.sso.create(org.id, { name: 'Okta', issuer, clientId, clientSecret
+       * })
        * ```
        */
       create(
@@ -1756,7 +1759,8 @@ export interface TulaClient {
        */
       refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
       /**
-       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep their accounts.
+       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep
+       * their accounts.
        *
        * @param organizationId - The organization.
        * @param id - The connection.
@@ -1787,7 +1791,8 @@ export interface TulaClient {
        * @returns The mapping as saved.
        * @example
        * ```ts
-       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role: 'admin' }] })
+       * await tula.organizations.sso.setGroupRoles(org.id, id, { mappings: [{ group: 'eng', role:
+       * 'admin' }] })
        * ```
        */
       setGroupRoles(
@@ -1807,7 +1812,8 @@ export interface TulaClient {
        * @throws TulaError `request.redirect_not_allowed`, and those of {@link get}.
        * @example
        * ```ts
-       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id, location.href)
+       * const { authorizationUrl } = await tula.organizations.sso.startTest(org.id, id,
+       * location.href)
        * ```
        */
       startTest(
@@ -1839,7 +1845,8 @@ export interface TulaClient {
        *
        * @param organizationId - The organization.
        * @returns The links.
-       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       * `sso.disabled`.
        * @example
        * ```ts
        * const { links } = await tula.organizations.sso.setupLinks(org.id)
@@ -1876,7 +1883,7 @@ export interface TulaClient {
       revokeSetupLink(organizationId: string, linkId: string): Promise<void>
     }
     /**
-     * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
+     * Invitations by email. The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
      * call. Answering needs the invited account: signed in, with the invited address, verified.
      */
@@ -2035,7 +2042,7 @@ export interface TulaClient {
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
     /**
-     * The signed-in user's passkeys (ADR 0027). Adding, renaming and removing one may answer
+     * The signed-in user's passkeys. Adding, renaming and removing one may answer
      * `auth.step_up_required`; see `session.stepUp`.
      */
     readonly passkeys: {
@@ -2356,7 +2363,8 @@ The one error every failed call throws.
 
 `code` is a contract code (`auth.invalid_credentials`, `password.too_short`, `rate_limited`,
 …) or one of the client's own (`network.failed`, `network.timeout`, `response.invalid`,
-`storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is ready to show, taken from the client's locale table. An error
+`storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is
+ready to show, taken from the client's locale table. An error
 never contains a token, an attempt's secret or a password.
 
 ```ts
@@ -2429,8 +2437,8 @@ export interface TulaExpoClientOptions
   /**
    * The device's key store: `hardwareDeviceKeys` of `@tula-tech/expo/device-key`, or an app's
    * own. With one, every sign-in this client starts carries a proof by a key that cannot
-   * leave the device, the session is bound to it, and every refresh carries a proof
-   * (ADR 0043, ADR 0052). Left out, sessions are not bound.
+   * leave the device, the session is bound to it, and every refresh carries a proof.
+   * Left out, sessions are not bound.
    *
    * Give one only where the session profile of the app's sign-ins allows a key
    * (`deviceBinding` `optional` or `required`): under `none` the server refuses a
@@ -2441,8 +2449,9 @@ export interface TulaExpoClientOptions
    * The app link an emailed sign-in link leads to: an `https` URL on a domain associated
    * with the app, exactly as the environment lists it among its redirect URLs
    * (`https://app.example.com/auth/link`), with no query, fragment, user name, backslash
-   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask for an emailed link
-   * and the app can open one (`useSignIn().openEmailLink`, ADR 0055): a link is asked for
+   * or white space (a `TypeError` when the client is created otherwise). With it, a sign-in can ask
+   * for an emailed link
+   * and the app can open one (`useSignIn().openEmailLink`): a link is asked for
    * with this URL only, and only this URL, character for character, is ever read. Left out,
    * asking for an emailed link is refused before any request and the code in the same
    * email is the way.
@@ -3063,7 +3072,7 @@ const user: User = await tula.user.get()
 _type_, defined in `packages/core/src/types.ts`
 
 An organization the signed-in user belongs to, with their role in it and its permission
-keys (ADR 0065).
+keys.
 
 ```ts
 export type UserOrganization = Schemas['UserOrganization']
@@ -4111,7 +4120,7 @@ SDK on iOS, Credential Manager on Android). Give what it returns to
 provider: 'google' })`.
 
 The module is the one maintained Google sign-in module found that lets an app set the
-request's nonce, which the server requires (ADR 0045, ADR 0052). It is native code that
+request's nonce, which the server requires. It is native code that
 Expo Go does not include, **and it reaches for that code when it is imported**: importing
 `@tula-tech/expo/google` in Expo Go throws. An app that must also start in Expo Go loads this
 entry point only in a development build (a `require` behind its own check), and creates
@@ -4157,7 +4166,7 @@ _constant_, defined in `packages/expo/src/device-key.ts`
 The device's key store, through `@pagopa/io-react-native-crypto`: a P-256 key in the
 Secure Enclave on iOS and in the Android Keystore, which cannot be exported. Give it to
 `createTulaExpoClient` as `deviceKeys`: every sign-in then carries a proof by that key,
-the session is bound to it, and every refresh carries a new proof (ADR 0043, ADR 0052).
+the session is bound to it, and every refresh carries a new proof.
 
 The module is native code that Expo Go does not include. There every call of it fails at
 once, which this store reports as "no key store": the app runs, its sign-ins carry no

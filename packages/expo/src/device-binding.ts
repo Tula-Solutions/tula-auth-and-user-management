@@ -9,7 +9,7 @@ import { base64Bytes, base64url } from './bytes'
 import { DEVICE_KEY_ALIAS, type DeviceKeyStore } from './device-key-store'
 import { sha256Hex } from './sha256'
 
-// Device binding for an Expo client (ADR 0043, ADR 0052). `@tula-tech/core` makes the proofs and
+// Device binding for an Expo client. `@tula-tech/core` makes the proofs and
 // decides nothing here is its to decide; this module finds the device's key when the client
 // asks for it, and notices, before any request, that the key a stored session was bound to
 // is gone. Nothing here imports a native module: the key store is handed in
@@ -50,7 +50,7 @@ function thumbprint(x: string, y: string): string {
 }
 
 /**
- * The key an access token says its session is bound to (`cnf.jkt`, ADR 0043), or `null`
+ * The key an access token says its session is bound to (`cnf.jkt`), or `null`
  * for a session that is not bound and for anything that is not such a token. The token is
  * not verified here and nothing is granted for it: it is read for the one fact of which key
  * the server bound, from the server's own answer.

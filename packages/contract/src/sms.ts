@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { SMS_PREFIX_MAX_DIGITS } from './phone'
 
-// What an operator is shown of the text messages an environment sent (ADR 0037): counts by
+// What an operator is shown of the text messages an environment sent: counts by
 // destination prefix, never a number.
 
 /** How many days back `GET /v1/admin/sms/usage` reads at most. */

@@ -84,7 +84,7 @@ export interface TransportOptions {
    */
   sessionProfile?: string
   /**
-   * Where the key the client's sessions are bound to comes from (ADR 0043). When set, it is
+   * Where the key the client's sessions are bound to comes from. When set, it is
    * asked before every request that starts an attempt and before every refresh, and the
    * request carries a proof signed by the key it answers with in the `DPoP` header. An
    * answer of no key sends the request without one; a rejection is `device.key_failed`.
@@ -95,7 +95,7 @@ export interface TransportOptions {
 /**
  * Where a client's device key comes from, for a runtime that cannot hand one over when the
  * client is created: a key in a phone's secure hardware is found or made by a native call,
- * which takes time and can fail (ADR 0052). Asked before every request a key proves.
+ * which takes time and can fail. Asked before every request a key proves.
  *
  * @param operation - The request about to be sent: the operation id of one of the starts,
  *   or `refreshSession`.
@@ -383,7 +383,8 @@ export function createTransport(options: TransportOptions): Transport {
       throw errorFromResponse(response, payload, options.messages())
     }
     // Every success body is a JSON object (or a 204): anything else is not this API's answer.
-    // Unreadable keeps the HTTP status; readable but wrong-shaped is 0, like the callers' own checks.
+    // Unreadable keeps the HTTP status; readable but wrong-shaped is 0, like the callers' own
+    // checks.
     if (response.status !== 204 && !isRecord(payload)) {
       throw new TulaError({
         code: 'response.invalid',

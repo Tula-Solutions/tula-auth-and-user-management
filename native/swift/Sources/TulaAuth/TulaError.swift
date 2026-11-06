@@ -128,7 +128,7 @@ public struct TulaError: Error, Hashable, Sendable, CustomStringConvertible {
 /// `print`, string interpolation, `String(reflecting:)` and `dump` all show the name and
 /// nothing the value holds: an app logs what it has at hand, and a token, a code, an
 /// attempt's secret or a key must not be in that line. The generated types are the
-/// exception (ADR 0050): a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
+/// exception: a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
 /// never to be logged.
 public protocol TulaRedacted: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {}
 

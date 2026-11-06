@@ -27,7 +27,8 @@ type FlowAttempt = Schemas['FlowAttempt']
  *
  * @example
  * ```ts
- * JSON.stringify(flow) // {"id":"…","kind":"sign_in","step":{"status":"needs_password"},"expiresAt":"…"}
+ * JSON.stringify(flow) //
+ * {"id":"…","kind":"sign_in","step":{"status":"needs_password"},"expiresAt":"…"}
  * ```
  */
 export interface FlowSnapshot<Kind extends FlowKind = FlowKind> {
@@ -46,7 +47,8 @@ export interface FlowSnapshot<Kind extends FlowKind = FlowKind> {
  *
  * @example
  * ```ts
- * const { step, backupCodesRemaining } = await flow.submitSecondFactor({ method: 'backup_code', code })
+ * const { step, backupCodesRemaining } = await flow.submitSecondFactor({ method: 'backup_code', code
+ * })
  * if (backupCodesRemaining !== undefined && backupCodesRemaining < 3) {
  *   suggestNewBackupCodes()
  * }
@@ -316,7 +318,8 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
    * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
    * asks** (scheme, host and port): what ties the link to this browser is kept in this origin's
-   * storage, and a page on another origin could not read it. The link works only in this browser: the
+   * storage, and a page on another origin could not read it. The link works only in this browser:
+   * the
    * flow keeps what ties the two together (in `localStorage`; it is not a token and authorizes
    * nothing by itself). Follow it with {@link SignInFlow.waitForEmailLink}.
    *
@@ -1133,7 +1136,7 @@ export interface IdTokenName {
 }
 
 /**
- * Start a native sign-in with a provider's ID token (ADR 0045): ask the API for an attempt
+ * Start a native sign-in with a provider's ID token: ask the API for an attempt
  * and its nonce.
  *
  * @param context - Transport, session and messages.

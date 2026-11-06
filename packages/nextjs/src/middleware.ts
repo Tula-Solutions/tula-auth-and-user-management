@@ -86,7 +86,7 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
   /** The sign-up page, so that it is never protected. Defaults to `/sign-up`. */
   signUpUrl?: string
   /**
-   * Routes that need a permission or a role of the session's active organization (ADR 0065),
+   * Routes that need a permission or a role of the session's active organization,
    * checked on the verified claims with no call to the API. Without a session the visitor is
    * sent to sign in, as for any protected route. **With** a session that does not grant the
    * rule (no active organization, another role, a missing permission) the answer is a `403`:

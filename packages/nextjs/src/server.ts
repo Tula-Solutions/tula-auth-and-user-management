@@ -49,7 +49,7 @@ async function currentRequest(): Promise<Request> {
  *   orgPermissions, has, getToken }`, or the signed-out shape with `null`s. `customClaims`
  *   holds what the JWT template of the session's profile defines (empty without one), for a
  *   token session and a `stateful` one alike. `orgId`, `orgRole` and `orgPermissions` are the
- *   active organization's (ADR 0065; `null`, `null` and empty with none), and
+ *   active organization's (`null`, `null` and empty with none), and
  *   `has({ permission } | { role })` checks them offline: false with no active organization,
  *   exact for a permission.
  * @throws TypeError when the configuration is incomplete.

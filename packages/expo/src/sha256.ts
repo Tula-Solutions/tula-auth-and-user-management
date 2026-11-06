@@ -1,7 +1,7 @@
 import { utf8Bytes } from './bytes'
 
 // SHA-256 (FIPS 180-4), written out. Its one use is the nonce of a native Sign in with
-// Apple (ADR 0047): Apple's sheet is handed the hash of the server's nonce, and a React
+// Apple: Apple's sheet is handed the hash of the server's nonce, and a React
 // Native engine has no `crypto.subtle` to take it with. The nonce is not a secret, so
 // nothing here needs to run in constant time.
 

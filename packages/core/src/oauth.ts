@@ -98,7 +98,7 @@ type Intent = 'sign_in' | 'link'
 
 /**
  * Where a browser keeps the binding of an OAuth round trip while the tab is away at the
- * provider (ADR 0026).
+ * provider.
  *
  * **Why `sessionStorage`, when the SDK otherwise keeps nothing there.** The page is replaced by
  * the provider's and later loaded afresh, so memory does not survive; the value has to be read

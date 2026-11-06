@@ -80,10 +80,10 @@ public final class TulaClient: Sendable, TulaRedacted {
     }
     /// The provider accounts the signed-in user signs in with.
     public var identities: TulaIdentities { TulaIdentities(context: context) }
-    /// An email address for a signed-in user whose account has none (ADR 0059).
+    /// An email address for a signed-in user whose account has none.
     public var emailAddress: TulaEmailAddress { TulaEmailAddress(context: context) }
     /// The signed-in user's organizations, the one the session acts in, and invitations to
-    /// join one (ADR 0065).
+    /// join one.
     public var organizations: TulaOrganizations { TulaOrganizations(context: context) }
 
     private let transport: ApiTransport
@@ -104,7 +104,7 @@ public final class TulaClient: Sendable, TulaRedacted {
     ///   - clock: Where the time comes from. Only a test passes one.
     ///   - deviceKeys: Where the client's device key is kept. With one, every session this
     ///     client signs in to is bound to the key and every refresh carries a proof signed
-    ///     by it (ADR 0043); an app passes `KeychainDeviceKeyStore()`. Without one (the
+    ///     by it; an app passes `KeychainDeviceKeyStore()`. Without one (the
     ///     default) the client sends no proof and its sessions are not bound.
     ///   - passkeys: The system's passkey sheet; an app passes `SystemPasskeySheet()`.
     ///     Without one every passkey call throws `passkey.unsupported`.
