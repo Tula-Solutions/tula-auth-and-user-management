@@ -72,9 +72,9 @@ final class ClientTests: XCTestCase {
     }
 
     func testTheAddressIsUsedAsWrittenWithoutATrailingSlash() throws {
-        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/"), "https://auth.example.test")
-        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/tula//"), "https://auth.example.test/tula")
-        XCTAssertEqual(try TulaClient.normalize("http://127.0.0.1:3003"), "http://127.0.0.1:3003")
+        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/", allowInsecureHTTP: false), "https://auth.example.test")
+        XCTAssertEqual(try TulaClient.normalize("https://auth.example.test/tula//", allowInsecureHTTP: false), "https://auth.example.test/tula")
+        XCTAssertEqual(try TulaClient.normalize("http://127.0.0.1:3003", allowInsecureHTTP: false), "http://127.0.0.1:3003")
     }
 
     func testTheStorageEntryIsNamedForTheApiAndTheEnvironment() async throws {
