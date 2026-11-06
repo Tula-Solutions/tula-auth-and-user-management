@@ -103,6 +103,25 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   'native-screens': ['platform'],
 }
 
+/** The comment lines that open and close a group of code tabs, one tab per language. */
+const TABS_COMMENT = /^<!--\s*(\/?)tabs\s*-->$/
+
+/** The tab a fence language is named by in a `<!-- tabs -->` group; any other language names itself. */
+const LANGUAGE_TABS: Record<string, string> = {
+  bash: 'cURL',
+  sh: 'cURL',
+  shell: 'cURL',
+  ts: 'TypeScript',
+  typescript: 'TypeScript',
+  python: 'Python',
+  py: 'Python',
+}
+
+/** The label of a code block in a `<!-- tabs -->` group. */
+function languageTab(lang: string | null | undefined): string | undefined {
+  return lang === null || lang === undefined ? undefined : (LANGUAGE_TABS[lang] ?? lang)
+}
+
 /** A container fence found in a document. */
 export interface Fence {
   /** `open` for `:::name`, `close` for the bare `:::`. */
@@ -110,6 +129,8 @@ export interface Fence {
   name?: string
   attributes: Record<string, string>
   line: number
+  /** Set for the `<!-- tabs -->` form: tabs are named by language and synced across pages. */
+  languages?: boolean
   /** The offsets of the fence's line in the source. */
   start: number
   end: number
@@ -216,6 +237,25 @@ function parseAttributes(line: number, name: string, raw: string | undefined) {
  * @throws BlockError for a paragraph with a `:::` line that is not alone, or is malformed.
  */
 export function fenceOf(source: string, node: RootContent): Fence | null {
+  if (node.type === 'html' && node.position?.start.offset !== undefined) {
+    const form = TABS_COMMENT.exec(node.value.trim())
+    if (form !== null) {
+      const base = {
+        line: node.position.start.line,
+        start: node.position.start.offset,
+        end: node.position.end.offset as number,
+      }
+      return form[1] === '/'
+        ? { kind: 'close', attributes: {}, languages: true, ...base }
+        : {
+            kind: 'open',
+            name: 'code-group',
+            attributes: { sync: 'language' },
+            languages: true,
+            ...base,
+          }
+    }
+  }
   if (node.type !== 'paragraph' || node.position?.start.offset === undefined) {
     return null
   }
@@ -360,9 +400,13 @@ function tabs(open: Open): RootContent {
 
 function codeGroup(open: Open): RootContent {
   if (open.children.length === 0) {
-    throw new BlockError(open.fence.line, ':::code-group is empty')
+    throw new BlockError(open.fence.line, 'the code group is empty')
   }
-  const entries = open.children.map((child) => {
+  // The snippet markers the docs generator writes around a fence are not content.
+  const children = open.fence.languages
+    ? open.children.filter((child) => child.type !== 'html')
+    : open.children
+  const entries = children.map((child) => {
     const line = lineOf(child, open.fence.line)
     if (child.type !== 'code') {
       throw new BlockError(
@@ -376,7 +420,7 @@ function codeGroup(open: Open): RootContent {
     } catch (error) {
       throw new BlockError(line, (error as Error).message)
     }
-    const label = title ?? child.lang ?? ''
+    const label = title ?? (open.fence.languages ? languageTab(child.lang) : child.lang) ?? ''
     if (label === '') {
       throw new BlockError(
         line,
@@ -533,7 +577,9 @@ function group(source: string, parent: Parent): void {
   if (unclosed !== undefined) {
     throw new BlockError(
       unclosed.fence.line,
-      `:::${unclosed.fence.name} is never closed with a bare :::`
+      unclosed.fence.languages
+        ? '<!-- tabs --> is never closed with <!-- /tabs -->'
+        : `:::${unclosed.fence.name} is never closed with a bare :::`
     )
   }
   parent.children = done as never
@@ -651,6 +697,7 @@ export function twinEdits(source: string, tree: Root): TextEdit[] {
   const edits: TextEdit[] = []
   const walk = (parent: Parent): void => {
     const names: string[] = []
+    const tabs: boolean[] = []
     for (const child of parent.children as RootContent[]) {
       const fence = fenceOf(source, child)
       if (fence === null) {
@@ -661,7 +708,10 @@ export function twinEdits(source: string, tree: Root): TextEdit[] {
         ) {
           let label: string | undefined
           try {
-            label = parseCodeMeta(child.meta).title ?? child.lang ?? undefined
+            label =
+              parseCodeMeta(child.meta).title ??
+              (tabs.at(-1) ? languageTab(child.lang) : child.lang) ??
+              undefined
           } catch {
             label = child.lang ?? undefined
           }
@@ -679,8 +729,10 @@ export function twinEdits(source: string, tree: Root): TextEdit[] {
       }
       if (fence.kind === 'open') {
         names.push(fence.name as string)
+        tabs.push(fence.languages === true)
       } else {
         names.pop()
+        tabs.pop()
       }
       edits.push({ start: fence.start, end: fence.end, text: '' })
     }

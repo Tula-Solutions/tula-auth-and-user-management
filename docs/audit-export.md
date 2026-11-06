@@ -9,11 +9,38 @@ entry first, in pages of 1,000 so that nothing is held in memory. The same rows 
 It is a `POST` on purpose: a secret key and a dashboard session may call it, an agent key may
 not (an agent key is accepted for `GET` and `HEAD` only, and this route is neither).
 
+<!-- tabs -->
 ```sh
 curl -sN -X POST "$TULA_API_URL/v1/admin/audit-logs/export" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "format": "csv", "from": "2026-01-01T00:00:00Z" }'
 ```
+
+<!-- snippet: examples/docs-snippets/audit-export.ts#audit-export-since -->
+```ts
+const response = await admin.stream('exportAuditLogs', {
+  body: { format: 'csv', from: '2026-01-01T00:00:00Z' },
+})
+const csv = await response.text()
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/audit_export.py#audit-export-since -->
+```python
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/audit-logs/export",
+    data=json.dumps({"format": "csv", "from": "2026-01-01T00:00:00Z"}).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    csv = response.read().decode()
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 ## Request
 
@@ -69,12 +96,52 @@ The actor of a change is the operator or administrator who made it, `setup_link`
 provisioning. No entry holds a secret, an email address, a certificate or a group name. For example, the
 events of one organization's connections for a quarter:
 
+<!-- tabs -->
 ```sh
 curl -sN -X POST "$TULA_API_URL/v1/admin/audit-logs/export" \
   -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
   -d '{ "format": "csv", "organizationId": "<org id>", "action": "sso_connection.updated",
         "from": "2026-07-01T00:00:00Z", "to": "2026-10-01T00:00:00Z" }'
 ```
+
+<!-- snippet: examples/docs-snippets/audit-export.ts#audit-export-organization -->
+```ts
+const response = await admin.stream('exportAuditLogs', {
+  body: {
+    format: 'csv',
+    organizationId: '<org id>',
+    action: 'sso_connection.updated',
+    from: '2026-07-01T00:00:00Z',
+    to: '2026-10-01T00:00:00Z',
+  },
+})
+const csv = await response.text()
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/python/audit_export.py#audit-export-organization -->
+```python
+body = {
+    "format": "csv",
+    "organizationId": "<org id>",
+    "action": "sso_connection.updated",
+    "from": "2026-07-01T00:00:00Z",
+    "to": "2026-10-01T00:00:00Z",
+}
+request = urllib.request.Request(
+    f"{API_URL}/v1/admin/audit-logs/export",
+    data=json.dumps(body).encode(),
+    headers={
+        "Authorization": f"Bearer {SECRET_KEY}",
+        "content-type": "application/json",
+    },
+    method="POST",
+)
+with urllib.request.urlopen(request) as response:
+    csv = response.read().decode()
+```
+<!-- /snippet -->
+<!-- /tabs -->
 
 > [!NOTE]
 > `action` takes one entry type; run one export per type, or export the organization's entries unfiltered

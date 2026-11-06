@@ -365,6 +365,16 @@ describe('snippet sources', () => {
     }
   })
 
+  test('a region of a Python source is marked with # comments and copied as python', () => {
+    writeFileSync(
+      join(repository, 'examples/sample.py'),
+      'def f():\n    # #region call\n    a = 1\n    # #endregion\n    b = 2\n'
+    )
+    const filled = fill('examples/sample.py#call')
+    expect(filled).toContain('```python\na = 1\n```')
+    expect(filled).not.toContain('b = 2')
+  })
+
   test.each([
     ['a path that climbs out of the repository', '../outside.ts'],
     ['a path that climbs out and back in', '../repository/../outside.ts'],
@@ -998,5 +1008,73 @@ describe('the dashboard page and proposals (TULA-198)', () => {
     const page = readFileSync(join(root, 'docs/dashboard.md'), 'utf8')
     expect(page).not.toMatch(/cannot be dismissed/i)
     expect(page).toMatch(/\breject/i)
+  })
+})
+
+describe('language tabs', () => {
+  const python = join(root, 'examples/docs-snippets/python')
+
+  test('every Python sample byte-compiles', () => {
+    const out = mkdtempSync(join(tmpdir(), 'tula-py-'))
+    try {
+      for (const name of readdirSync(python).filter((file) => file.endsWith('.py'))) {
+        // PYTHONPYCACHEPREFIX keeps the compiled file out of the repository.
+        const result = Bun.spawnSync(['python3', '-m', 'py_compile', join(python, name)], {
+          env: { ...process.env, PYTHONPYCACHEPREFIX: out },
+          timeout: 20_000,
+        })
+        expect(result.stderr.toString(), name).toBe('')
+        expect(result.exitCode, name).toBe(0)
+      }
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  /** The operations of the OpenAPI document, by operationId, as `METHOD /path`. */
+  const operations = new Map<string, string>()
+  const document = JSON.parse(readFileSync(join(root, 'packages/contract/openapi.json'), 'utf8'))
+  for (const [path, item] of Object.entries<Record<string, { operationId?: string }>>(
+    document.paths
+  )) {
+    for (const [method, operation] of Object.entries(item)) {
+      if (operation.operationId) {
+        operations.set(operation.operationId, `${method.toUpperCase()} ${path}`)
+      }
+    }
+  }
+
+  /** The `METHOD /path` a sample of a tabs group calls, or `undefined` for one it cannot read. */
+  function called(lang: string, code: string): string | undefined {
+    if (lang === 'ts') {
+      const operation = /admin\.(?:call|stream)\(\s*'(\w+)'/.exec(code)?.[1]
+      return operation ? operations.get(operation) : undefined
+    }
+    const path = /\/v1\/[\w\-/.]+/.exec(code)?.[0]
+    const method =
+      lang === 'python'
+        ? /method="(\w+)"/.exec(code)?.[1]
+        : (/-X (\w+)/.exec(code)?.[1] ?? (code.includes(' -d ') ? 'POST' : 'GET'))
+    return path && method ? `${method.toUpperCase()} ${path}` : undefined
+  }
+
+  test('every sample of a tabs group calls the same method and path', () => {
+    let groups = 0
+    for (const file of markdownFiles()) {
+      const text = readFileSync(file, 'utf8')
+      for (const [, body] of text.matchAll(/<!-- tabs -->\n([\s\S]*?)<!-- \/tabs -->/g)) {
+        groups += 1
+        const calls = [...(body ?? '').matchAll(/^```(\w+)\n([\s\S]*?)^```/gm)].map(
+          ([, lang, code]) => [lang ?? '', called(lang ?? '', code ?? '')] as const
+        )
+        const where = relative(root, file)
+        expect(calls.length, where).toBeGreaterThan(1)
+        for (const [lang, call] of calls) {
+          expect(call, `${where}: a ${lang} sample names no method and path`).toBeDefined()
+          expect(call, `${where}: the ${lang} sample`).toBe(calls[0]?.[1])
+        }
+      }
+    }
+    expect(groups).toBeGreaterThan(0)
   })
 })

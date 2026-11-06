@@ -228,6 +228,7 @@ export const CODE_LANGUAGES = [
   'json',
   'swift',
   'kotlin',
+  'python',
   'xml',
   'sql',
   'yaml',

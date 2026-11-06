@@ -169,6 +169,12 @@ static HTML. Its commands are in its README.
     region; on GitHub it is a plain code block.
   - **The Markdown twin** drops the `:::` lines, labels each block of a code group with its tab
     in bold, and keeps headings, tables, callouts and fences as written (`twinEdits`).
+- **Language tabs** are `<!-- tabs -->` … `<!-- /tabs -->` around fenced blocks (`sh` cURL, `ts`
+  TypeScript, `python` Python; sync key `language`), built into the same tabs as `:::code-group`.
+  The TypeScript and Python samples are snippet blocks (`examples/docs-snippets/*.ts` on
+  `@tula-tech/admin`, `examples/docs-snippets/python/*.py` on the standard library, regions marked
+  `# #region`), the Python files are byte-compiled and the samples of a group must call one method
+  and path (`.claude/hooks/docs.test.ts`). The twins keep every block under a label line.
 - **Tabs work with no script, and are tabs before they are painted.** The server writes every
   panel under its label (what a reader without script sees, in order). Straight after each group
   an inline `<script>` enhances it: the first group of a page carries the whole runtime

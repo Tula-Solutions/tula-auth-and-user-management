@@ -273,6 +273,49 @@ describe(':::params', () => {
   })
 })
 
+describe('<!-- tabs --> code tabs', () => {
+  const source =
+    '# T\n\n<!-- tabs -->\n\n```bash\ncurl x\n```\n\n```ts\nawait x()\n```\n\n```python\nx()\n```\n\n<!-- /tabs -->\n'
+
+  test('consecutive fences become one group, named by language and synced across pages', () => {
+    const out = html(source)
+    expect(out).toContain('data-docs-tabs')
+    expect(out).toContain('data-sync="language"')
+    expect(out).toContain('data-label="cURL"')
+    expect(out).toContain('data-label="TypeScript"')
+    expect(out).toContain('data-label="Python"')
+    expect(out).not.toContain('<!-- tabs -->')
+  })
+
+  test('only fenced code is allowed inside, and the group must be closed', () => {
+    expect(failure('# T\n\n<!-- tabs -->\n\ntext\n\n<!-- /tabs -->\n').message).toContain(
+      'fenced code blocks only'
+    )
+    expect(failure('# T\n\n<!-- tabs -->\n\n```bash\nx\n```\n').message).toContain('never closed')
+  })
+
+  test('the Markdown twin keeps every language under a bold label', () => {
+    const tree = parser.parse(source) as Root
+    let text = source
+    for (const one of twinEdits(source, tree).sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, one.start) + one.text + text.slice(one.end)
+    }
+    expect(text).not.toContain('<!-- tabs -->')
+    expect(text).not.toContain('<!-- /tabs -->')
+    expect(text).toContain('**cURL**\n\n```bash')
+    expect(text).toContain('**TypeScript**\n\n```ts')
+    expect(text).toContain('**Python**\n\n```python')
+  })
+
+  test('snippet markers between the fences do not break the group', () => {
+    const withMarkers =
+      '# T\n\n<!-- tabs -->\n\n<!-- snippet: a.sh#x -->\n\n```bash\nx\n```\n\n<!-- /snippet -->\n\n<!-- snippet: a.ts#x -->\n\n```ts\ny\n```\n\n<!-- /snippet -->\n\n<!-- /tabs -->\n'
+    const out = html(withMarkers)
+    expect(out).toContain('data-label="cURL"')
+    expect(out).toContain('data-label="TypeScript"')
+  })
+})
+
 describe('twinEdits', () => {
   const edit = (source: string) => {
     const tree = parser.parse(source) as Root
