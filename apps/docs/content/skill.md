@@ -71,8 +71,8 @@ group of {{file:llms.txt}}.
 - `bunx tula doctor` reports the database, migrations, master key, mail, Redis and URLs, each
   with its fix ({{page:docs/quickstart.md}}).
 - Sign up in the running app and read the code from Mailpit.
-- Report to the user anything you could not do. The quickstart says its path through npm has
-  not been walked end to end yet: say so if a step fails, and do not claim it works.
+- Report to the user anything you could not do, with the step and its error, and do not claim
+  a step works that you did not see work.
 
 ## Constraints
 

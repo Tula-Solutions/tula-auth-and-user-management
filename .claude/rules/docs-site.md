@@ -125,7 +125,11 @@ static HTML. Its commands are in its README.
   needs the reason a record holds, it says the reason in its own words. The ADRs, plans and
   `docs/internal/` stay in the repository for contributors, and `AGENTS.md` and these rules
   link them freely: they are not published. Say what exists, not what is planned: a page's
-  limits go under "Limits", never "Not built".
+  limits go under "Limits", never "Not built". **No note on what the maintainers did or did
+  not test** ("not verified against", "nothing in this repository", "clicked through",
+  "written from X's documentation", "was not tried", "has not been observed"): the same check
+  fails on it. A step a developer must take is said as one ("**Before you go live:** sign up
+  once with a real account"), and a package not yet released is marked **Preview**.
 - **Anchors are GitHub's** (`github-slugger`, `-1` for a repeat), because the docs link to
   `file.md#heading` as GitHub renders it. `docs/**` links keep working in both places.
 - **The Markdown pipeline is unified**: `remark-parse`, `remark-gfm`, `remark-rehype`,
