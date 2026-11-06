@@ -17,7 +17,7 @@ the part you leave out keeps the built-in wording.
 | --- | --- |
 | `tula.config.ts` | `settings.emails.templates` ([settings as code](config.md)). |
 | Admin API | `PUT /v1/admin/settings`, which replaces the whole document: read it, change `emails.templates`, send it back with `If-Match`. |
-| Dashboard | Not available. Saving any settings screen keeps the templates the environment has. |
+| Dashboard | The **Messages** screen ([the Messages screen](dashboard.md#the-messages-screen)). Saving any other settings screen keeps the templates the environment has. |
 
 ```ts
 import { defineConfig } from '@tula-tech/config'
