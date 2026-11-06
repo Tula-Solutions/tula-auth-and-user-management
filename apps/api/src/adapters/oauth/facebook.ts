@@ -1,4 +1,4 @@
-import { Facebook } from 'arctic'
+import { OAuth2Client } from 'arctic'
 import {
   type OAuthAuthorizationRequest,
   type OAuthCodeExchange,
@@ -23,10 +23,17 @@ import { MAX_PROFILE_BYTES, readProfile } from './profile-read'
 export const FACEBOOK_SCOPES = ['public_profile']
 
 /**
- * The Graph API version the profile is read on. Meta retires a version about two years after
+ * The Graph API version all three requests are made on: the dialog, the token endpoint and the
+ * profile read. Meta retires a version about two years after
  * it is released: this constant has to be raised before then (`docs/providers/facebook.md`).
  */
 export const FACEBOOK_GRAPH_VERSION = 'v25.0'
+
+/** The login dialog, on the pinned version. */
+const FACEBOOK_DIALOG_URL = `https://www.facebook.com/${FACEBOOK_GRAPH_VERSION}/dialog/oauth`
+
+/** The token endpoint, on the pinned version. */
+const FACEBOOK_TOKEN_URL = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/oauth/access_token`
 
 /** The current user, with the two fields that are read and no others. */
 const FACEBOOK_USER_URL = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}/me`
@@ -72,16 +79,54 @@ export function appSecretProof(accessToken: string, appSecret: string): string {
   return new Bun.CryptoHasher('sha256', appSecret).update(accessToken).digest('hex')
 }
 
-function client(credentials: OAuthCredentials, redirectUri: string): Facebook {
-  return new Facebook(credentials.clientId, credentials.clientSecret ?? '', redirectUri)
+function client(credentials: OAuthCredentials, redirectUri: string): OAuth2Client {
+  return new OAuth2Client(credentials.clientId, credentials.clientSecret ?? '', redirectUri)
+}
+
+/**
+ * Exchange the code for the access token. Written by hand because Meta documents the app id
+ * and secret as body parameters, which `arctic`'s generic client sends as Basic credentials
+ * instead. The mapping of answers is the library's: an OAuth `error` string on a 400 or 401
+ * is a refused code; anything else, the Graph API's own `error` object included, is the
+ * provider being unavailable.
+ */
+async function accessTokenOf(
+  credentials: OAuthCredentials,
+  exchange: OAuthCodeExchange
+): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: exchange.code,
+    redirect_uri: exchange.redirectUri,
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret ?? '',
+  })
+  const response = await fetch(
+    new Request(FACEBOOK_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body,
+      redirect: 'error',
+    })
+  )
+  const data: unknown = await response.json().catch(() => null)
+  const record = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
+  if ((response.status === 400 || response.status === 401) && typeof record.error === 'string') {
+    throw new OAuthProviderError('invalid_grant')
+  }
+  if (response.status !== 200 || typeof record.access_token !== 'string') {
+    throw new OAuthProviderError('unavailable')
+  }
+  return record.access_token
 }
 
 /**
  * Facebook Login: plain OAuth 2.0 ("manually build a login flow"), not OpenID Connect, so
  * there is no ID token to verify.
  *
- * The authorization URL and the code exchange are `arctic`'s `Facebook` client (the app id
- * and secret travel in the token request's body). The profile is then read from the Graph
+ * The authorization URL is `arctic`'s generic `OAuth2Client` on the pinned version's dialog;
+ * the code exchange is a request of its own to the pinned version's token endpoint (the app
+ * id and secret travel in its body). The profile is then read from the Graph
  * API (`GET /me?fields=id,name`, on {@link FACEBOOK_GRAPH_VERSION}) over TLS with the access
  * token in a header and its {@link appSecretProof} in the query. The token is dropped when
  * this function returns: not returned, logged or stored.
@@ -98,16 +143,12 @@ function client(credentials: OAuthCredentials, redirectUri: string): Facebook {
  * **No PKCE and no nonce.** Meta's manual-flow page documents `client_id`, `redirect_uri`,
  * `state`, `response_type` and `scope` for the dialog and `client_id`, `redirect_uri`,
  * `client_secret` and `code` for the exchange; a `code_challenge` appears only in its
- * OpenID Connect flow (the `openid` scope), which this adapter does not use, and `arctic`'s
- * client has a parameter for neither. The code is therefore bound to the attempt by the
+ * OpenID Connect flow (the `openid` scope), which this adapter does not use. The code is therefore bound to the attempt by the
  * single-use `state` and to this app by the app secret and the redirect URI, and by nothing
  * else (ADR 0026).
  *
- * `arctic`'s client writes the dialog and the token endpoint with the Graph version it was
- * built with (`v16.0`), which is not this adapter's to choose. Meta's versioning page says a
- * call to a version that is no longer usable is answered by the next oldest usable one; it
- * does not say so of the dialog, and neither was observed here (ADR 0026). Only the profile
- * read is on the version pinned here.
+ * All three requests, the dialog, the token endpoint and the profile read, are on the one
+ * pinned {@link FACEBOOK_GRAPH_VERSION}.
  *
  * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
  * that does not answer in time is `unavailable`. A profile answer over
@@ -121,7 +162,7 @@ export function createFacebookProvider(options: ProviderOptions = {}): OAuthProv
   return {
     authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {
       return client(credentials, request.redirectUri)
-        .createAuthorizationURL(request.state, FACEBOOK_SCOPES)
+        .createAuthorizationURL(FACEBOOK_DIALOG_URL, request.state, FACEBOOK_SCOPES)
         .toString()
     },
 
@@ -131,11 +172,7 @@ export function createFacebookProvider(options: ProviderOptions = {}): OAuthProv
     ): Promise<OAuthProfile> {
       let accessToken: string
       try {
-        const tokens = await withDeadline(
-          client(credentials, exchange.redirectUri).validateAuthorizationCode(exchange.code),
-          timeoutMs
-        )
-        accessToken = tokens.accessToken()
+        accessToken = await withDeadline(accessTokenOf(credentials, exchange), timeoutMs)
       } catch (error) {
         throw exchangeFailure(error)
       }

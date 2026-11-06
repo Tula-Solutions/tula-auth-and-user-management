@@ -53,31 +53,13 @@ Neither the access token nor the proof is stored, logged or returned.
 
 ## The Graph API version has to be raised
 
-The profile is read on a pinned Graph API version: `v25.0` (`FACEBOOK_GRAPH_VERSION` in
+All three requests Tula makes to Meta (the login dialog, the token endpoint and the profile
+read) use one pinned Graph API version: `v25.0` (`FACEBOOK_GRAPH_VERSION` in
 `apps/api/src/adapters/oauth/facebook.ts`). Meta keeps a version for at least two years and
 then stops serving it. **Raising that constant before then is a maintenance task of every
-Tula release**: check Meta's changelog for `/me`, `id` and `name` (all three have been stable
-for many versions), change the constant, and run the adapter's tests.
-
-The login dialog and the token endpoint are written by the OAuth library Tula uses
-(`arctic`), on the version that library was built with (`v16.0` in the release pinned here),
-which Tula does not choose. Meta's versioning page says a call to a version that is no longer
-usable is answered by the next oldest usable one. It does not say that of the dialog.
-
-`v16.0` dates, as far as we know, from February 2023, so by Meta's two-year rule it is
-probably past its support window. Whether the dialog and the token endpoint still answer on
-that path, are answered by a newer version, or fail, is Meta's to say: check it with a real
-login before you offer the button.
-
-**If a real login fails there** (the dialog shows an error about the version, or the
-callback ends in `oauth.provider_error` for every sign-in), the fix is in
-`apps/api/src/adapters/oauth/facebook.ts`: stop using the library's `Facebook` client and
-build the two requests by hand on the pinned version, with the library's generic
-`OAuth2Client`, the way the X adapter does. The dialog is
-`https://www.facebook.com/<FACEBOOK_GRAPH_VERSION>/dialog/oauth` and the exchange
-`https://graph.facebook.com/<FACEBOOK_GRAPH_VERSION>/oauth/access_token`, with the
-parameters the next section lists and nothing else (no PKCE, no nonce). Then all three
-requests follow the one constant.
+Tula release**: check Meta's changelog for the dialog, the token endpoint, `/me`, `id` and
+`name`, change the constant, and run the adapter's tests. The three requests follow the one
+constant, so nothing else changes.
 
 ## No PKCE and no nonce
 
@@ -207,8 +189,8 @@ In the users list the accounts with no address are the rows with no email addres
   `error` object, not OAuth's `error` string) is reported as the provider being unavailable,
   not as an invalid code. The person sees the same thing either way: the sign-in did not
   finish and can be started again.
-- The login dialog and the token endpoint may no longer answer on the library's `v16.0`
-  path, a version probably past Meta's support window. What to change if they do not is
+- The dialog, the token endpoint and the profile read all use the one pinned Graph API
+  version, so they stop working together when Meta retires it. What to change is
   [above](#the-graph-api-version-has-to-be-raised).
 - Meta reviews apps: until yours has been through whatever review Facebook Login requires of
   it, only people with a role on the app may be able to sign in. That is Meta's decision.
