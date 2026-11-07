@@ -299,9 +299,9 @@ describe('only the released packages can be published', () => {
       expect(workflow).not.toMatch(forbidden)
     }
     expect(workflow).toContain('on:\n  push:\n    branches: [main]\n')
-    // The workflow as a whole can only read; one job is given one more permission below.
+    // The workflow as a whole can only read; two jobs are each given one more permission below.
     expect(workflow).toContain('\npermissions:\n  contents: read\n')
-    expect(workflow.match(/:\s*write\b/g)).toEqual([': write'])
+    expect(workflow.match(/[\w-]+:\s*write\b/g)).toEqual(['id-token: write', 'contents: write'])
     expect(workflow.match(/id-token: write/g)).toHaveLength(1)
   })
 
@@ -310,6 +310,7 @@ describe('only the released packages can be published', () => {
     expect([...workflow.matchAll(/\n {2}([a-z][\w-]*):\n {4}name:/g)].map((m) => m[1])).toEqual([
       'dry-run',
       'publish',
+      'github-release',
     ])
     const dryRun = job(workflow, 'dry-run')
     expect(dryRun).not.toMatch(/\n {4}if:/)
@@ -335,6 +336,24 @@ describe('only the released packages can be published', () => {
         ?.map((step) => step.trim().split('run: ')[1])
     ).toEqual(['bun install --frozen-lockfile --ignore-scripts', 'bun run release:publish'])
     expect(publish).not.toMatch(/continue-on-error|\benv:/)
+  })
+
+  // The GitHub release and its tag follow npm: one is made only for a version npm has, and
+  // a re-run, or a push to `main` that released nothing new, leaves the existing one alone.
+  test('the GitHub release is made after the publish, with a write token that runs no installed code', async () => {
+    const workflow = active(await read('.github/workflows/release.yml'))
+    const release = job(workflow, 'github-release')
+    expect(release).toContain('\n    needs: publish\n')
+    expect(release).toContain('\n    permissions:\n      contents: write\n')
+    expect(release).not.toMatch(/id-token|environment:|bun install|setup-bun|setup-node|npm /)
+    expect(release).toContain('persist-credentials: false')
+    // The version is read inside the script, never pasted into it as `${{ }}`: the job's
+    // only expression is the token, handed over through `env`.
+    expect(release.match(/\$\{\{[^}]*\}\}/g)).toEqual(['${{ github.token }}'])
+    expect(release).toMatch(/gh release view "v\$VERSION"/)
+    expect(release).toMatch(/gh release create "v\$VERSION"[^\n]*--target "\$GITHUB_SHA"/)
+    expect(release).toContain('--generate-notes')
+    expect(release).not.toMatch(/continue-on-error/)
   })
 
   test('the runbook hands over to an environment that only main can deploy to', async () => {

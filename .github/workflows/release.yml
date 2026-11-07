@@ -6,7 +6,8 @@ name: Release
 #
 # It UPLOADS only when the repository variable `NPM_PUBLISH` is `true`. Merging a change to
 # `main` therefore publishes nothing by itself: the variable is set by a person, once, after
-# the first release (docs/internal/releasing.md, "First release").
+# the first release (docs/internal/releasing.md, "First release"). After an upload, the
+# `github-release` job tags the commit `v<version>` and creates its GitHub release.
 #
 # Why the first release is not made here: this workflow has no token. It publishes through
 # npm trusted publishing (GitHub's OIDC identity, `id-token: write`), which npm lets you
@@ -104,3 +105,31 @@ jobs:
         # Rebuilds from this commit, skips every version already on the registry, and
         # uploads the staged tarballs with `--access public --tag latest --provenance`.
         run: bun run release:publish
+
+  github-release:
+    name: Tag the release on GitHub
+    # Only after npm has the version: a tag and a release on GitHub never name a version
+    # npm lacks. With `NPM_PUBLISH` off, `publish` is skipped and so is this.
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Creates the tag and the release. Nothing from the repository is installed or run
+      # while the token can write: the step reads one version field.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - name: Create the GitHub release of this version, unless it has one
+        # The packages move as one fixed group (.changeset/config.json), so `@tula-tech/core`'s
+        # version is the release's. A re-run, or a push to `main` that released nothing new,
+        # finds the release and leaves it alone.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(jq -r .version packages/core/package.json)
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "v$VERSION already has a GitHub release"
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes --latest
+          fi

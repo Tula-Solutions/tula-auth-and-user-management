@@ -335,7 +335,7 @@ nothing here changes; the owner makes it (TULA-194).
 ## The release workflow
 
 `.github/workflows/release.yml` runs on every push to `main` (git-flow: `main` is
-release-only). It has two jobs:
+release-only). It has three jobs:
 
 - **`dry-run`**, always: installs, prints `changeset status`, runs `bun run packages:states`
   and `bun run release:dry-run`, and uploads the tarballs as a build artifact for
@@ -344,6 +344,11 @@ release-only). It has two jobs:
   release:publish` with `id-token: write`, which is what npm trusted publishing and
   provenance use, **in the GitHub environment `npm-publish`**. There is no npm token in the
   repository's secrets, and none may be added.
+- **`github-release`**, after `publish` succeeds: creates the tag `v<version>` on the
+  released commit and its GitHub release, with GitHub's generated notes, marked Latest.
+  `@tula-tech/core`'s version is the release's (the packages are one fixed group). It skips a
+  version that already has a release, so a re-run changes nothing. Its token can write the
+  repository's contents, and the job installs and runs nothing from the repository.
 
 **Why the environment.** npm's trusted publisher is a claim about a GitHub run: the
 repository, the workflow file and, when one is given, the environment. With no environment
