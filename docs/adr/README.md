@@ -60,3 +60,4 @@ record.
 - [ADR 0066](0066-user-import.md): importing users with their password hashes (the tagged hash, the parameter floors and ceilings, verification by the stored hash's own algorithm, the age and history of an imported password, `user.imported`).
 - [ADR 0034](0034-webhooks.md): webhooks (endpoints, the signing secret, the signature, the delivery worker and what is kept of a receiver's answer).
 - [ADR 0067](0067-enterprise-sso.md): enterprise single sign-on (the SAML library and why, the response verifier's policy and refusal codes, the mock signer's gate, replacing the library).
+- [ADR 0068](0068-role-permission-snapshots.md): role permission snapshots, proposed (immutable role versions, the permissions hash in the token, the lookup with no input, the cached checker, larger roles behind a setting, the agent tools, the threat model and SOC 2 mapping).
