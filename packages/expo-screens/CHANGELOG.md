@@ -1,5 +1,13 @@
 # @tula-tech/expo-screens
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [c130086]
+  - @tula-tech/core@0.3.2
+  - @tula-tech/contract@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

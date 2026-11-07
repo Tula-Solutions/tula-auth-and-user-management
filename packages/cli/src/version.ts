@@ -4,7 +4,7 @@
  *
  * @example
  * ```ts
- * `tula-cli/${VERSION}` // 'tula-cli/0.3.1'
+ * `tula-cli/${VERSION}` // 'tula-cli/0.3.2'
  * ```
  */
-export const VERSION = '0.3.1'
+export const VERSION = '0.3.2'
