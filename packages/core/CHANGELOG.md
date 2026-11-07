@@ -1,5 +1,12 @@
 # @tula-tech/core
 
+## 0.3.2
+
+### Patch Changes
+
+- c130086: Every release is now tagged `v<version>` in the repository and listed under its GitHub Releases, with the merged changes as its notes.
+- @tula-tech/contract@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

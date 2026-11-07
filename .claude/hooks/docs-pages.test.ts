@@ -69,9 +69,10 @@ describe('the docs site workflow', () => {
   })
 
   test('a release is a push to main: the workflows that make one start on that event', () => {
-    // No tag and no GitHub Release is made (`release:` and `tags:` are in no workflow), so the
-    // docs follow the event the release workflows themselves follow. A merge made by a person
-    // starts this workflow; a run made with GITHUB_TOKEN would not, and none is involved.
+    // No workflow starts on a tag or a GitHub Release (`release:` and `tags:` are in no
+    // trigger), so the docs follow the event the release workflows themselves follow. A merge
+    // made by a person starts this workflow. `release.yml`'s last job makes the tag and the
+    // GitHub Release with GITHUB_TOKEN, which starts no workflow; no other file makes one.
     for (const file of ['release.yml', 'github-packages.yml']) {
       const other = Bun.YAML.parse(read(`.github/workflows/${file}`)) as Workflow
       expect(other.on, file).toEqual({ push: { branches: ['main'] } })
@@ -81,7 +82,10 @@ describe('the docs site workflow', () => {
         .split('\n')
         .filter((line) => !line.trim().startsWith('#'))
         .join('\n')
-      expect(lines, file).not.toMatch(/^\s*(release:|tags:)|gh release|git tag/m)
+      expect(lines, file).not.toMatch(/^\s*(release:|tags:)|git tag/m)
+      if (file !== 'release.yml') {
+        expect(lines, file).not.toMatch(/gh release/)
+      }
     }
   })
 

@@ -1,5 +1,12 @@
 # @tula-tech/example-nextjs
 
+## 0.0.6
+
+### Patch Changes
+
+- @tula-tech/nextjs@0.3.2
+  - @tula-tech/react@0.3.2
+
 ## 0.0.5
 
 ### Patch Changes
