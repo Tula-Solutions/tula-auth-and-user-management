@@ -349,6 +349,7 @@ describe('only the released packages can be published', () => {
     expect(release).toContain('persist-credentials: false')
     // The version is read inside the script, never pasted into it as `${{ }}`: the job's
     // only expression is the token, handed over through `env`.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, matched as text
     expect(release.match(/\$\{\{[^}]*\}\}/g)).toEqual(['${{ github.token }}'])
     expect(release).toMatch(/gh release view "v\$VERSION"/)
     expect(release).toMatch(/gh release create "v\$VERSION"[^\n]*--target "\$GITHUB_SHA"/)
