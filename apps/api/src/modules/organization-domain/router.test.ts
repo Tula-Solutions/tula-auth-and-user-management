@@ -1478,6 +1478,17 @@ describe('the reminder that a verification is about to lapse', () => {
   const reminders = () =>
     deps.mailer.outbox.filter((mail) => mail.subject.startsWith('Domain verification'))
 
+  test('an aborted signal sends nothing and marks nothing: the next run sends it', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('335d')
+    const stop = new AbortController()
+    stop.abort()
+    expect(await Reminders.remind(deps, stop.signal)).toMatchObject({ domains: 0, emails: 0 })
+    expect(reminders()).toHaveLength(0)
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 1 })
+  })
+
   test('the managers are emailed once at 30 days and once at 7, and nobody else', async () => {
     const { org } = await managed()
     await verifiedDomain(org.id)
