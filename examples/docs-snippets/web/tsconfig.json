@@ -10,6 +10,8 @@
     "types": ["bun-types"],
     "paths": {
       "@tula-tech/core": ["../../../packages/core/src/index.ts"],
+      "@tula-tech/core/access": ["../../../packages/core/src/access.ts"],
+      "hono": ["../../../apps/api/node_modules/hono/dist/types/index.d.ts"],
       "@tula-tech/react": ["../../../packages/react/src/index.ts"],
       "@tula-tech/nextjs": ["../../../packages/nextjs/src/index.ts"],
       "@tula-tech/nextjs/server": ["../../../packages/nextjs/src/server.ts"],
