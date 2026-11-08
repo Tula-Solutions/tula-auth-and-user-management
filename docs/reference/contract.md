@@ -6042,6 +6042,16 @@ present only beside the other two.
 const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
 ```
 
+### `ORGANIZATION_PERMISSIONS_HASH_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permissions hash of that role version.
+
+```ts
+const ORGANIZATION_PERMISSIONS_HASH_CLAIM: "org_ph"
+```
+
 ### `ORGANIZATION_ROLE_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -6061,6 +6071,16 @@ Names only: a value is never in an event.
 
 ```ts
 const ORGANIZATION_ROLE_FIELDS: readonly ["name", "permissions"]
+```
+
+### `ORGANIZATION_ROLE_VERSION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the version of the member's role.
+
+```ts
+const ORGANIZATION_ROLE_VERSION_CLAIM: "org_rv"
 ```
 
 ### `ORGANIZATION_SLUG_PATTERN`
@@ -6525,6 +6545,25 @@ domain. Its name and slug only: the user is told nothing of its members.
 
 ```ts
 const OrganizationSuggestionSchema: z.ZodObject<{ id: z.ZodString; name: z.ZodString; slug: z.ZodString; }, z.core.$strip>
+```
+
+### `OrganizationTokenClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link readOrganizationTokenClaims} found in a session's claims.
+
+```ts
+export type OrganizationTokenClaims =
+| { readonly kind: 'inline'; readonly claims: OrganizationClaims }
+| {
+    readonly kind: 'lookup'
+    readonly orgId: string
+    readonly orgRole: string
+    readonly roleVersion: number
+    readonly permissionsHash: string
+  }
+| { readonly kind: 'none' }
 ```
 
 ### `PACKAGE_NAME_PATTERN`
@@ -12884,6 +12923,31 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
 parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).password.minLength // 10
 ```
 
+### `permissionsHash`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+The hash of a role's permission keys: `1.` and the base64url (no
+padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
+
+Web Crypto, so it is the same in Bun, Node, browsers and edge runtimes.
+
+```ts
+export async function permissionsHash(keys: readonly string[]): Promise<string>
+```
+
+**Parameters**
+
+- `keys`: The role's permission keys, in any order, duplicates allowed.
+
+**Returns** The hash, 45 characters.
+
+**Example**
+
+```ts
+await permissionsHash([]) // '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU'
+```
+
 ### `phoneNumberCountries`
 
 _function_, defined in `packages/contract/src/phone.ts`
@@ -13109,6 +13173,27 @@ readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:m
 // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
 readOrganizationClaims({ org_id: 'o1' }) // null
 ```
+
+### `readOrganizationTokenClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Tell apart the three shapes an organization token takes: permissions
+`inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
+organization (`none`).
+
+Fail closed: a partial or malformed claim set is `none`, and a malformed `org_perms` is never
+read as a lookup. Call it only with verified claims.
+
+```ts
+export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenClaims
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** The shape found.
 
 ### `readStoredEmailTemplates`
 
@@ -13812,6 +13897,27 @@ themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' 
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
 ```
 
+### `verifyPermissionsHash`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys hash to the given value: how a verifier checks that `org_perms`
+and `org_ph` agree, or that a fetched list is the one a token named.
+
+```ts
+export async function verifyPermissionsHash(
+  keys: readonly string[],
+  hash: string
+): Promise<boolean>
+```
+
+**Parameters**
+
+- `keys`: The permission keys.
+- `hash`: The hash a token carries.
+
+**Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
+
 ### `visibleEmailText`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -14094,6 +14200,16 @@ present only beside the other two.
 const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
 ```
 
+### `ORGANIZATION_PERMISSIONS_HASH_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permissions hash of that role version.
+
+```ts
+const ORGANIZATION_PERMISSIONS_HASH_CLAIM: "org_ph"
+```
+
 ### `ORGANIZATION_ROLE_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -14102,6 +14218,16 @@ The access token's claim holding the key of the member's role in the active orga
 
 ```ts
 const ORGANIZATION_ROLE_CLAIM: "org_role"
+```
+
+### `ORGANIZATION_ROLE_VERSION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the version of the member's role.
+
+```ts
+const ORGANIZATION_ROLE_VERSION_CLAIM: "org_rv"
 ```
 
 ### `OrganizationCheck`
@@ -14139,6 +14265,25 @@ export interface OrganizationClaims {
   /** The permission keys of that role. */
   readonly orgPermissions: readonly string[]
 }
+```
+
+### `OrganizationTokenClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link readOrganizationTokenClaims} found in a session's claims.
+
+```ts
+export type OrganizationTokenClaims =
+| { readonly kind: 'inline'; readonly claims: OrganizationClaims }
+| {
+    readonly kind: 'lookup'
+    readonly orgId: string
+    readonly orgRole: string
+    readonly roleVersion: number
+    readonly permissionsHash: string
+  }
+| { readonly kind: 'none' }
 ```
 
 ### `RESERVED_CLAIM_NAMES`
@@ -14337,6 +14482,31 @@ export function organizationClaimsBytes(claims: OrganizationClaims): number
 organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
 ```
 
+### `permissionsHash`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+The hash of a role's permission keys: `1.` and the base64url (no
+padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
+
+Web Crypto, so it is the same in Bun, Node, browsers and edge runtimes.
+
+```ts
+export async function permissionsHash(keys: readonly string[]): Promise<string>
+```
+
+**Parameters**
+
+- `keys`: The role's permission keys, in any order, duplicates allowed.
+
+**Returns** The hash, 45 characters.
+
+**Example**
+
+```ts
+await permissionsHash([]) // '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU'
+```
+
 ### `readCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -14405,6 +14575,48 @@ readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:m
 // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
 readOrganizationClaims({ org_id: 'o1' }) // null
 ```
+
+### `readOrganizationTokenClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Tell apart the three shapes an organization token takes: permissions
+`inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
+organization (`none`).
+
+Fail closed: a partial or malformed claim set is `none`, and a malformed `org_perms` is never
+read as a lookup. Call it only with verified claims.
+
+```ts
+export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenClaims
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** The shape found.
+
+### `verifyPermissionsHash`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys hash to the given value: how a verifier checks that `org_perms`
+and `org_ph` agree, or that a fetched list is the one a token named.
+
+```ts
+export async function verifyPermissionsHash(
+  keys: readonly string[],
+  hash: string
+): Promise<boolean>
+```
+
+**Parameters**
+
+- `keys`: The permission keys.
+- `hash`: The hash a token carries.
+
+**Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
 
 ## `@tula-tech/contract/device-binding`
 
