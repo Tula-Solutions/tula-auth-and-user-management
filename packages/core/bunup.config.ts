@@ -1,7 +1,7 @@
 import { defineConfig } from 'bunup'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/access.ts'],
   format: ['esm'],
   // Browsers, Node, Bun and edge runtimes: the output uses web platform APIs only.
   target: 'browser',
