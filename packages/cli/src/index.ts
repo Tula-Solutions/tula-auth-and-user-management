@@ -7,6 +7,7 @@ import { doctorCommand } from './commands/doctor'
 import { importCommand } from './commands/import'
 import { mcpCommand } from './commands/mcp'
 import { policyCommand } from './commands/policy'
+import { typesCommand } from './commands/types'
 import { type CliIo, type Command, runCli } from './framework'
 import { processIo } from './process-io'
 
@@ -20,6 +21,7 @@ export { doctorCommand } from './commands/doctor'
 export { importCommand } from './commands/import'
 export { buildMcpServer, mcpCommand } from './commands/mcp'
 export { policyCommand } from './commands/policy'
+export { typesCommand } from './commands/types'
 export {
   DEV_ENV_FILE,
   type DevOptions,
@@ -106,6 +108,7 @@ export const COMMANDS: readonly Command[] = [
   approveCommand,
   importCommand,
   auditCommand,
+  typesCommand,
 ]
 
 /**
