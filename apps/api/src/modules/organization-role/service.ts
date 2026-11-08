@@ -7,6 +7,8 @@ import {
   type OrganizationRole,
   type OrganizationRoleField,
   type OrganizationRoleList,
+  type OrganizationRoleVersion,
+  type OrganizationRoleVersionList,
   organizationRoleWeakenings,
   type UpdateOrganizationRoleRequest,
 } from '@tula-tech/contract'
@@ -15,7 +17,11 @@ import { AuthError, NotFoundError, ServiceException } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
-import type { OrganizationRoleRecord, RoleChanges } from '~/ports/organization-store'
+import type {
+  OrganizationRoleRecord,
+  OrganizationRoleVersionRecord,
+  RoleChanges,
+} from '~/ports/organization-store'
 
 /** What the service reads: the role store, the settings, ids and clock. */
 type ReadDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config' | 'ids' | 'clock'>
@@ -52,6 +58,75 @@ async function requireRole(
     throw new NotFoundError()
   }
   return record
+}
+
+function versionSummary(record: OrganizationRoleVersionRecord) {
+  return {
+    version: record.version,
+    createdAt: record.createdAt.toISOString(),
+    permissionCount: record.permissions.length,
+    permissionsHash: record.permissionsHash,
+  }
+}
+
+/**
+ * List every version of a role, oldest first, with its size and hash (never the keys).
+ *
+ * @param deps - The role store and the settings.
+ * @param tenant - The environment.
+ * @param key - The role's key.
+ * @returns The versions.
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the environment has no role with that key.
+ */
+export async function listVersions(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string
+): Promise<OrganizationRoleVersionList> {
+  await Organizations.requireEnabled(deps, tenant)
+  const role = await requireRole(deps, tenant, key)
+  const versions = await deps.organizations.listRoleVersions(tenant.environmentId, role.id)
+  return { data: versions.map(versionSummary) }
+}
+
+/**
+ * Read one version of a role: its permissions and what changed from the version before.
+ *
+ * @param deps - The role store and the settings.
+ * @param tenant - The environment.
+ * @param key - The role's key.
+ * @param version - The version number.
+ * @returns The version, with `added` and `removed` against the one before (all added for the first).
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the role, or that version of it, does not exist.
+ */
+export async function getVersion(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string,
+  version: number
+): Promise<OrganizationRoleVersion> {
+  await Organizations.requireEnabled(deps, tenant)
+  const role = await requireRole(deps, tenant, key)
+  const found = await deps.organizations.findRoleVersion(tenant.environmentId, role.id, version)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const before = await deps.organizations.findRoleVersion(
+    tenant.environmentId,
+    role.id,
+    version - 1
+  )
+  const had = new Set(before?.permissions ?? [])
+  const has = new Set(found.permissions)
+  return {
+    ...versionSummary(found),
+    roleKey: found.roleKey,
+    permissions: found.permissions,
+    added: found.permissions.filter((p) => !had.has(p)),
+    removed: (before?.permissions ?? []).filter((p) => !has.has(p)),
+  }
 }
 
 /** The 412 for a role that is no longer at the version the caller read. */

@@ -2,12 +2,15 @@ import {
   type AddOrganizationMemberRequest,
   BUILT_IN_ROLES,
   type CreateOrganizationRequest,
+  normalizePermissions,
   ORGANIZATION_FIELDS,
   type Organization,
+  type OrganizationAccessExplanation,
   type OrganizationField,
   type OrganizationList,
   type OrganizationMembership,
   type OrganizationMembershipList,
+  permissionsHash,
   type UpdateOrganizationMemberRequest,
   type UpdateOrganizationRequest,
   type UserMembershipList,
@@ -615,5 +618,51 @@ export async function isPrivilegedRole(
       return false
     }
     throw error
+  }
+}
+
+/**
+ * Explain whether a user holds a permission in an organization, step by step.
+ *
+ * The role and version are the role's current ones: a membership stores the role, not a version.
+ *
+ * @param deps - The organization store, the settings and config.
+ * @param tenant - The environment.
+ * @param id - The organization.
+ * @param userId - The user.
+ * @param permission - The permission key asked about.
+ * @returns The decision and the trace behind it.
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the environment has no organization with that id.
+ */
+export async function explainAccess(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  id: string,
+  userId: string,
+  permission: string
+): Promise<OrganizationAccessExplanation> {
+  await requireEnabled(deps, tenant)
+  await requireOrganization(deps, tenant, id)
+  const base = { organizationId: id, userId, permission }
+  const membership = await deps.organizations.findMembership(tenant.environmentId, id, userId)
+  const role = membership
+    ? await deps.organizations.findRoleById(tenant.environmentId, membership.roleId)
+    : null
+  if (!membership || !role) {
+    return { ...base, member: false, role: null, granted: false, reason: 'not_a_member' }
+  }
+  const permissions = normalizePermissions(role.permissions)
+  const granted = permissions.includes(permission)
+  return {
+    ...base,
+    member: true,
+    role: {
+      key: role.key,
+      version: role.version,
+      permissionsHash: await permissionsHash(permissions),
+    },
+    granted,
+    reason: granted ? 'permission_granted' : 'permission_not_granted',
   }
 }
