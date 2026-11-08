@@ -192,8 +192,8 @@ const requirePermission = (permission: string) =>
 An agent works on roles the way a person does, with the same limits ([ADR 0053](0053-proposals.md),
 [ADR 0033](0033-mcp-server.md)):
 
-- **Read, explain, compare.** Three admin routes, open to a secret key and to an agent key's
-  read-only access, and an MCP tool each:
+- **Read, explain, compare.** Three admin routes, open to a secret key and to an agent key (which may
+  `GET` any admin route), and an MCP tool each:
 
   | Route | MCP tool | Answers |
   | --- | --- | --- |
