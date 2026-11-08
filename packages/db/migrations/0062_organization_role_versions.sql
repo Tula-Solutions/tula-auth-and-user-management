@@ -26,7 +26,8 @@ ALTER TABLE "tula"."organization_role_versions" NO FORCE ROW LEVEL SECURITY;--> 
 -- deduplicated keys with no spaces (to_jsonb would add some), exactly as permissionsHash() in
 -- @tula-tech/contract builds it: "1." + base64url, unpadded, of the SHA-256.
 INSERT INTO "tula"."organization_role_versions" ("id", "project_id", "environment_id", "role_id", "role_key", "version", "permissions", "permissions_hash")
-SELECT gen_random_uuid(), r."project_id", r."environment_id", r."id", r."key", r."version", r."permissions",
+SELECT gen_random_uuid(), r."project_id", r."environment_id", r."id", r."key", r."version",
+  ARRAY(SELECT k FROM (SELECT DISTINCT unnest(r."permissions") AS k) d ORDER BY k COLLATE "C"),
   '1.' || rtrim(translate(replace(encode(sha256(convert_to(
     '[' || coalesce((SELECT string_agg('"' || k || '"', ',' ORDER BY k COLLATE "C") FROM (SELECT DISTINCT unnest(r."permissions") AS k) d), '') || ']',
     'UTF8')), 'base64'), E'\n', ''), '+/', '-_'), '=')

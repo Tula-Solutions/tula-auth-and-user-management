@@ -15,6 +15,17 @@ export interface OrganizationRecord {
   updatedAt: Date
 }
 
+/** One version of a role's permissions (ADR 0068): written with the role, never changed. */
+export interface OrganizationRoleVersionRecord {
+  roleId: string
+  roleKey: string
+  version: number
+  /** Sorted by code point, no duplicates: the list `permissionsHash` is over. */
+  permissions: string[]
+  permissionsHash: string
+  createdAt: Date
+}
+
 /** A role as stored: a set of permission keys, shared by every organization of the environment. */
 export interface OrganizationRoleRecord {
   id: string
@@ -433,6 +444,18 @@ export interface OrganizationStore {
    * @returns The role, or `null` when the environment has none with that key.
    */
   findRole(environmentId: string, key: string): Promise<OrganizationRoleRecord | null>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param roleId - The role's id.
+   * @param version - The version of its permissions.
+   * @returns That version's snapshot, or `null` when the environment has none.
+   */
+  findRoleVersion(
+    environmentId: string,
+    roleId: string,
+    version: number
+  ): Promise<OrganizationRoleVersionRecord | null>
 
   /**
    * @param environmentId - The environment to look in.
