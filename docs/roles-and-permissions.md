@@ -178,8 +178,8 @@ tomorrow (`billing_manager` gains a duty); a permission is the thing the code ac
 
 ## Reading roles from an AI assistant
 
-The [MCP server](mcp.md) has a tool that reads roles: `list_organization_roles` lists the
-built-in and custom roles with their permissions, so an assistant can answer "which role can
+The [MCP server](mcp.md) has tools that read roles: `list_organization_roles` lists the
+built-in and custom roles with their permissions, `list_role_versions` and `get_role_version` give a role's history, and `explain_access` says why a member does or does not hold a permission, so an assistant can answer "which role can
 export invoices?" with an agent key, which cannot change anything here.
 
 ## See also

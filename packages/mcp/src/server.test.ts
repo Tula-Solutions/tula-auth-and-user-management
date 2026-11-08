@@ -60,6 +60,13 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   list_organizations: { page: 1, size: 20 },
   list_organization_members: { organizationId: TEST_ORGANIZATION_ID, page: 1, size: 100 },
   list_organization_roles: {},
+  list_role_versions: { roleKey: 'billing' },
+  get_role_version: { roleKey: 'billing', version: 2 },
+  explain_access: {
+    organizationId: TEST_ORGANIZATION_ID,
+    userId: TEST_USER_ID,
+    permission: 'org:billing:manage',
+  },
   list_sso_connections: { organizationId: TEST_ORGANIZATION_ID },
   get_sso_connection: { connectionId: TEST_SSO_CONNECTION_ID },
   run_doctor: {},
@@ -228,7 +235,7 @@ describe('the protocol', () => {
 
   test('no tool is named for a change: one that asks for a change is named for asking', async () => {
     for (const name of [...READ_TOOL_NAMES, ...SCAFFOLD_TOOL_NAMES]) {
-      expect(name).toMatch(/^(list|get|run_doctor|detect|scaffold)/)
+      expect(name).toMatch(/^(list|get|explain|run_doctor|detect|scaffold)/)
     }
     for (const name of PROPOSE_TOOL_NAMES) {
       expect(name).toMatch(/^propose_/)
@@ -614,6 +621,17 @@ describe('the read tools', () => {
         },
       ],
     })
+  })
+
+  test('list_role_versions, get_role_version and explain_access: the history and the reason', async () => {
+    const { client } = await world()
+    const list = await callTool(client, 'list_role_versions', SAMPLE_ARGS.list_role_versions)
+    expect((list.structured.data as unknown[]).length).toBe(2)
+    const one = await callTool(client, 'get_role_version', SAMPLE_ARGS.get_role_version)
+    expect(one.structured.added).toEqual(['org:billing:manage'])
+    const why = await callTool(client, 'explain_access', SAMPLE_ARGS.explain_access)
+    expect(why.structured).toMatchObject({ granted: true, reason: 'permission_granted' })
+    expect(why.structured.role).toEqual({ key: 'billing', version: 2, permissionsHash: '1.bbbb' })
   })
 
   test('the organization tools reach the API with GETs only', async () => {
@@ -1295,6 +1313,9 @@ describe('nothing is changed', () => {
       /^\/v1\/admin\/organizations$/,
       /^\/v1\/admin\/organizations\/[^/]+\/memberships$/,
       /^\/v1\/admin\/organization-roles$/,
+      /^\/v1\/admin\/organization-roles\/[^/]+\/versions$/,
+      /^\/v1\/admin\/organization-roles\/[^/]+\/versions\/[^/]+$/,
+      /^\/v1\/admin\/organizations\/[^/]+\/members\/[^/]+\/access$/,
       /^\/v1\/admin\/sso-connections$/,
       /^\/v1\/admin\/sso-connections\/[^/]+$/,
     ]

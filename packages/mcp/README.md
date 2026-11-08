@@ -103,7 +103,7 @@ newline-delimited JSON-RPC on its standard input and output. It needs Bun.
 
 | Kind | Tools |
 | --- | --- |
-| Read | `list_users`, `get_user`, `list_user_sessions`, `list_audit_entries`, `get_settings`, `list_oauth_providers`, `list_organizations`, `list_organization_members`, `list_organization_roles`, `list_sso_connections`, `get_sso_connection`, `run_doctor` |
+| Read | `list_users`, `get_user`, `list_user_sessions`, `list_audit_entries`, `get_settings`, `list_oauth_providers`, `list_organizations`, `list_organization_members`, `list_organization_roles`, `list_role_versions`, `get_role_version`, `explain_access`, `list_sso_connections`, `get_sso_connection`, `run_doctor` |
 | Draft | `draft_settings_change`: the edits, by key, that would make `tula.config.ts` match a change you describe. It returns no file text and writes nothing. |
 | Propose | `propose_ban_user`, `propose_unban_user`, `propose_end_session`, `propose_disable_oauth_provider`. They need an agent key; without one they answer `not_configured`. A person approves a proposal with `tula approve`. |
 | Test | `test_signin`: the server signs a throwaway user up and in, reports each step and deletes the user. The only tool that changes live data. |
