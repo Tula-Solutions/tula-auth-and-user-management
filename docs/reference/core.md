@@ -3912,3 +3912,126 @@ method this client does not know.
 ```ts
 stepUpMethods(error) // ['totp', 'backup_code'], ['password', 'email_code'], ['email_code'] or []
 ```
+
+## `@tula-tech/core/access`
+
+Source: `packages/core/src/access.ts`
+
+### `AccessChecker`
+
+_interface_, defined in `packages/core/src/access.ts`
+
+The checker {@link createAccessChecker} builds.
+
+```ts
+export interface AccessChecker {
+  /**
+   * Verify an access token and decide whether its active organization grants a permission.
+   *
+   * @param token - The raw access token.
+   * @param permission - A permission key such as `org:leads:view`.
+   * @returns The decision.
+   * @throws AccessUnavailableError when a needed lookup fails or its answer is not the token's.
+   */
+  check(token: string, permission: string): Promise<AccessDecision>
+}
+```
+
+### `AccessCheckerOptions`
+
+_interface_, defined in `packages/core/src/access.ts`
+
+Options of {@link createAccessChecker}.
+
+```ts
+export interface AccessCheckerOptions {
+  /** The API's address; the only host the checker ever calls. */
+  apiUrl: string
+  /** The environment whose tokens are accepted. */
+  environmentId: string
+  /** The environment's publishable key, sent with a permission lookup. */
+  publishableKey: string
+  /** A `fetch` to use instead of the global one. */
+  fetch?: typeof fetch
+  /** The most the cache of permission lists may hold, estimated in bytes. Default 8 MB. */
+  cacheBytes?: number
+  /** The deadline of one request to the API, in milliseconds. Default 5000. */
+  timeoutMs?: number
+}
+```
+
+### `AccessDecision`
+
+_type_, defined in `packages/core/src/access.ts`
+
+What {@link AccessChecker.check} answers.
+
+```ts
+export type AccessDecision =
+| {
+    allowed: true
+    orgId: string
+    role: string
+    /** The role's version; absent for a token that carries its permissions inline. */
+    version: number | undefined
+  }
+| { allowed: false; reason: 'no_organization' | 'not_granted' | 'invalid_token' }
+```
+
+### `AccessUnavailableError`
+
+_class_, defined in `packages/core/src/access.ts`
+
+Thrown by {@link AccessChecker.check} when a decision cannot be made safely: the permission
+list could not be fetched, or did not prove to be the token's. Map it to 503; never allow.
+
+```ts
+export class AccessUnavailableError extends Error {
+  override readonly name = 'AccessUnavailableError'
+}
+```
+
+**Example**
+
+```ts
+try {
+  await access.check(token, 'org:leads:view')
+} catch (error) {
+  if (error instanceof AccessUnavailableError) {
+    return new Response(null, { status: 503 })
+  }
+}
+```
+
+### `createAccessChecker`
+
+_function_, defined in `packages/core/src/access.ts`
+
+Build a checker for one environment of one API.
+
+A token's permissions inline are checked with no I/O. A large role's are fetched once per
+`org_ph` and kept in a least-recently-used cache bounded in bytes and never by time: a role
+change is a new hash, so an entry cannot go stale. Failures are never cached.
+
+```ts
+export function createAccessChecker(options: AccessCheckerOptions): AccessChecker
+```
+
+**Parameters**
+
+- `options`: The API, the environment and the publishable key.
+
+**Returns** The checker.
+
+**Example**
+
+```ts
+import { createAccessChecker } from '@tula-tech/core/access'
+
+const access = createAccessChecker({
+  apiUrl: 'https://auth.example.com',
+  environmentId: 'env_1',
+  publishableKey: 'tula_pk_prod_...',
+})
+const decision = await access.check(accessToken, 'org:leads:view')
+```

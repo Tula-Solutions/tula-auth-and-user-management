@@ -9,7 +9,7 @@ To change a page, change the JSDoc (for a native SDK, the doc comment) and run
 
 | Package | Entry points | Exports |
 | --- | --- | --- |
-| [`@tula-tech/core`](core.md) | `@tula-tech/core` | 117 |
+| [`@tula-tech/core`](core.md) | `@tula-tech/core`, `@tula-tech/core/access` | 122 |
 | [`@tula-tech/react`](react.md) | `@tula-tech/react` | 93 |
 | [`@tula-tech/nextjs`](nextjs.md) | `@tula-tech/nextjs`, `@tula-tech/nextjs/server`, `@tula-tech/nextjs/middleware`, `@tula-tech/nextjs/handlers` | 96 |
 | [`@tula-tech/expo`](expo.md) | `@tula-tech/expo`, `@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/apple`, `@tula-tech/expo/google`, `@tula-tech/expo/device-key`, `@tula-tech/expo/plugin` | 94 |
