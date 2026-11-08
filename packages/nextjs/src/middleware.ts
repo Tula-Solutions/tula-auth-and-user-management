@@ -2,13 +2,15 @@ import {
   hasOrganizationAccess,
   type OrganizationCheck,
   readOrganizationClaims,
+  readOrganizationTokenClaims,
 } from '@tula-tech/contract/custom-claims'
 import {
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
 } from '@tula-tech/contract/organization-permissions'
+import { type AccessChecker, createAccessChecker } from '@tula-tech/core/access'
 import { type NextRequest, NextResponse } from 'next/server'
-import { configFor, type TulaServerOptions } from './config'
+import { configFor, type TulaConfig, type TulaServerOptions } from './config'
 import { REDIRECT_PARAM, safeRedirectPath } from './paths'
 import { AUTH_HEADER, resolveSession } from './session'
 
@@ -155,6 +157,45 @@ function compile(matcher: RouteMatcher | undefined): (pathname: string) => boole
     return (pathname: string) => pattern.test(pathname)
   })
   return (pathname) => tests.some((test) => test(pathname))
+}
+
+const checkers = new WeakMap<TulaConfig, AccessChecker>()
+
+/**
+ * Whether the session's active organization grants a check. Claims answer it offline, except
+ * a permission of a large role (ADR 0068, § 5): that goes through one checker per
+ * configuration, which looks the list up once per hash. A lookup that fails throws
+ * `AccessUnavailableError`: it is never read as granted, and the app maps it to a 503.
+ */
+async function grants(
+  config: TulaConfig,
+  session: { claims: unknown; token: string | null } | null,
+  check: OrganizationCheck
+): Promise<boolean> {
+  const found = readOrganizationTokenClaims(session?.claims)
+  if (found.kind !== 'lookup') {
+    return hasOrganizationAccess(readOrganizationClaims(session?.claims), check)
+  }
+  const { permission, role } = check as { permission?: string; role?: string }
+  if (permission === undefined) {
+    return role !== undefined && role !== '' && found.orgRole === role
+  }
+  if (!session?.token || role !== undefined || permission === '') {
+    return false
+  }
+  let checker = checkers.get(config)
+  if (!checker) {
+    checker = createAccessChecker({
+      apiUrl: config.apiUrl,
+      environmentId: config.environmentId,
+      publishableKey: config.publishableKey,
+      // The checker only ever calls `fetch(url: string, init)`; `preconnect` is Bun's extra.
+      fetch: ((url: string, init?: RequestInit) =>
+        config.fetch(new Request(url, init))) as typeof fetch,
+    })
+    checkers.set(config, checker)
+  }
+  return (await checker.check(session.token, permission)).allowed
 }
 
 /** One rule of `access`, validated and compiled: the same check as `auth().has()`. */
@@ -312,8 +353,11 @@ export function tulaMiddleware(
     const { session, setCookies, requestHeaders } = await resolveSession(request, config)
     let response: NextResponse
     const applicable = session ? rulesFor(pathname) : []
-    const organization = applicable.length > 0 ? readOrganizationClaims(session?.claims) : null
-    const denied = applicable.some((rule) => !hasOrganizationAccess(organization, rule.check))
+    const denied =
+      applicable.length > 0 &&
+      !(await Promise.all(applicable.map((rule) => grants(config, session, rule.check)))).every(
+        Boolean
+      )
     if (session && denied) {
       if (isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')) {
         response = NextResponse.json(
