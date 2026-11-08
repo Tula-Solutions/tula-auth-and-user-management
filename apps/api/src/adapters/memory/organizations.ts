@@ -374,7 +374,13 @@ export class MemoryOrganizationStore implements OrganizationStore {
     if (!organization || !role) {
       return null
     }
-    return structuredClone({ organization, membership, permissions: role.permissions })
+    const snapshot = this.#versions.get(`${role.environmentId}/${role.id}/${role.version}`)
+    return structuredClone({
+      organization,
+      membership,
+      permissions: role.permissions,
+      snapshot: snapshot ?? null,
+    })
   }
 
   /** @inheritdoc */

@@ -1595,6 +1595,8 @@ export function describeOrganizationStore(
         organization: input.organization,
         membership: input.membership,
         permissions: admin.permissions,
+        // The role's current version, read in the same statement as the membership.
+        snapshot: await ctx.store.findRoleVersion(ctx.a.environmentId, admin.id, admin.version),
       })
       expect(await ctx.recorded()).toEqual([
         'organization.created',

@@ -3,7 +3,9 @@ import {
   CUSTOM_CLAIMS_CLAIM,
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  ORGANIZATION_ROLE_VERSION_CLAIM,
   SSO_CONNECTION_CLAIM,
 } from './custom-claims'
 
@@ -163,6 +165,10 @@ export const AccessTokenClaimsSchema = z
      * A missing list is no permission.
      */
     [ORGANIZATION_PERMISSIONS_CLAIM]: z.array(z.string()).optional(),
+    /** The version of that role the permissions are from (ADR 0068); with `org_ph`, read together. */
+    [ORGANIZATION_ROLE_VERSION_CLAIM]: z.number().int().optional(),
+    /** The hash of those permissions (`permissionsHash`), to compare with a cached copy of a role. */
+    [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: z.string().optional(),
     /**
      * The session's custom claims: what the JWT template of its profile defines,
      * each key holding one string, number or boolean. **Absent** when the profile uses no

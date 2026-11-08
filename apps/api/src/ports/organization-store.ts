@@ -147,6 +147,12 @@ export interface UserMembershipRecord {
   membership: MembershipRecord
   /** The permission keys of the membership's role. */
   permissions: string[]
+  /**
+   * The snapshot of the role's current version, read in the same statement as the membership
+   * so that a token's `org_rv` and `org_ph` can never disagree with its `org_perms`
+   * (ADR 0068). `null` when the role has none; absent where a read does not ask for it.
+   */
+  snapshot?: OrganizationRoleVersionRecord | null
 }
 
 /** What creating an organization for a user, as its first member, came to. */

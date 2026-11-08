@@ -269,7 +269,8 @@ describe('the organization claims (ADR 0065)', () => {
     const bytes = organizationClaimsBytes(longest)
     expect(bytes).toBe(2541)
     expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
-    expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(64)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES).toBe(2656)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(160)
     expect(MAX_PERMISSIONS_PER_ROLE).toBe(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
   })
 
@@ -302,6 +303,16 @@ describe('the organization claims (ADR 0065)', () => {
         orgPermissions: permissions,
       })
     ).toBeLessThan(MAX_ORGANIZATION_CLAIMS_BYTES)
+  })
+
+  test('a maximal role with the version and the hash claims fits the cap', () => {
+    const withBoth = {
+      ...longest,
+      roleVersion: 2147483647,
+      permissionsHash: `1.${'A'.repeat(43)}`,
+    }
+    expect(organizationClaimsBytes(withBoth)).toBe(2541 + 20 + 57)
+    expect(organizationClaimsBytes(withBoth)).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
   })
 
   test('the cap is its own: the custom claims keep their 1,024 bytes', () => {

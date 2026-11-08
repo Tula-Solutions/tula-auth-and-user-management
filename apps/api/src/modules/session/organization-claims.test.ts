@@ -7,6 +7,7 @@ import {
   EnvironmentSettingsSchema,
   MAX_ORGANIZATION_CLAIMS_BYTES,
   type Organization,
+  permissionsHash,
   RESERVED_CLAIM_NAMES,
   readOrganizationClaims,
 } from '@tula-tech/contract'
@@ -140,7 +141,7 @@ const self = (tokens: { sessionId: string }, userId = MAYA) => ({
 const setActive = (tokens: { sessionId: string }, id: string | null, userId = MAYA) =>
   Me.setActive(deps, tenant, self(tokens, userId), id)
 
-const ORG_CLAIMS = ['org_id', 'org_perms', 'org_role']
+const ORG_CLAIMS = ['org_id', 'org_perms', 'org_ph', 'org_role', 'org_rv']
 const orgClaimsOf = (claims: AccessTokenClaims) =>
   Object.keys(claims)
     .filter((name) => name.startsWith('org_'))
@@ -191,6 +192,37 @@ describe('setting the active organization', () => {
       orgRole: 'admin',
       orgPermissions: ADMIN_PERMISSIONS,
     })
+  })
+
+  test('carries the role version and the hash of the same snapshot', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const claims = claimsOf(await setActive(tokens, acme.id)) as Record<string, unknown>
+    const role = await deps.organizations.findRole(tenant.environmentId, 'admin')
+    const snapshot = await deps.organizations.findRoleVersion(
+      tenant.environmentId,
+      role?.id ?? '',
+      role?.version ?? 0
+    )
+    expect(claims.org_rv).toBe(role?.version)
+    expect(claims.org_ph).toBe(snapshot?.permissionsHash)
+    expect(claims.org_ph).toBe(await permissionsHash(ADMIN_PERMISSIONS))
+  })
+
+  test('a membership whose role has no snapshot yields a token with no organization claims, and logs', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const real = await deps.organizations.findUserMembership(tenant.environmentId, acme.id, MAYA)
+    spyOn(deps.organizations, 'findUserMembership').mockResolvedValue(
+      real && { ...real, snapshot: null }
+    )
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const active = await setActive(tokens, acme.id)
+    expect(orgClaimsOf(claimsOf(active))).toEqual([])
+    expect(error).toHaveBeenCalled()
+    error.mockRestore()
   })
 
   test('is not a rotation: the refresh token still works, once', async () => {

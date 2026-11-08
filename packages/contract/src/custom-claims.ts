@@ -103,11 +103,13 @@ export const MAX_CUSTOM_CLAIMS_BYTES = 1024
  * It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
  * characters), a role key of 32 characters and 32 permissions of the longest key
  * (`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
- * room. A role is bounded by the contract and the database, so a token never reaches it
+ * room. It also holds a fixed reserve of 96 bytes for `org_rv` (a 10-digit version, 20 bytes)
+ * and `org_ph` (a 45-character hash, 57 bytes) so that the largest role still fits beside them.
+ * A role is bounded by the contract and the database, so a token never reaches it
  * unless a row was written by hand: the server then issues the token **without** the
  * organization claims (no claim is "no permission"), never with a cut list.
  */
-export const MAX_ORGANIZATION_CLAIMS_BYTES = 2560
+export const MAX_ORGANIZATION_CLAIMS_BYTES = 2656
 
 /** Most permissions an organization role (and so the `org_perms` claim) holds. */
 export const MAX_ORGANIZATION_PERMISSIONS_CLAIM = 32
@@ -120,11 +122,15 @@ export interface OrganizationClaims {
   readonly orgRole: string
   /** The permission keys of that role. */
   readonly orgPermissions: readonly string[]
+  /** The version of that role the permissions were read at (`org_rv`), when issued. */
+  readonly roleVersion?: number
+  /** The permissions hash of that version (`org_ph`), when issued. */
+  readonly permissionsHash?: string
 }
 
 /**
  * Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
- * of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+ * of the JSON of the claims (`org_rv` and `org_ph` counted when present), which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
  *
  * @param claims - The three claims.
  * @returns The byte count.
@@ -140,6 +146,12 @@ export function organizationClaimsBytes(claims: OrganizationClaims): number {
       [ORGANIZATION_ID_CLAIM]: claims.orgId,
       [ORGANIZATION_ROLE_CLAIM]: claims.orgRole,
       [ORGANIZATION_PERMISSIONS_CLAIM]: claims.orgPermissions,
+      ...(claims.roleVersion !== undefined && {
+        [ORGANIZATION_ROLE_VERSION_CLAIM]: claims.roleVersion,
+      }),
+      ...(claims.permissionsHash !== undefined && {
+        [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: claims.permissionsHash,
+      }),
     })
   )
 }

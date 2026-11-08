@@ -662,10 +662,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
           organization: organizationColumns,
           membership: membershipColumns,
           permissions: organizationRoles.permissions,
+          snapshot: organizationRoleVersions,
         })
         .from(organizationMemberships)
         .innerJoin(organizationRoles, joinedToRole)
         .innerJoin(organizations, joinedToOrganization)
+        .leftJoin(
+          organizationRoleVersions,
+          and(
+            eq(organizationRoleVersions.environmentId, organizationRoles.environmentId),
+            eq(organizationRoleVersions.roleId, organizationRoles.id),
+            eq(organizationRoleVersions.version, organizationRoles.version)
+          )
+        )
         .where(
           and(
             eq(organizationMemberships.environmentId, environmentId),
@@ -675,7 +684,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
         )
         .limit(1)
     )
-    return row ?? null
+    return row
+      ? {
+          ...row,
+          snapshot: row.snapshot && {
+            roleId: row.snapshot.roleId,
+            roleKey: row.snapshot.roleKey,
+            version: row.snapshot.version,
+            permissions: row.snapshot.permissions,
+            permissionsHash: row.snapshot.permissionsHash,
+            createdAt: row.snapshot.createdAt,
+          },
+        }
+      : null
   }
 
   /** @inheritdoc */

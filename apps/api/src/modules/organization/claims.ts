@@ -3,7 +3,9 @@ import {
   MAX_ORGANIZATION_PERMISSIONS_CLAIM,
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  ORGANIZATION_ROLE_VERSION_CLAIM,
   type OrganizationClaims,
   organizationClaimsBytes,
 } from '@tula-tech/contract'
@@ -72,10 +74,22 @@ export function fromMembership(
   scope: Pick<Tenant, 'environmentId'>,
   held: UserMembershipRecord
 ): OrganizationClaims | undefined {
+  const { snapshot } = held
+  if (!snapshot) {
+    // Fail closed: a version or hash from anywhere else could disagree with `org_perms`.
+    logger.error('organization role has no snapshot; the token carries no organization claims', {
+      environmentId: scope.environmentId,
+      organizationId: held.organization.id,
+      roleId: held.membership.roleId,
+    })
+    return undefined
+  }
   const claims: OrganizationClaims = {
     orgId: held.organization.id,
     orgRole: held.membership.roleKey,
     orgPermissions: held.permissions,
+    roleVersion: snapshot.version,
+    permissionsHash: snapshot.permissionsHash,
   }
   if (
     claims.orgPermissions.length > MAX_ORGANIZATION_PERMISSIONS_CLAIM ||
@@ -96,12 +110,14 @@ export function fromMembership(
  * The claims as they are written into a token.
  *
  * @param claims - The organization claims.
- * @returns The three top-level claims, under their reserved names.
+ * @returns The five top-level claims, under their reserved names.
  */
 export function asTokenClaims(claims: OrganizationClaims) {
   return {
     [ORGANIZATION_ID_CLAIM]: claims.orgId,
     [ORGANIZATION_ROLE_CLAIM]: claims.orgRole,
     [ORGANIZATION_PERMISSIONS_CLAIM]: [...claims.orgPermissions],
+    [ORGANIZATION_ROLE_VERSION_CLAIM]: claims.roleVersion,
+    [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: claims.permissionsHash,
   }
 }
