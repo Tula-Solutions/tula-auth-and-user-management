@@ -5,6 +5,7 @@ import {
 } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
+import { roleSnapshot } from '~/adapters/role-snapshot'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AcceptInvitationOutcome,
@@ -18,6 +19,7 @@ import type {
   OrganizationChanges,
   OrganizationRecord,
   OrganizationRoleRecord,
+  OrganizationRoleVersionRecord,
   OrganizationStore,
   OwnedOrganization,
   Page,
@@ -42,6 +44,7 @@ function paged<T>(rows: readonly T[], { page, size }: PageCriteria): Page<T> {
 export class MemoryOrganizationStore implements OrganizationStore {
   readonly #organizations: Map<string, OrganizationRecord>
   readonly #roles: Map<string, OrganizationRoleRecord>
+  readonly #versions: Map<string, OrganizationRoleVersionRecord>
   readonly #memberships: Map<string, MembershipRecord>
   readonly #invitations: Map<string, InvitationRecord>
   readonly #activityLog: MemoryActivityLog
@@ -61,6 +64,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
   ) {
     this.#organizations = new Map()
     this.#roles = new Map()
+    this.#versions = new Map()
     this.#memberships = new Map()
     this.#invitations = new Map()
     this.#activityLog = activityLog
@@ -495,6 +499,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
       return null
     }
     this.#roles.set(record.id, structuredClone(record))
+    await this.#snapshot(record)
     this.#activityLog.record(activity ? [activity] : [])
     return structuredClone(record)
   }
@@ -534,6 +539,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
       return { outcome: 'last_manager' }
     }
     this.#roles.set(id, next)
+    await this.#snapshot(next)
     this.#activityLog.record(activity ? [activity] : [])
     return { outcome: 'updated', record: structuredClone(next) }
   }
@@ -853,6 +859,30 @@ export class MemoryOrganizationStore implements OrganizationStore {
       if (!exists) {
         this.#roles.set(role.id, structuredClone(role))
       }
+      const have = [...this.#roles.values()].find(
+        (one) => one.environmentId === role.environmentId && one.key === role.key
+      )
+      if (have) {
+        await this.#snapshot(have)
+      }
+    }
+  }
+
+  /** @inheritdoc */
+  async findRoleVersion(
+    environmentId: string,
+    roleId: string,
+    version: number
+  ): Promise<OrganizationRoleVersionRecord | null> {
+    const found = this.#versions.get(`${environmentId}/${roleId}/${version}`)
+    return found ? structuredClone(found) : null
+  }
+
+  /** Store the snapshot of a role's current version, unless that version has one. */
+  async #snapshot(role: OrganizationRoleRecord): Promise<void> {
+    const key = `${role.environmentId}/${role.id}/${role.version}`
+    if (!this.#versions.has(key)) {
+      this.#versions.set(key, { ...(await roleSnapshot(role)), createdAt: role.updatedAt })
     }
   }
 }

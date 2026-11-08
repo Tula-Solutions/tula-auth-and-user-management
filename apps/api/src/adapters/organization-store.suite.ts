@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { BUILT_IN_ROLES } from '@tula-tech/contract'
+import { BUILT_IN_ROLES, permissionsHash } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type {
@@ -1104,6 +1104,84 @@ export function describeOrganizationStore(
         'organization_role.created',
         'organization_role.updated',
       ])
+    })
+
+    test('a role insert writes its version 1 snapshot: sorted, distinct, with the hash', async () => {
+      const role = await storedRole(ctx.a, {
+        permissions: ['org:billing:write', 'org:billing:read', 'org:billing:write'],
+      })
+      const snapshot = await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 1)
+      expect(snapshot).toMatchObject({
+        roleId: role.id,
+        roleKey: 'billing',
+        version: 1,
+        permissions: ['org:billing:read', 'org:billing:write'],
+        permissionsHash: await permissionsHash(['org:billing:read', 'org:billing:write']),
+      })
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 2)).toBeNull()
+    })
+
+    test('a role update writes the snapshot of the version it makes, and keeps the old one', async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { permissions: ['org:invoices:write', 'org:invoices:read'] },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 2)).toMatchObject({
+        version: 2,
+        permissions: ['org:invoices:read', 'org:invoices:write'],
+        permissionsHash: await permissionsHash(['org:invoices:read', 'org:invoices:write']),
+      })
+      expect(
+        (await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 1))?.permissions
+      ).toEqual(['org:billing:read'])
+    })
+
+    test('a rename bumps the version and snapshots the unchanged permissions', async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { name: 'Renamed' },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(
+        (await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 2))?.permissionsHash
+      ).toBe(await permissionsHash(['org:billing:read']))
+    })
+
+    test('a stale or refused update writes no snapshot', async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        7,
+        { permissions: ['org:billing:read'] },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 2)).toBeNull()
+    })
+
+    test('the built-in roles get one snapshot each, however often they are ensured', async () => {
+      const { admin, member } = await builtIns(ctx.a)
+      await ctx.store.ensureBuiltInRoles(roles(ctx.a))
+      for (const role of [admin, member]) {
+        const snapshot = await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 1)
+        expect(snapshot?.roleKey).toBe(role.key)
+        expect(snapshot?.permissionsHash).toBe(await permissionsHash(role.permissions))
+      }
+    })
+
+    test('a snapshot is not found through another environment', async () => {
+      const role = await storedRole(ctx.a)
+      expect(await ctx.store.findRoleVersion(ctx.b.environmentId, role.id, 1)).toBeNull()
     })
 
     test('an update leaves the fields it does not name as they are', async () => {

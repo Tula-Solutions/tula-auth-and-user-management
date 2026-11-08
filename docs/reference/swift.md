@@ -3632,6 +3632,24 @@ Withdraw a pending invitation: its link stops working.
 public func revoke(organizationId: String, invitationId: String) async throws
 ```
 
+### `permissionsHash`
+
+_func_, defined in `native/swift/Sources/TulaAuth/TulaPermissionsHash.swift`
+
+The hash of a set of permission keys, in the form an access token's `perms_hash` claim carries.
+
+The keys are deduplicated, ordered by UTF-16 code unit (as `@tula-tech/contract`'s
+`permissionsHash` does, so the two agree for any input), written as a JSON array with no
+spaces and hashed with SHA-256: `1.` and the digest in unpadded base64url. The shared
+vectors in `packages/contract/src/permissions-hash-vectors.json` hold the two to each other.
+
+- Parameter keys: The permission keys; order and repeats do not matter.
+- Returns: The versioned hash, for example `1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU` for no keys.
+
+```swift
+public func permissionsHash(_ keys: [String]) -> String
+```
+
 ### `IdTokenSignIn`
 
 _class_, defined in `native/swift/Sources/TulaAuth/TulaProviders.swift`

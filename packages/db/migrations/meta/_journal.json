@@ -407,6 +407,13 @@
       "when": 1793980763577,
       "tag": "0061_proposals_rejected",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794181282426,
+      "tag": "0062_organization_role_versions",
+      "breakpoints": true
     }
   ]
 }
