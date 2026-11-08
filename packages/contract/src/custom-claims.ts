@@ -39,6 +39,12 @@ export const ORGANIZATION_ROLE_CLAIM = 'org_role'
  */
 export const ORGANIZATION_PERMISSIONS_CLAIM = 'org_perms'
 
+/** The access token's claim holding the version of the member's role. */
+export const ORGANIZATION_ROLE_VERSION_CLAIM = 'org_rv'
+
+/** The access token's claim holding the permissions hash of that role version. */
+export const ORGANIZATION_PERMISSIONS_HASH_CLAIM = 'org_ph'
+
 /**
  * Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
  * registered claims a verifier acts on, `cnf` (reserved for device binding) and the namespace
@@ -73,6 +79,8 @@ export const RESERVED_CLAIM_NAMES = [
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ROLE_VERSION_CLAIM,
+  ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   SSO_CONNECTION_CLAIM,
   CUSTOM_CLAIMS_CLAIM,
 ] as const
@@ -198,6 +206,105 @@ export function readOrganizationClaims(claims: unknown): OrganizationClaims | nu
     orgPermissions: Object.freeze([...(permissions as string[])]),
   })
   return organizationClaimsBytes(read) > MAX_ORGANIZATION_CLAIMS_BYTES ? null : read
+}
+
+/** The scheme prefix of a permissions hash; a verifier refuses any other. */
+const PERMISSIONS_HASH_PATTERN = /^1\.[A-Za-z0-9_-]{43}$/
+
+/**
+ * The hash of a role's permission keys: `1.` and the base64url (no
+ * padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
+ *
+ * Web Crypto, so it is the same in Bun, Node, browsers and edge runtimes.
+ *
+ * @param keys - The role's permission keys, in any order, duplicates allowed.
+ * @returns The hash, 45 characters.
+ *
+ * @example
+ * ```ts
+ * await permissionsHash([]) // '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU'
+ * ```
+ */
+export async function permissionsHash(keys: readonly string[]): Promise<string> {
+  const set = [...new Set(keys)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(JSON.stringify(set))
+  )
+  let binary = ''
+  for (const byte of new Uint8Array(digest)) {
+    binary += String.fromCharCode(byte)
+  }
+  return `1.${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+}
+
+/**
+ * Whether permission keys hash to the given value: how a verifier checks that `org_perms`
+ * and `org_ph` agree, or that a fetched list is the one a token named.
+ *
+ * @param keys - The permission keys.
+ * @param hash - The hash a token carries.
+ * @returns `true` only for an exact match; an unknown scheme prefix is `false`.
+ */
+export async function verifyPermissionsHash(
+  keys: readonly string[],
+  hash: string
+): Promise<boolean> {
+  return (await permissionsHash(keys)) === hash
+}
+
+/** What {@link readOrganizationTokenClaims} found in a session's claims. */
+export type OrganizationTokenClaims =
+  | { readonly kind: 'inline'; readonly claims: OrganizationClaims }
+  | {
+      readonly kind: 'lookup'
+      readonly orgId: string
+      readonly orgRole: string
+      readonly roleVersion: number
+      readonly permissionsHash: string
+    }
+  | { readonly kind: 'none' }
+
+/**
+ * Tell apart the three shapes an organization token takes: permissions
+ * `inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
+ * organization (`none`).
+ *
+ * Fail closed: a partial or malformed claim set is `none`, and a malformed `org_perms` is never
+ * read as a lookup. Call it only with verified claims.
+ *
+ * @param claims - A session's verified claims.
+ * @returns The shape found.
+ */
+export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenClaims {
+  if (typeof claims !== 'object' || claims === null) {
+    return { kind: 'none' }
+  }
+  const record = claims as Record<string, unknown>
+  if (ORGANIZATION_PERMISSIONS_CLAIM in record) {
+    const inline = readOrganizationClaims(claims)
+    return inline ? { kind: 'inline', claims: inline } : { kind: 'none' }
+  }
+  const [id, role, version, hash] = [
+    record[ORGANIZATION_ID_CLAIM],
+    record[ORGANIZATION_ROLE_CLAIM],
+    record[ORGANIZATION_ROLE_VERSION_CLAIM],
+    record[ORGANIZATION_PERMISSIONS_HASH_CLAIM],
+  ]
+  if (
+    typeof id !== 'string' ||
+    !ORGANIZATION_ID_PATTERN.test(id) ||
+    typeof role !== 'string' ||
+    !ROLE_KEY_PATTERN.test(role) ||
+    typeof version !== 'number' ||
+    !Number.isSafeInteger(version) ||
+    version < 1 ||
+    typeof hash !== 'string' ||
+    !PERMISSIONS_HASH_PATTERN.test(hash)
+  ) {
+    return { kind: 'none' }
+  }
+  return { kind: 'lookup', orgId: id, orgRole: role, roleVersion: version, permissionsHash: hash }
 }
 
 /**
