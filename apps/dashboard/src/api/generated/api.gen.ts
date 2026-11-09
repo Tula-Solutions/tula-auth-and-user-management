@@ -6331,6 +6331,41 @@ export interface UpdateOrganizationMemberRequest {
   role: OrganizationRoleKey;
 }
 
+/**
+ * @maxLength 100
+ * @pattern ^org:(?:sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31}$
+ */
+export type PermissionKey = string;
+
+export type OrganizationAccessExplanationRole = {
+  key: string;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  permissionsHash: string;
+} | null;
+
+export type OrganizationAccessExplanationReason = typeof OrganizationAccessExplanationReason[keyof typeof OrganizationAccessExplanationReason];
+
+
+export const OrganizationAccessExplanationReason = {
+  not_a_member: 'not_a_member',
+  permission_granted: 'permission_granted',
+  permission_not_granted: 'permission_not_granted',
+} as const;
+
+export interface OrganizationAccessExplanation {
+  organizationId: string;
+  userId: string;
+  permission: PermissionKey;
+  member: boolean;
+  role: OrganizationAccessExplanationRole;
+  granted: boolean;
+  reason: OrganizationAccessExplanationReason;
+}
+
 export interface OrganizationRole {
   id: string;
   key: string;
@@ -6365,6 +6400,46 @@ export interface CreateOrganizationRoleRequest {
      */
   name: string;
   permissions: OrganizationRolePermissions;
+}
+
+export interface OrganizationRoleVersionSummary {
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  permissionCount: number;
+  permissionsHash: string;
+}
+
+export interface OrganizationRoleVersionList {
+  data: OrganizationRoleVersionSummary[];
+}
+
+export interface OrganizationRoleVersion {
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  permissionCount: number;
+  permissionsHash: string;
+  roleKey: string;
+  permissions: string[];
+  added: string[];
+  removed: string[];
 }
 
 export interface UpdateOrganizationRoleRequest {
@@ -7901,6 +7976,10 @@ page?: number;
  * @maximum 100
  */
 size?: number;
+};
+
+export type ExplainOrganizationAccessParams = {
+permission: PermissionKey;
 };
 
 export type ListOrganizationInvitationsParams = {
@@ -13108,6 +13187,131 @@ export const useRemoveOrganizationMember = <TError = ErrorEnvelope,
       return useMutation(getRemoveOrganizationMemberMutationOptions(options), queryClient);
     }
 
+export const getExplainOrganizationAccessUrl = (id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/members/${userId}/access?${stringifiedParams}` : `/v1/admin/organizations/${id}/members/${userId}/access`
+}
+
+/**
+ * Whether the user holds the permission in the organization, and why: is the user a member, with which role at which version, and does that role grant the permission. Open to an agent key. While the environment’s `organizations.enabled` setting is off this answers `organization.disabled` (403).
+ * @summary Explain a member’s access to a permission
+ */
+export const explainOrganizationAccess = async (id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationAccessExplanation> => {
+
+  return dashboardFetch<OrganizationAccessExplanation>(getExplainOrganizationAccessUrl(id,userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExplainOrganizationAccessQueryKey = (id: string,
+    userId: string,
+    params?: ExplainOrganizationAccessParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/members/${userId}/access`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExplainOrganizationAccessQueryOptions = <TData = Awaited<ReturnType<typeof explainOrganizationAccess>>, TError = ErrorEnvelope>(id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExplainOrganizationAccessQueryKey(id,userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof explainOrganizationAccess>>> = ({ signal }) => explainOrganizationAccess(id,userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExplainOrganizationAccessQueryResult = NonNullable<Awaited<ReturnType<typeof explainOrganizationAccess>>>
+export type ExplainOrganizationAccessQueryError = ErrorEnvelope
+
+
+export function useExplainOrganizationAccess<TData = Awaited<ReturnType<typeof explainOrganizationAccess>>, TError = ErrorEnvelope>(
+ id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof explainOrganizationAccess>>,
+          TError,
+          Awaited<ReturnType<typeof explainOrganizationAccess>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExplainOrganizationAccess<TData = Awaited<ReturnType<typeof explainOrganizationAccess>>, TError = ErrorEnvelope>(
+ id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof explainOrganizationAccess>>,
+          TError,
+          Awaited<ReturnType<typeof explainOrganizationAccess>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExplainOrganizationAccess<TData = Awaited<ReturnType<typeof explainOrganizationAccess>>, TError = ErrorEnvelope>(
+ id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Explain a member’s access to a permission
+ */
+
+export function useExplainOrganizationAccess<TData = Awaited<ReturnType<typeof explainOrganizationAccess>>, TError = ErrorEnvelope>(
+ id: string,
+    userId: string,
+    params: ExplainOrganizationAccessParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof explainOrganizationAccess>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExplainOrganizationAccessQueryOptions(id,userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListOrganizationRolesUrl = () => {
 
 
@@ -13298,6 +13502,218 @@ export const useCreateOrganizationRole = <TError = ErrorEnvelope,
       > => {
       return useMutation(getCreateOrganizationRoleMutationOptions(options), queryClient);
     }
+
+export const getListOrganizationRoleVersionsUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}/versions`
+}
+
+/**
+ * Every version the role has had, oldest first: its number, when it was made, how many permissions it held and their hash. Open to an agent key. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List the versions of an organization role
+ */
+export const listOrganizationRoleVersions = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRoleVersionList> => {
+
+  return dashboardFetch<OrganizationRoleVersionList>(getListOrganizationRoleVersionsUrl(key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationRoleVersionsQueryKey = (key: OrganizationRoleKey,) => {
+    return [
+    `/v1/admin/organization-roles/${key}/versions`
+    ] as const;
+    }
+
+
+export const getListOrganizationRoleVersionsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError = ErrorEnvelope>(key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationRoleVersionsQueryKey(key);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationRoleVersions>>> = ({ signal }) => listOrganizationRoleVersions(key, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: key !== null && key !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationRoleVersionsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationRoleVersions>>>
+export type ListOrganizationRoleVersionsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationRoleVersions<TData = Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoleVersions>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoleVersions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoleVersions<TData = Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoleVersions>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoleVersions>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoleVersions<TData = Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the versions of an organization role
+ */
+
+export function useListOrganizationRoleVersions<TData = Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoleVersions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationRoleVersionsQueryOptions(key,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetOrganizationRoleVersionUrl = (key: OrganizationRoleKey,
+    version: number,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}/versions/${version}`
+}
+
+/**
+ * The permissions the role held at that version, and which were added and removed since the version before. Open to an agent key. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get one version of an organization role
+ */
+export const getOrganizationRoleVersion = async (key: OrganizationRoleKey,
+    version: number, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRoleVersion> => {
+
+  return dashboardFetch<OrganizationRoleVersion>(getGetOrganizationRoleVersionUrl(key,version),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationRoleVersionQueryKey = (key: OrganizationRoleKey,
+    version: number,) => {
+    return [
+    `/v1/admin/organization-roles/${key}/versions/${version}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationRoleVersionQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError = ErrorEnvelope>(key: OrganizationRoleKey,
+    version: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRoleVersionQueryKey(key,version);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRoleVersion>>> = ({ signal }) => getOrganizationRoleVersion(key,version, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: key !== null && key !== undefined && version !== null && version !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationRoleVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganizationRoleVersion>>>
+export type GetOrganizationRoleVersionQueryError = ErrorEnvelope
+
+
+export function useGetOrganizationRoleVersion<TData = Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey,
+    version: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRoleVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRoleVersion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRoleVersion<TData = Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey,
+    version: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRoleVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRoleVersion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRoleVersion<TData = Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey,
+    version: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get one version of an organization role
+ */
+
+export function useGetOrganizationRoleVersion<TData = Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey,
+    version: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRoleVersion>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationRoleVersionQueryOptions(key,version,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
 

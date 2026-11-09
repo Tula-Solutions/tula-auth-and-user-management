@@ -1,9 +1,11 @@
+import { PermissionKeySchema } from '@tula-tech/contract'
 import { z } from 'zod'
 
 /** Organization shapes are owned by the contract so the dashboard and every SDK agree on them. */
 export {
   AddOrganizationMemberRequestSchema,
   CreateOrganizationRequestSchema,
+  OrganizationAccessExplanationSchema,
   OrganizationListSchema,
   OrganizationMembershipListSchema,
   OrganizationMembershipSchema,
@@ -41,3 +43,6 @@ export const MemberInvitationParamSchema = z.object({
 
 /** Path parameters naming one member of one organization (a signed-in member's routes). */
 export const MemberParamSchema = z.object({ organizationId: z.uuid(), userId: z.uuid() })
+
+/** The permission an access explanation is asked about. */
+export const AccessQuerySchema = z.object({ permission: PermissionKeySchema })

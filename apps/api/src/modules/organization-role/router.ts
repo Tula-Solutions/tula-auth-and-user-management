@@ -13,7 +13,10 @@ import {
   CreateOrganizationRoleRequestSchema,
   OrganizationRoleListSchema,
   OrganizationRoleSchema,
+  OrganizationRoleVersionListSchema,
+  OrganizationRoleVersionSchema,
   RoleKeyParamSchema,
+  RoleVersionParamSchema,
   UpdateOrganizationRoleRequestSchema,
 } from './schema'
 
@@ -111,6 +114,64 @@ router.post(
     )
     c.header('ETag', Settings.etag(role.version))
     return c.json(OrganizationRoleSchema.parse(role), 201)
+  }
+)
+
+router.get(
+  '/:key/versions',
+  describeRoute({
+    operationId: 'listOrganizationRoleVersions',
+    tags: ['Organizations'],
+    summary: 'List the versions of an organization role',
+    description:
+      'Every version the role has had, oldest first: its number, when it was made, how many ' +
+      `permissions it held and their hash. Open to an agent key. ${disabled}`,
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The versions.', content: json(OrganizationRoleVersionListSchema) },
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', RoleKeyParamSchema, validationHook),
+  async (c) =>
+    c.json(
+      OrganizationRoleVersionListSchema.parse(
+        await Roles.listVersions(c.get('deps'), c.get('tenant'), c.req.valid('param').key)
+      )
+    )
+)
+
+router.get(
+  '/:key/versions/:version',
+  describeRoute({
+    operationId: 'getOrganizationRoleVersion',
+    tags: ['Organizations'],
+    summary: 'Get one version of an organization role',
+    description:
+      'The permissions the role held at that version, and which were added and removed ' +
+      `since the version before. Open to an agent key. ${disabled}`,
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The version.', content: json(OrganizationRoleVersionSchema) },
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', RoleVersionParamSchema, validationHook),
+  async (c) => {
+    const { key, version } = c.req.valid('param')
+    return c.json(
+      OrganizationRoleVersionSchema.parse(
+        await Roles.getVersion(c.get('deps'), c.get('tenant'), key, version)
+      )
+    )
   }
 )
 

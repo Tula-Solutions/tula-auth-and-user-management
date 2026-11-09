@@ -8,9 +8,11 @@ import { secretKey } from '~/middleware/secret-key'
 import * as Organizations from '~/modules/organization/service'
 import * as openapi from '~/openapi'
 import {
+  AccessQuerySchema,
   AddOrganizationMemberRequestSchema,
   CreateOrganizationRequestSchema,
   MembershipParamSchema,
+  OrganizationAccessExplanationSchema,
   OrganizationIdParamSchema,
   OrganizationListSchema,
   OrganizationMembershipListSchema,
@@ -343,6 +345,48 @@ router.delete(
     const { id, userId } = c.req.valid('param')
     await Organizations.removeMember(c.get('deps'), c.get('tenant'), id, userId, adminActor(c))
     return c.body(null, 204)
+  }
+)
+
+router.get(
+  '/:id/members/:userId/access',
+  describeRoute({
+    operationId: 'explainOrganizationAccess',
+    tags: ['Organizations'],
+    summary: 'Explain a member’s access to a permission',
+    description:
+      'Whether the user holds the permission in the organization, and why: is the user a ' +
+      'member, with which role at which version, and does that role grant the permission. ' +
+      'Open to an agent key. While the environment’s `organizations.enabled` setting is off ' +
+      'this answers `organization.disabled` (403).',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The decision and its trace.',
+        content: json(OrganizationAccessExplanationSchema),
+      },
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', MembershipParamSchema, validationHook),
+  validator('query', AccessQuerySchema, validationHook),
+  async (c) => {
+    const { id, userId } = c.req.valid('param')
+    return c.json(
+      OrganizationAccessExplanationSchema.parse(
+        await Organizations.explainAccess(
+          c.get('deps'),
+          c.get('tenant'),
+          id,
+          userId,
+          c.req.valid('query').permission
+        )
+      )
+    )
   }
 )
 

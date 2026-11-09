@@ -342,6 +342,41 @@ export function defaultAnswers(): Answers {
         },
       ],
     },
+    'GET /v1/admin/organization-roles/billing/versions': {
+      data: [
+        {
+          version: 1,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          permissionCount: 1,
+          permissionsHash: '1.aaaa',
+        },
+        {
+          version: 2,
+          createdAt: '2026-02-02T00:00:00.000Z',
+          permissionCount: 2,
+          permissionsHash: '1.bbbb',
+        },
+      ],
+    },
+    'GET /v1/admin/organization-roles/billing/versions/2': {
+      version: 2,
+      createdAt: '2026-02-02T00:00:00.000Z',
+      permissionCount: 2,
+      permissionsHash: '1.bbbb',
+      roleKey: 'billing',
+      permissions: ['org:billing:manage', 'org:billing:read'],
+      added: ['org:billing:manage'],
+      removed: [],
+    },
+    [`GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/members/${USER_ID}/access`]: {
+      organizationId: TEST_ORGANIZATION_ID,
+      userId: USER_ID,
+      permission: 'org:billing:manage',
+      member: true,
+      role: { key: 'billing', version: 2, permissionsHash: '1.bbbb' },
+      granted: true,
+      reason: 'permission_granted',
+    },
     'GET /v1/admin/sso-connections': { connections: [SSO_CONNECTION] },
     [`GET /v1/admin/sso-connections/${TEST_SSO_CONNECTION_ID}`]: SSO_CONNECTION,
     'GET /v1/admin/oauth-providers': {
