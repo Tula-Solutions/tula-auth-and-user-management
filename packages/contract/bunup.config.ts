@@ -12,6 +12,7 @@ export default defineConfig({
     'src/headers.ts',
     'src/issuer.ts',
     'src/organization-domain-rules.ts',
+    'src/organization-lookup.ts',
     'src/organization-permissions.ts',
     'src/password-rules.ts',
     'src/redirect-url.ts',
