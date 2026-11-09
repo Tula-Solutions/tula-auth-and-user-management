@@ -39,7 +39,8 @@ async function requireFits(
   key: string,
   permissions: readonly string[]
 ): Promise<void> {
-  const { organizations } = await Settings.current(deps, tenant)
+  // Past the cache: a stale `largeRoles: true` would store a role whose holders get no permissions.
+  const { organizations } = (await Settings.get(deps, tenant, true)).settings
   if (!organizations.largeRoles && !roleFitsInline(key, permissions)) {
     throw new AuthError('organization.role_too_large')
   }

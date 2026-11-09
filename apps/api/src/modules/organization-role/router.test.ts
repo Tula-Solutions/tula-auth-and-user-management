@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   BUILT_IN_ROLES,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -13,6 +13,7 @@ import {
   type User,
 } from '@tula-tech/contract'
 import { createApp } from '~/index'
+import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 import { comparable } from '~/testing/comparable'
 
@@ -334,6 +335,27 @@ describe('POST /v1/admin/organization-roles', () => {
     expect(update.status).toBe(422)
     expect(await code(update)).toBe('organization.role_too_large')
     expect(roleActions()).toEqual(['organization_role.created'])
+  })
+
+  test('judges size on settings read past the cache', async () => {
+    const store: EnvironmentSettingsStore = deps.environmentSettings
+    const real = store.get.bind(store)
+    spyOn(store, 'get').mockImplementation(async (id, fresh) => {
+      const stored = await real(id, fresh)
+      return fresh || !stored
+        ? stored
+        : {
+            ...stored,
+            settings: {
+              ...stored.settings,
+              organizations: { ...stored.settings.organizations, largeRoles: true },
+            },
+          }
+    })
+    const keys = Array.from({ length: 33 }, (_, i) => `org:feature${i}:read`)
+    const res = await roles('POST', '', { ...BILLING, key: 'big', permissions: keys })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('organization.role_too_large')
   })
 
   test('refuses the 51st custom role, and a deleted one makes room', async () => {
