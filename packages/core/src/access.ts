@@ -15,6 +15,8 @@ const CLOCK_TOLERANCE_SECONDS = 5
 const JWKS_REFETCH_MS = 30_000
 const DEFAULT_CACHE_BYTES = 8 * 1024 * 1024
 const DEFAULT_TIMEOUT_MS = 5000
+/** How long a denial is kept: the longest an access token lives, so no token it names outlasts it. */
+const DENY_MS = 15 * 60_000
 
 /**
  * Thrown by {@link AccessChecker.check} when a decision cannot be made safely: the permission
@@ -73,12 +75,35 @@ export interface AccessChecker {
    * @throws AccessUnavailableError when a needed lookup fails or its answer is not the token's.
    */
   check(token: string, permission: string): Promise<AccessDecision>
+
+  /**
+   * Take in a webhook event so that a removal takes effect before the tokens it concerns expire
+   * ([ADR 0068](../../../docs/adr/0068-role-permission-snapshots.md), section 9).
+   *
+   * The caller verifies the webhook's signature first (`verifyWebhook`): this takes the event as
+   * trusted. It can only narrow what `check` allows, never widen it: a removed membership, a
+   * revoked session and a role change deny by id for 15 minutes, and a role's new version makes
+   * `check` read that version and intersect it with the token's list. An added permission is
+   * granted only by a refreshed token. Unknown, malformed and test events are ignored. Nothing is
+   * kept but ids, a version and a time, and nothing is persisted: a restart forgets them, and
+   * a lost event leaves a token valid until it expires.
+   *
+   * @param event - A verified event of any type.
+   */
+  apply(event: unknown): void
 }
 
 interface Entry {
   permissions: Set<string>
   bytes: number
 }
+
+interface LatestRole {
+  version: number
+  permissions: Set<string>
+}
+
+const asString = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
 
 function decodePart(part: string): Uint8Array<ArrayBuffer> {
   const binary = atob(part.replace(/-/g, '+').replace(/_/g, '/'))
@@ -129,6 +154,11 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
   const cache = new Map<string, Entry>() // insertion order is recency
   const inFlight = new Map<string, Promise<Set<string>>>()
   let cachedBytes = 0
+  // What `apply` learned. Ids and numbers only; a Map's insertion order is expiry order.
+  const latestVersion = new Map<string, number>()
+  const deniedSessions = new Map<string, number>() // session id -> expires at (ms)
+  const deniedMembers = new Map<string, { until: number; before: number }>() // org|user -> ...
+  const latestInFlight = new Map<string, Promise<LatestRole>>()
 
   async function request(url: string, headers: Record<string, string>): Promise<unknown> {
     const signal = AbortSignal.timeout(timeoutMs)
@@ -286,7 +316,110 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     return pending
   }
 
+  /** The newest version of the token's own role, read with the token and cached by version. */
+  async function latestOf(token: string, role: string, known: number): Promise<LatestRole> {
+    const hit = cache.get(`${issuer}|${role}|${known}`)
+    if (hit) {
+      return { version: known, permissions: hit.permissions }
+    }
+    const flight = `${role}|${known}`
+    let pending = latestInFlight.get(flight)
+    if (!pending) {
+      pending = (async () => {
+        const body = (await request(
+          `${options.apiUrl.replace(/\/+$/, '')}/v1/client/me/organizations/active/permissions/latest`,
+          {
+            authorization: `Bearer ${token}`,
+            'x-tula-publishable-key': options.publishableKey,
+          }
+        )) as { role?: unknown; version?: unknown; hash?: unknown; permissions?: unknown } | null
+        const list = body?.permissions
+        if (
+          body?.role !== role ||
+          typeof body.version !== 'number' ||
+          !Number.isInteger(body.version) ||
+          typeof body.hash !== 'string' ||
+          !Array.isArray(list) ||
+          !list.every((k) => typeof k === 'string' && PERMISSION_KEY_PATTERN.test(k)) ||
+          !(await verifyPermissionsHash(list, body.hash))
+        ) {
+          throw new AccessUnavailableError('The latest permission list is not the role’s.')
+        }
+        const permissions = new Set<string>(list)
+        remember(`${issuer}|${role}|${body.version}`, permissions)
+        // The server's answer is the truth: it also repairs a version an event overstated.
+        latestVersion.set(role, body.version)
+        return { version: body.version, permissions }
+      })().finally(() => latestInFlight.delete(flight))
+      latestInFlight.set(flight, pending)
+    }
+    return pending
+  }
+
+  function denied(claims: Record<string, unknown>, orgId: string | null): boolean {
+    const now = Date.now()
+    for (const map of [deniedSessions, deniedMembers]) {
+      for (const [key, entry] of map) {
+        if ((typeof entry === 'number' ? entry : entry.until) > now) {
+          break
+        }
+        map.delete(key)
+      }
+    }
+    const sid = asString(claims.sid)
+    if (sid && deniedSessions.has(sid)) {
+      return true
+    }
+    const sub = asString(claims.sub)
+    const member = sub && orgId ? deniedMembers.get(`${orgId}|${sub}`) : undefined
+    if (!member) {
+      return false
+    }
+    const iat = typeof claims.iat === 'number' ? claims.iat * 1000 : 0
+    return iat <= member.before
+  }
+
   return {
+    apply(event) {
+      if (typeof event !== 'object' || event === null) {
+        return
+      }
+      const { type, test, target, data, occurredAt } = event as Record<string, unknown>
+      const d = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
+      const until = Date.now() + DENY_MS
+      if (test === true) {
+        return // nothing it describes happened
+      }
+      if (type === 'session.revoked' || type === 'session.reuse_detected') {
+        const sid = asString((target as { id?: unknown } | null)?.id)
+        if (sid) {
+          deniedSessions.delete(sid) // re-inserted last: the Map stays in expiry order
+          deniedSessions.set(sid, until)
+        }
+      } else if (
+        type === 'organization_membership.removed' ||
+        type === 'organization_membership.role_changed'
+      ) {
+        const orgId = asString(d.organizationId)
+        const userId = asString(d.userId)
+        if (orgId && userId) {
+          // A removal denies every token; a role change only the ones issued before it.
+          const at = Date.parse(String(occurredAt))
+          const before =
+            type === 'organization_membership.removed' || Number.isNaN(at)
+              ? Number.POSITIVE_INFINITY
+              : at
+          deniedMembers.delete(`${orgId}|${userId}`)
+          deniedMembers.set(`${orgId}|${userId}`, { until, before })
+        }
+      } else if (type === 'organization_role.updated') {
+        const role = asString(d.role)
+        const version = d.version
+        if (role && typeof version === 'number' && Number.isInteger(version)) {
+          latestVersion.set(role, Math.max(version, latestVersion.get(role) ?? 0))
+        }
+      }
+    },
     async check(token, permission) {
       const claims = await verify(token)
       if (!claims) {
@@ -296,6 +429,9 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
       if (found.kind === 'none') {
         return { allowed: false, reason: 'no_organization' }
       }
+      if (denied(claims, found.kind === 'inline' ? found.claims.orgId : found.orgId)) {
+        return { allowed: false, reason: 'not_granted' }
+      }
       if (found.kind === 'inline') {
         const { orgId, orgRole, orgPermissions } = found.claims
         return orgPermissions.includes(permission)
@@ -303,7 +439,13 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
           : { allowed: false, reason: 'not_granted' }
       }
       const granted = await permissionsOf(token, found.permissionsHash)
-      return granted.has(permission)
+      const newest = latestVersion.get(found.orgRole) ?? 0
+      // Only a removal takes effect early: the token's list intersected with the newest one.
+      const narrowed =
+        newest > found.roleVersion
+          ? (await latestOf(token, found.orgRole, newest)).permissions
+          : null
+      return granted.has(permission) && (!narrowed || narrowed.has(permission))
         ? { allowed: true, orgId: found.orgId, role: found.orgRole, version: found.roleVersion }
         : { allowed: false, reason: 'not_granted' }
     },

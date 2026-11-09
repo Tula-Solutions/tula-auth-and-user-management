@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { permissionsHash } from '@tula-tech/contract/custom-claims'
 import { environmentIssuer } from '@tula-tech/contract/issuer'
 import { AccessUnavailableError, createAccessChecker } from './access'
@@ -269,5 +269,211 @@ describe('createAccessChecker', () => {
     current = ['org:a:b']
     await s.access.check(two[0] as string, 'org:a:b')
     expect(s.lookups()).toHaveLength(before + 1)
+  })
+})
+
+describe('access.apply: closing the window with webhooks', () => {
+  const nowIso = () => new Date().toISOString()
+  const event = (type: string, target: string, data: Record<string, unknown>, at = nowIso()) => ({
+    id: 'evt_1',
+    type,
+    schemaVersion: 1,
+    occurredAt: at,
+    actor: { type: 'admin', id: null },
+    target: { type: 'x', id: target },
+    data,
+  })
+
+  /** A checker whose `/latest` answers with `latest`; the other lookup answers with `PERMS`. */
+  function withLatest(latest: { version: number; permissions: string[] } | 'fail') {
+    const calls: string[] = []
+    const fetchFake = (async (input: string | URL | Request) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/.well-known/jwks.json')) {
+        return Response.json({ keys: [jwk] })
+      }
+      if (url.endsWith('/latest')) {
+        if (latest === 'fail') {
+          return new Response(null, { status: 503 })
+        }
+        return Response.json({
+          role: 'iso_manager',
+          version: latest.version,
+          permissions: latest.permissions,
+          hash: await permissionsHash(latest.permissions),
+        })
+      }
+      return Response.json({
+        role: 'iso_manager',
+        version: 7,
+        permissions: PERMS,
+        hash: await permissionsHash(PERMS),
+      })
+    }) as typeof fetch
+    const access = createAccessChecker({
+      apiUrl: API,
+      environmentId: ENV,
+      publishableKey: 'tula_pk_dev_x',
+      fetch: fetchFake,
+    })
+    return { access, latestCalls: () => calls.filter((u) => u.endsWith('/latest')) }
+  }
+
+  const roleUpdated = (version: number, data: Record<string, unknown> = {}) =>
+    event('organization_role.updated', 'role_1', {
+      role: 'iso_manager',
+      version,
+      hash: '1.x',
+      changed: ['permissions'],
+      permissions: 1,
+      ...data,
+    })
+
+  test('a removed permission is denied right after the event, with one lookup', async () => {
+    const { access, latestCalls } = withLatest({ version: 8, permissions: ['org:leads:view'] })
+    const token = await lookupToken()
+    expect((await access.check(token, 'org:leads:edit')).allowed).toBe(true)
+    access.apply(roleUpdated(8))
+    expect(await access.check(token, 'org:leads:edit')).toEqual({
+      allowed: false,
+      reason: 'not_granted',
+    })
+    expect((await access.check(token, 'org:leads:view')).allowed).toBe(true)
+    expect(latestCalls()).toHaveLength(1)
+  })
+
+  test('an added permission is not granted until the token is refreshed', async () => {
+    const { access } = withLatest({
+      version: 8,
+      permissions: [...PERMS, 'org:leads:delete'],
+    })
+    const token = await lookupToken()
+    access.apply(roleUpdated(8))
+    expect((await access.check(token, 'org:leads:delete')).allowed).toBe(false)
+    expect((await access.check(token, 'org:leads:view')).allowed).toBe(true)
+  })
+
+  test('a lost webhook leaves the token valid until it expires, then it is invalid', async () => {
+    const { access, latestCalls } = withLatest({ version: 8, permissions: [] })
+    const live = await lookupToken()
+    expect((await access.check(live, 'org:leads:edit')).allowed).toBe(true)
+    expect(latestCalls()).toHaveLength(0)
+    const expired = await mint(
+      { org_id: ORG, org_role: 'iso_manager', org_rv: 7, org_ph: await permissionsHash(PERMS) },
+      { exp: Math.floor(Date.now() / 1000) - 60 }
+    )
+    expect(await access.check(expired, 'org:leads:edit')).toEqual({
+      allowed: false,
+      reason: 'invalid_token',
+    })
+  })
+
+  test('a failed latest lookup is unavailable, never allowed', async () => {
+    const { access } = withLatest('fail')
+    const token = await lookupToken()
+    access.apply(roleUpdated(8))
+    await expect(access.check(token, 'org:leads:view')).rejects.toBeInstanceOf(
+      AccessUnavailableError
+    )
+  })
+
+  test('a removed membership and a revoked session are denied; others are not', async () => {
+    const { access } = withLatest({ version: 7, permissions: PERMS })
+    const token = await lookupToken()
+    const other = await mint({
+      sub: 'u2',
+      sid: 's2',
+      org_id: ORG,
+      org_role: 'a',
+      org_perms: ['org:a:b'],
+    })
+    access.apply(
+      event('organization_membership.removed', 'm1', {
+        organizationId: ORG,
+        userId: 'u1',
+        role: 'iso_manager',
+      })
+    )
+    expect(await access.check(token, 'org:leads:view')).toEqual({
+      allowed: false,
+      reason: 'not_granted',
+    })
+    expect((await access.check(other, 'org:a:b')).allowed).toBe(true)
+    access.apply(event('session.revoked', 's2', { userId: 'u2', reason: 'sign_out' }))
+    expect((await access.check(other, 'org:a:b')).allowed).toBe(false)
+  })
+
+  test('a role change denies the older tokens of that member until they refresh', async () => {
+    const { access } = withLatest({ version: 7, permissions: PERMS })
+    const old = await mint({
+      iat: Math.floor(Date.now() / 1000) - 30,
+      org_id: ORG,
+      org_role: 'admin',
+      org_perms: ['org:a:b'],
+    })
+    access.apply(
+      event('organization_membership.role_changed', 'm1', {
+        organizationId: ORG,
+        userId: 'u1',
+        role: 'viewer',
+        previousRole: 'admin',
+      })
+    )
+    expect((await access.check(old, 'org:a:b')).allowed).toBe(false)
+    const fresh = await mint({
+      iat: Math.floor(Date.now() / 1000) + 5,
+      org_id: ORG,
+      org_role: 'viewer',
+      org_perms: ['org:a:b'],
+    })
+    expect((await access.check(fresh, 'org:a:b')).allowed).toBe(true)
+  })
+
+  test('forged, unknown and test events can only deny, and a test event does nothing', async () => {
+    const { access, latestCalls } = withLatest({ version: 7, permissions: PERMS })
+    const token = await lookupToken()
+    for (const junk of [
+      null,
+      'x',
+      {},
+      event('user.created', 'u1', { userId: 'u1' }),
+      event('organization_role.updated', 'r', {
+        role: 5,
+        version: 'x',
+        permissions: ['org:leads:delete'],
+      }),
+      event('organization_membership.removed', 'm', { userId: 3 }),
+      event('session.revoked', '', {}),
+      {
+        ...event('organization_membership.removed', 'm', { organizationId: ORG, userId: 'u1' }),
+        test: true,
+      },
+    ]) {
+      access.apply(junk)
+    }
+    expect(await access.check(token, 'org:leads:delete')).toEqual({
+      allowed: false,
+      reason: 'not_granted',
+    })
+    expect((await access.check(token, 'org:leads:view')).allowed).toBe(true)
+    expect(latestCalls()).toHaveLength(0)
+  })
+
+  test('a denial lapses after 15 minutes, the longest an access token lives', async () => {
+    const { access } = withLatest({ version: 7, permissions: PERMS })
+    const token = await mint(
+      { org_id: ORG, org_role: 'a', org_perms: ['org:a:b'] },
+      { exp: Math.floor(Date.now() / 1000) + 3600 }
+    )
+    access.apply(event('session.revoked', 's1', { userId: 'u1', reason: 'sign_out' }))
+    expect((await access.check(token, 'org:a:b')).allowed).toBe(false)
+    const real = Date.now()
+    const spy = spyOn(Date, 'now').mockReturnValue(real + 15 * 60_000 + 1000)
+    try {
+      expect((await access.check(token, 'org:a:b')).allowed).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
