@@ -702,7 +702,14 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutRole,
-    data: { role: 'billing_manager', changed: ['permissions'], permissions: 3, weakened: true },
+    data: {
+      role: 'billing_manager',
+      changed: ['permissions'],
+      permissions: 3,
+      version: 4,
+      hash: `1.${'A'.repeat(43)}`,
+      weakened: true,
+    },
   },
   'organization_role.deleted': {
     id: eventId(54),

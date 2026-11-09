@@ -774,6 +774,8 @@ export interface Operations {
   getActiveOrganizationPermissions: { params: Record<string, never>; body: undefined; response: Schemas['ActiveOrganizationPermissions'] }
   /** Client configuration (`GET /v1/client/config`). */
   getClientConfig: { params: Record<string, never>; body: undefined; response: Schemas['ClientConfig'] }
+  /** Read the latest permissions of the token's role (`GET /v1/client/me/organizations/active/permissions/latest`). */
+  getLatestActiveOrganizationPermissions: { params: Record<string, never>; body: undefined; response: Schemas['ActiveOrganizationPermissions'] }
   /** Get the signed-in user (`GET /v1/client/me`). */
   getMe: { params: Record<string, never>; body: undefined; response: Schemas['CurrentUser'] }
   /** Get my second factors (`GET /v1/client/me/factors`). */
@@ -978,6 +980,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   finishPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys', session: true },
   getActiveOrganizationPermissions: { method: 'GET', path: '/v1/client/me/organizations/active/permissions', session: true },
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
+  getLatestActiveOrganizationPermissions: { method: 'GET', path: '/v1/client/me/organizations/active/permissions/latest', session: true },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
   getMyOrganizationSsoConnection: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },

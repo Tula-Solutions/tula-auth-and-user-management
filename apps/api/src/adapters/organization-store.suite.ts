@@ -166,7 +166,13 @@ export function describeOrganizationStore(
           type,
           actor,
           target: roleTarget,
-          data: { role: 'billing', changed: ['permissions'], permissions: 2 },
+          data: {
+            role: 'billing',
+            changed: ['permissions'],
+            permissions: 2,
+            version: 2,
+            hash: '1.AAAA',
+          },
         })
       case 'organization_role.deleted':
         return Audit.entry(deps, scope, {

@@ -9,6 +9,7 @@ import {
   type OrganizationMembership,
   type OrganizationRole,
   type OrganizationRoleList,
+  permissionsHash,
   type User,
 } from '@tula-tech/contract'
 import { createApp } from '~/index'
@@ -370,6 +371,8 @@ describe('PATCH /v1/admin/organization-roles/:key', () => {
       role: 'billing',
       changed: ['name', 'permissions'],
       permissions: 2,
+      version: 2,
+      hash: await permissionsHash(['org:billing:read', 'org:billing:write']),
       weakened: true,
     })
     const text = JSON.stringify(entry)
@@ -384,12 +387,16 @@ describe('PATCH /v1/admin/organization-roles/:key', () => {
       role: 'billing',
       changed: ['permissions'],
       permissions: 1,
+      version: 2,
+      hash: await permissionsHash(['org:billing:read']),
     })
     await roles('PATCH', '/billing', { name: 'Renamed' }, SK, ifMatch(2))
     expect(roleEntries().at(-1)?.data).toEqual({
       role: 'billing',
       changed: ['name'],
       permissions: 1,
+      version: 3,
+      hash: await permissionsHash(['org:billing:read']),
     })
     await roles(
       'PATCH',

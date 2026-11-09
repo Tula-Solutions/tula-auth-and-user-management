@@ -279,4 +279,90 @@ router.get(
   }
 )
 
+router.get(
+  '/active/permissions/latest',
+  describeRoute({
+    operationId: 'getLatestActiveOrganizationPermissions',
+    tags: ['Organizations'],
+    summary: "Read the latest permissions of the token's role",
+    description:
+      "The role's current snapshot for the token's organization and role, for a verifier that " +
+      'learned of a newer version from a webhook. Answers only while the caller is still a ' +
+      'member holding that role; every other case is the same ' +
+      '`organization.permissions_unavailable` (404). It changes, so it is never cached. ' +
+      'A device-bound session sends a DPoP proof, as at a refresh. ' +
+      disabled,
+    security: openapi.security.session,
+    responses: {
+      200: {
+        description: "The role version's permissions.",
+        content: json(ActiveOrganizationPermissionsSchema),
+      },
+      304: { description: "The client's copy (its `ETag`) is current." },
+      404: openapi.responses[404],
+      ...errors,
+    },
+  }),
+  rateLimit({
+    name: 'my_organizations_permissions_latest',
+    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  rateLimit({
+    name: 'my_organizations_permissions_latest_session',
+    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    // `rateLimit`'s context is the bare `AppEnv`; `sessionAuth()` has set `session` by now.
+    key: (c) => {
+      const { sid } = (c as unknown as Context<AppEnv & { Variables: SessionVariables }>).get(
+        'session'
+      )
+      return `sid:${sid}`
+    },
+  }),
+  async (c) => {
+    const claims = c.get('session')
+    const deps = c.get('deps')
+    const tenant = c.get('tenant')
+    if (claims.cnf) {
+      await DeviceBinding.atResource(deps, tenant, claims.cnf.jkt, {
+        proof: c.req.header(DPOP_HEADER),
+        method: c.req.method,
+        path: c.req.path,
+      })
+    }
+    const unavailable = new AuthError('organization.permissions_unavailable')
+    const role = claims.org_role
+    const organizationId = claims.org_id
+    if (!role || !organizationId) {
+      throw unavailable
+    }
+    const member = await deps.organizations.findMembership(
+      tenant.environmentId,
+      organizationId,
+      claims.sub
+    )
+    const found =
+      member?.roleKey === role && (await deps.organizations.findRole(tenant.environmentId, role))
+    const snapshot =
+      found &&
+      (await deps.organizations.findRoleVersion(tenant.environmentId, found.id, found.version))
+    if (!found || !snapshot) {
+      throw unavailable
+    }
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      ActiveOrganizationPermissionsSchema.parse({
+        role,
+        version: found.version,
+        permissions: snapshot.permissions,
+        hash: snapshot.permissionsHash,
+      })
+    )
+  }
+)
+
 export default router

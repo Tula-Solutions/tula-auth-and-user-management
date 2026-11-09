@@ -90,6 +90,9 @@ object TulaOperations {
     /** Client configuration (`GET /v1/client/config`). No body. Answers [ClientConfig]. */
     val getClientConfig: TulaOperation = TulaOperation("getClientConfig", "GET", "/v1/client/config", false)
 
+    /** Read the latest permissions of the token's role (`GET /v1/client/me/organizations/active/permissions/latest`). No body. Answers [ActiveOrganizationPermissions]. */
+    val getLatestActiveOrganizationPermissions: TulaOperation = TulaOperation("getLatestActiveOrganizationPermissions", "GET", "/v1/client/me/organizations/active/permissions/latest", true)
+
     /** Get the signed-in user (`GET /v1/client/me`). No body. Answers [CurrentUser]. */
     val getMe: TulaOperation = TulaOperation("getMe", "GET", "/v1/client/me", true)
 
@@ -365,6 +368,7 @@ object TulaOperations {
         finishPasskeyRegistration,
         getActiveOrganizationPermissions,
         getClientConfig,
+        getLatestActiveOrganizationPermissions,
         getMe,
         getMyFactors,
         getMyOrganizationSsoConnection,

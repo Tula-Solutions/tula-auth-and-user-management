@@ -2512,6 +2512,12 @@ export interface OrganizationRoleUpdatedEventData {
      * @maximum 32
      */
   permissions: number;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  hash: string;
   weakened?: true;
 }
 
