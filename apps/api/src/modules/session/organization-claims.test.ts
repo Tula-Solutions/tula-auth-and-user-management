@@ -36,10 +36,10 @@ const MAYA = '00000000-0000-7000-8000-0000000000a1'
 const SAM = '00000000-0000-7000-8000-0000000000a2'
 const ADMIN_PERMISSIONS = [
   ...(BUILT_IN_ROLES.find((role) => role.key === 'admin')?.permissions ?? []),
-]
+].sort() // the snapshot's order: by code point
 const MEMBER_PERMISSIONS = [
   ...(BUILT_IN_ROLES.find((role) => role.key === 'member')?.permissions ?? []),
-]
+].sort() // the snapshot's order: by code point
 
 let deps: TestDeps
 let revision = 0
@@ -208,6 +208,26 @@ describe('setting the active organization', () => {
     expect(claims.org_rv).toBe(role?.version)
     expect(claims.org_ph).toBe(snapshot?.permissionsHash)
     expect(claims.org_ph).toBe(await permissionsHash(ADMIN_PERMISSIONS))
+  })
+
+  test('org_perms is the snapshot list that was hashed, sorted and distinct', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const real = deps.organizations.findUserMembership.bind(deps.organizations)
+    const spy = spyOn(deps.organizations, 'findUserMembership').mockImplementation(async (...a) => {
+      const held = await real(...a)
+      return (
+        held && {
+          ...held,
+          permissions: [...held.permissions].reverse().concat(held.permissions[0] ?? []),
+        }
+      )
+    })
+    const claims = claimsOf(await setActive(tokens, acme.id)) as Record<string, unknown>
+    spy.mockRestore()
+    expect(claims.org_perms).toEqual(ADMIN_PERMISSIONS)
+    expect(await permissionsHash(claims.org_perms as string[])).toBe(claims.org_ph as string)
   })
 
   test('a membership whose role has no snapshot yields a token with no organization claims, and logs', async () => {
@@ -525,7 +545,7 @@ describe('the most a role can put in a token', () => {
   const ACTION = 'a'.repeat(31)
   const maximal = Array.from(
     { length: 32 },
-    (_, index) => `org:${FEATURE}${index % 10}:${ACTION}${index % 10}`
+    (_, index) => `org:${FEATURE}${index % 10}:${ACTION}${Math.floor(index / 10)}`
   )
 
   /** Stores a custom role directly, past what the roles API would accept. */
@@ -558,7 +578,7 @@ describe('the most a role can put in a token', () => {
     for (const issued of [active, await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))]) {
       const read = readOrganizationClaims(claimsOf(issued))
       expect(read?.orgRole).toBe(longest)
-      expect(read?.orgPermissions).toEqual(maximal)
+      expect(read?.orgPermissions).toEqual([...maximal].sort())
       const payload = claimsOf(issued)
       const bytes = JSON.stringify({
         org_id: payload.org_id,

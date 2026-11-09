@@ -15,12 +15,12 @@ import * as Settings from '~/modules/settings/service'
 import type { UserMembershipRecord } from '~/ports/organization-store'
 import type { SessionRecord } from '~/ports/session-store'
 
-/** What building a session's organization claims reads. */
 /** The claims a token is issued with: `orgPermissions` is absent for a lookup token. */
 export type IssuedOrganizationClaims = Omit<OrganizationClaims, 'orgPermissions'> & {
   readonly orgPermissions?: readonly string[]
 }
 
+/** What building a session's organization claims reads. */
 type ClaimDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config'>
 
 /**
@@ -95,7 +95,8 @@ export function fromMembership(
   const claims = {
     orgId: held.organization.id,
     orgRole: held.membership.roleKey,
-    orgPermissions: held.permissions,
+    // The snapshot's list is the one `permissionsHash` covers (sorted, distinct): never the role's raw one.
+    orgPermissions: snapshot.permissions,
     roleVersion: snapshot.version,
     permissionsHash: snapshot.permissionsHash,
   }
