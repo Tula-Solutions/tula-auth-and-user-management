@@ -95,7 +95,7 @@ class OrganizationsTest {
     @Test
     fun `the claims are held to their byte cap, with the contract's own numbers`() {
         // The contract's maximal claims (custom-claims.test.ts): a 36-character id, a role of 32
-        // characters and 32 permissions of 73, which take 2,541 bytes inside the cap of 2,560.
+        // characters and 32 permissions of 73, which take 2,541 bytes inside the cap of 2,656 (which holds a 96-byte reserve for org_rv and org_ph).
         val feature = "f".repeat(31)
         val action = "a".repeat(31)
         val list = (0 until 32).joinToString(",", "[", "]") { "\"org:sys:$feature${it % 10}:$action${it % 10}\"" }
@@ -109,11 +109,13 @@ class OrganizationsTest {
             TulaOrganizationClaims.read(orgJwt("a", orgClaims(id = "o1", role = "member", permissions = "[]"))),
         )
         assertEquals(50, small.bytes())
-        // An id the grammar allows can still push the claims over the cap: nothing is repaired,
-        // the organization is simply not active.
-        assertNull(
+        // The longest id the grammar allows still fits: the reserve leaves room for it, so the
+        // grammar's bounds, not the cap, are what stop a larger set.
+        val longId = assertNotNull(
             TulaOrganizationClaims.read(orgJwt("a", orgClaims(id = "i".repeat(64), role = role, permissions = list))),
         )
+        assertEquals(2569, longId.bytes())
+        assertTrue(longId.bytes() <= TulaOrganizationClaims.MAX_BYTES)
     }
 
     @Test
