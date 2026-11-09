@@ -10,7 +10,7 @@ import {
 } from '@tula-tech/contract'
 import { type Context, Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
-import type { AppEnv, SessionVariables } from '~/dependencies'
+import type { AppEnv, SessionVariables, TenantVariables } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { userActor } from '~/lib/actor'
@@ -194,6 +194,61 @@ router.put(
   }
 )
 
+type LookupContext = Context<AppEnv & { Variables: TenantVariables & SessionVariables }, string>
+
+/**
+ * The per-session limit of a lookup route, after `sessionAuth()` has set the session.
+ *
+ * @param name - The limiter's name.
+ * @returns The rate-limit middleware.
+ */
+function perSession(name: string) {
+  return rateLimit({
+    name,
+    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    // `rateLimit`'s context is the bare `AppEnv`; `sessionAuth()` has set `session` by now.
+    key: (c) => {
+      const { sid } = (c as unknown as LookupContext).get('session')
+      return `sid:${sid}`
+    },
+  })
+}
+
+/**
+ * Require the DPoP proof of a device-bound session, as at a refresh.
+ *
+ * @param c - The request's context, past `sessionAuth()`.
+ * @throws AuthError when the proof is missing or invalid.
+ */
+async function proveDevice(c: LookupContext): Promise<void> {
+  const claims = c.get('session')
+  if (claims.cnf) {
+    await DeviceBinding.atResource(c.get('deps'), c.get('tenant'), claims.cnf.jkt, {
+      proof: c.req.header(DPOP_HEADER),
+      method: c.req.method,
+      path: c.req.path,
+    })
+  }
+}
+
+/**
+ * Whether an `If-None-Match` header names the ETag `"hash"`: a comma list, `*` and the weak
+ * form `W/"…"` all count (RFC 9110 §13.1.2; a weak comparison is what a GET revalidation uses).
+ *
+ * @param header - The request's `If-None-Match` value.
+ * @param hash - The permissions hash the ETag holds.
+ * @returns True when the client's copy is current.
+ */
+function etagMatches(header: string | undefined, hash: string): boolean {
+  return (
+    header?.split(',').some((tag) => {
+      const value = tag.trim()
+      return value === '*' || value.replace(/^W\//, '') === `"${hash}"`
+    }) ?? false
+  )
+}
+
 router.get(
   '/active/permissions',
   describeRoute({
@@ -227,29 +282,12 @@ router.get(
   }),
   publishableKey(),
   sessionAuth(),
-  rateLimit({
-    name: 'my_organizations_permissions_session',
-    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
-    window: '1m',
-    // `rateLimit`'s context is the bare `AppEnv`; `sessionAuth()` has set `session` by now.
-    key: (c) => {
-      const { sid } = (c as unknown as Context<AppEnv & { Variables: SessionVariables }>).get(
-        'session'
-      )
-      return `sid:${sid}`
-    },
-  }),
+  perSession('my_organizations_permissions_session'),
   async (c) => {
     const claims = c.get('session')
     const deps = c.get('deps')
     const tenant = c.get('tenant')
-    if (claims.cnf) {
-      await DeviceBinding.atResource(deps, tenant, claims.cnf.jkt, {
-        proof: c.req.header(DPOP_HEADER),
-        method: c.req.method,
-        path: c.req.path,
-      })
-    }
+    await proveDevice(c)
     const unavailable = new AuthError('organization.permissions_unavailable')
     const role = claims.org_role
     const version = claims.org_rv
@@ -265,7 +303,7 @@ router.get(
     }
     c.header('Cache-Control', 'private, max-age=31536000, immutable')
     c.header('ETag', `"${hash}"`)
-    if (c.req.header('if-none-match') === `"${hash}"`) {
+    if (etagMatches(c.req.header('if-none-match'), hash)) {
       return c.body(null, 304)
     }
     return c.json(
@@ -311,29 +349,12 @@ router.get(
   }),
   publishableKey(),
   sessionAuth(),
-  rateLimit({
-    name: 'my_organizations_permissions_latest_session',
-    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
-    window: '1m',
-    // `rateLimit`'s context is the bare `AppEnv`; `sessionAuth()` has set `session` by now.
-    key: (c) => {
-      const { sid } = (c as unknown as Context<AppEnv & { Variables: SessionVariables }>).get(
-        'session'
-      )
-      return `sid:${sid}`
-    },
-  }),
+  perSession('my_organizations_permissions_latest_session'),
   async (c) => {
     const claims = c.get('session')
     const deps = c.get('deps')
     const tenant = c.get('tenant')
-    if (claims.cnf) {
-      await DeviceBinding.atResource(deps, tenant, claims.cnf.jkt, {
-        proof: c.req.header(DPOP_HEADER),
-        method: c.req.method,
-        path: c.req.path,
-      })
-    }
+    await proveDevice(c)
     const unavailable = new AuthError('organization.permissions_unavailable')
     const role = claims.org_role
     const organizationId = claims.org_id
