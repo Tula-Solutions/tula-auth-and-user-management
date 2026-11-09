@@ -22,7 +22,7 @@ async function causeOf(attempt: Promise<unknown>): Promise<string> {
 }
 
 describe('a snapshot is append-only for the runtime role', () => {
-  async function insertSnapshot() {
+  async function insertSnapshot(createdAt?: Date) {
     const tenant = await database.tenant()
     const roleId = Bun.randomUUIDv7()
     await withTenant(database.first.db, tenant.environmentId, (tx) =>
@@ -34,6 +34,7 @@ describe('a snapshot is append-only for the runtime role', () => {
         version: 1,
         permissions: [],
         permissionsHash: `1.${'A'.repeat(43)}`,
+        ...(createdAt ? { createdAt } : {}),
       })
     )
     return { tenant, roleId }
@@ -49,12 +50,29 @@ describe('a snapshot is append-only for the runtime role', () => {
     expect(await causeOf(attempt)).toMatch(/permission denied/)
   })
 
-  test('a DELETE is refused', async () => {
-    const { tenant, roleId } = await insertSnapshot()
-    const attempt = withTenant(database.first.db, tenant.environmentId, (tx) =>
+  /** How many rows of a role the runtime role can still see. */
+  async function remaining(environmentId: string, roleId: string): Promise<number> {
+    const { rows } = (await withTenant(database.first.db, environmentId, (tx) =>
+      tx.execute(sql`SELECT 1 FROM tula.organization_role_versions WHERE role_id = ${roleId}`)
+    )) as { rows: unknown[] }
+    return rows.length
+  }
+
+  const remove = (environmentId: string, roleId: string) =>
+    withTenant(database.first.db, environmentId, (tx) =>
       tx.execute(sql`DELETE FROM tula.organization_role_versions WHERE role_id = ${roleId}`)
     )
-    expect(await causeOf(attempt)).toMatch(/permission denied/)
+
+  test('a DELETE of a fresh row removes nothing: the retention floor', async () => {
+    const { tenant, roleId } = await insertSnapshot()
+    await remove(tenant.environmentId, roleId)
+    expect(await remaining(tenant.environmentId, roleId)).toBe(1)
+  })
+
+  test('a DELETE of a row older than a day succeeds', async () => {
+    const { tenant, roleId } = await insertSnapshot(new Date(Date.now() - 2 * 86_400_000))
+    await remove(tenant.environmentId, roleId)
+    expect(await remaining(tenant.environmentId, roleId)).toBe(0)
   })
 })
 

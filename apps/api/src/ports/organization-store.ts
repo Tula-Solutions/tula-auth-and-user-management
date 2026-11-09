@@ -464,6 +464,18 @@ export interface OrganizationStore {
   ): Promise<OrganizationRoleVersionRecord | null>
 
   /**
+   * Delete role snapshots older than a cutoff that a later version of their role has replaced,
+   * at most `limit` of them (the retention job's batch). A role's current version is never
+   * deleted, whatever its age: a token minted now carries it.
+   *
+   * @param environmentId - The environment whose snapshots are purged.
+   * @param before - The cutoff: snapshots created earlier go.
+   * @param limit - The most rows to delete.
+   * @returns How many were deleted.
+   */
+  purgeSupersededRoleVersions(environmentId: string, before: Date, limit: number): Promise<number>
+
+  /**
    * @param environmentId - The environment to look in.
    * @param id - The role's id.
    * @returns The role, or `null` when the environment has none with that id.

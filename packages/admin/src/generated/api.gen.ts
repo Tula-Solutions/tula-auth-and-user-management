@@ -23,6 +23,8 @@ export interface Schemas {
     sso_conn?: string
     org_role?: string
     org_perms?: string[]
+    org_rv?: number
+    org_ph?: string
     ext?: {
       [key: string]: string | number | boolean
     }

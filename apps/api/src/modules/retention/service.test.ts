@@ -403,6 +403,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -494,6 +495,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -593,6 +595,7 @@ describe('purge', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          roleVersions: 0,
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
@@ -847,6 +850,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -1126,6 +1130,20 @@ describe('audit retention', () => {
     expect(deleteAudit).not.toHaveBeenCalled()
   })
 
+  test('purges superseded role snapshots past the audit period, and none for a null period', async () => {
+    const purge = spyOn(deps.organizations, 'purgeSupersededRoleVersions')
+    spies.push(purge)
+    keepAuditFor(tenant, 30)
+    keepAuditFor(otherTenant, null)
+    await Retention.purge(deps)
+    const calls = purge.mock.calls.filter(
+      ([environmentId]) => environmentId === tenant.environmentId
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.[1]).toEqual(new Date(deps.clock.now().getTime() - 30 * DAY))
+    expect(purge.mock.calls.some(([id]) => id === otherTenant.environmentId)).toBe(false)
+  })
+
   test('reads the period from the source, past this instance’s settings cache', async () => {
     // A period lengthened on another instance must not be undercut by a stale copy here:
     // unlike every other setting, acting on an old value destroys something.
@@ -1133,10 +1151,12 @@ describe('audit retention', () => {
     spies.push(get)
     await Retention.purge(deps)
     // The memory store declares one parameter (it has no cache to read past): widen the calls.
-    // Twice an environment: its audit period, and its password history (below).
+    // An environment's audit period, its role snapshots' (the same period) and its password history.
     expect(get.mock.calls as unknown[][]).toEqual([
       [tenant.environmentId, true],
       [tenant.environmentId, true],
+      [tenant.environmentId, true],
+      [otherTenant.environmentId, true],
       [otherTenant.environmentId, true],
       [otherTenant.environmentId, true],
     ])
@@ -1314,6 +1334,7 @@ describe('run', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          roleVersions: 0,
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
@@ -1353,6 +1374,7 @@ describe('run', () => {
         passkeyChallenges: 0,
         instanceAuditLogs: 0,
         auditLogs: 0,
+        roleVersions: 0,
         webhookDeliveries: 0,
         events: 0,
         smsCodeCounts: 0,

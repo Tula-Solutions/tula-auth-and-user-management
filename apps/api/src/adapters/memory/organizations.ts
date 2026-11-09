@@ -884,11 +884,33 @@ export class MemoryOrganizationStore implements OrganizationStore {
     return found ? structuredClone(found) : null
   }
 
+  /** @inheritdoc */
+  async purgeSupersededRoleVersions(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const due = [...this.#versions.entries()]
+      .filter(([, one]) => {
+        const role = this.#roles.get(one.roleId)
+        return (
+          role?.environmentId === environmentId &&
+          one.version < role.version &&
+          one.createdAt.getTime() < before.getTime()
+        )
+      })
+      .slice(0, limit)
+    for (const [key] of due) {
+      this.#versions.delete(key)
+    }
+    return due.length
+  }
+
   /** Store the snapshot of a role's current version, unless that version has one. */
   async #snapshot(role: OrganizationRoleRecord): Promise<void> {
     const key = `${role.environmentId}/${role.id}/${role.version}`
     if (!this.#versions.has(key)) {
-      this.#versions.set(key, { ...(await roleSnapshot(role)), createdAt: role.updatedAt })
+      this.#versions.set(key, await roleSnapshot(role))
     }
   }
 }
