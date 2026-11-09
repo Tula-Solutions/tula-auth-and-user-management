@@ -8,6 +8,16 @@ Tula's public, language-neutral contract: schemas, flow protocol, error codes, t
 
 Source: `packages/contract/src/index.ts`
 
+### `ACCESS_REASONS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Why {@link OrganizationAccessExplanationSchema} decided as it did.
+
+```ts
+const ACCESS_REASONS: readonly ["not_a_member", "permission_granted", "permission_not_granted"]
+```
+
 ### `ACCESS_TOKEN_ALGORITHM`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -293,6 +303,27 @@ The session after its active organization changed.
 
 ```ts
 export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
+```
+
+### `ActiveOrganizationPermissions`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The permissions of the role version the session's token names.
+
+```ts
+export type ActiveOrganizationPermissions = z.infer<typeof ActiveOrganizationPermissionsSchema>
+```
+
+### `ActiveOrganizationPermissionsSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permissions of the role version an access token names (`org_role`, `org_rv`), with the
+hash the token carries as `org_ph`. Immutable for that hash, so a client caches it for good.
+
+```ts
+const ActiveOrganizationPermissionsSchema
 ```
 
 ### `ActiveOrganizationSchema`
@@ -4905,12 +4936,14 @@ cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
 It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
 characters), a role key of 32 characters and 32 permissions of the longest key
 (`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
-room. A role is bounded by the contract and the database, so a token never reaches it
+room. It also holds a fixed reserve of 96 bytes for `org_rv` (a 10-digit version, 20 bytes)
+and `org_ph` (a 45-character hash, 57 bytes) so that the largest role still fits beside them.
+A role is bounded by the contract and the database, so a token never reaches it
 unless a row was written by hand: the server then issues the token **without** the
 organization claims (no claim is "no permission"), never with a cut list.
 
 ```ts
-const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2656
 ```
 
 ### `MAX_ORGANIZATION_NAME_LENGTH`
@@ -6114,6 +6147,27 @@ An organization.
 export type Organization = z.infer<typeof OrganizationSchema>
 ```
 
+### `OrganizationAccessExplanation`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The decision about one permission of one member.
+
+```ts
+export type OrganizationAccessExplanation = z.infer<typeof OrganizationAccessExplanationSchema>
+```
+
+### `OrganizationAccessExplanationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The answer to "can this member do this?" and how it was reached. The dashboard shows it as
+"Why?" and an agent reads it as is.
+
+```ts
+const OrganizationAccessExplanationSchema
+```
+
 ### `OrganizationCheck`
 
 _type_, defined in `packages/contract/src/custom-claims.ts`
@@ -6148,6 +6202,10 @@ export interface OrganizationClaims {
   readonly orgRole: string
   /** The permission keys of that role. */
   readonly orgPermissions: readonly string[]
+  /** The version of that role the permissions were read at (`org_rv`), when issued. */
+  readonly roleVersion?: number
+  /** The permissions hash of that version (`org_ph`), when issued. */
+  readonly permissionsHash?: string
 }
 ```
 
@@ -6471,6 +6529,56 @@ it is also the `ETag` of the role, and the value `If-Match` carries to change or
 
 ```ts
 const OrganizationRoleSchema
+```
+
+### `OrganizationRoleVersion`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One version of a role.
+
+```ts
+export type OrganizationRoleVersion = z.infer<typeof OrganizationRoleVersionSchema>
+```
+
+### `OrganizationRoleVersionList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A role's version history.
+
+```ts
+export type OrganizationRoleVersionList = z.infer<typeof OrganizationRoleVersionListSchema>
+```
+
+### `OrganizationRoleVersionListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A role's versions, oldest first.
+
+```ts
+const OrganizationRoleVersionListSchema
+```
+
+### `OrganizationRoleVersionSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One version of a role: its permissions, and what changed from the version before.
+
+```ts
+const OrganizationRoleVersionSchema
+```
+
+### `OrganizationRoleVersionSummarySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One version of a role in its history: the number, when, how many permissions, the hash.
+
+```ts
+const OrganizationRoleVersionSummarySchema
 ```
 
 ### `OrganizationSchema`
@@ -12715,7 +12823,7 @@ oauthProviderWeakenings(
 _function_, defined in `packages/contract/src/custom-claims.ts`
 
 Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
-of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+of the JSON of the claims (`org_rv` and `org_ph` counted when present), which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
 
 ```ts
 export function organizationClaimsBytes(claims: OrganizationClaims): number
@@ -14161,12 +14269,14 @@ cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
 It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
 characters), a role key of 32 characters and 32 permissions of the longest key
 (`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
-room. A role is bounded by the contract and the database, so a token never reaches it
+room. It also holds a fixed reserve of 96 bytes for `org_rv` (a 10-digit version, 20 bytes)
+and `org_ph` (a 45-character hash, 57 bytes) so that the largest role still fits beside them.
+A role is bounded by the contract and the database, so a token never reaches it
 unless a row was written by hand: the server then issues the token **without** the
 organization claims (no claim is "no permission"), never with a cut list.
 
 ```ts
-const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2656
 ```
 
 ### `MAX_ORGANIZATION_PERMISSIONS_CLAIM`
@@ -14264,6 +14374,10 @@ export interface OrganizationClaims {
   readonly orgRole: string
   /** The permission keys of that role. */
   readonly orgPermissions: readonly string[]
+  /** The version of that role the permissions were read at (`org_rv`), when issued. */
+  readonly roleVersion?: number
+  /** The permissions hash of that version (`org_ph`), when issued. */
+  readonly permissionsHash?: string
 }
 ```
 
@@ -14464,7 +14578,7 @@ isCustomClaimValue(['admin']) // false
 _function_, defined in `packages/contract/src/custom-claims.ts`
 
 Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
-of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+of the JSON of the claims (`org_rv` and `org_ph` counted when present), which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
 
 ```ts
 export function organizationClaimsBytes(claims: OrganizationClaims): number

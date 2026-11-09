@@ -500,3 +500,33 @@ export async function atRefresh(
     return refuse(deps, scope, session, judged, origin)
   }
 }
+
+/**
+ * Require the proof of possession a device-bound session's access token names (`cnf.jkt`), for
+ * a route that is read with the token and not refreshed (ADR 0068, the permissions lookup).
+ *
+ * The same checks as a refresh (`judge`), but nothing is recorded or counted: the route has
+ * its own per-IP and per-session limits, and a refusal here changes no session.
+ *
+ * @param deps - Config, keyed hash, clock and the store of used proof ids.
+ * @param scope - The environment.
+ * @param thumbprint - The token's `cnf.jkt`.
+ * @param request - The proof and the request it came with.
+ * @throws AuthError `device.proof_invalid` for no proof, an invalid one, another key's or a replay.
+ * @throws NonceRequiredError `device.nonce_required` for a good proof with a stale nonce.
+ * @throws ServiceUnavailableError when the store of used ids cannot answer.
+ */
+export async function atResource(
+  deps: ProofDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  thumbprint: string,
+  request: ProofRequest
+): Promise<void> {
+  const { proof } = request
+  if (
+    proof === undefined ||
+    'reason' in (await judge(deps, scope, { ...request, proof }, thumbprint))
+  ) {
+    throw new AuthError('device.proof_invalid')
+  }
+}

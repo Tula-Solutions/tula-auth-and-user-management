@@ -344,6 +344,7 @@ export async function handleInvoices(request: Request): Promise<Response> {
   }
   return Response.json({ organizationId: organization?.orgId, invoices: [] })
 }
+
 ```
 <!-- /snippet -->
 

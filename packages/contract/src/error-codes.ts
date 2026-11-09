@@ -411,6 +411,12 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'You are not a member of that organization.',
   },
+  // One answer for every refusal of the permissions lookup (no organization in the token, no
+  // snapshot, a hash that does not match), so the route is no oracle for roles (ADR 0068).
+  'organization.permissions_unavailable': {
+    status: 404,
+    message: 'The permissions of that role are not available.',
+  },
   'organization.creation_disabled': {
     status: 403,
     message: 'Creating an organization is not allowed in this environment.',

@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "my organizations and the active organization",
-  "description": "A signed-in user lists the organizations they belong to, creates one where the environment allows it and chooses the one their session acts in. While organizations are off every route answers organization.disabled; while users may not create them, a create answers organization.creation_disabled, and past the environment's limit organization.limit_reached. An organization the user is not in, and one that does not exist, are refused with the same organization.not_a_member. Choosing one answers a new access token that carries org_id, org_role and org_perms, and the list names it as active. A refresh keeps the choice and re-reads the membership: a role given or taken away is in the next token, and a removed member's next token has no organization claims while the session lives on. Choosing the personal account (null) takes the claims away. The original settings are put back afterwards, even when a step fails.",
+  "description": "A signed-in user lists the organizations they belong to, creates one where the environment allows it and chooses the one their session acts in. While organizations are off every route answers organization.disabled; while users may not create them, a create answers organization.creation_disabled, and past the environment's limit organization.limit_reached. An organization the user is not in, and one that does not exist, are refused with the same organization.not_a_member. Choosing one answers a new access token that carries org_id, org_role and org_perms, and the list names it as active. A refresh keeps the choice and re-reads the membership: a role given or taken away is in the next token, and a removed member's next token has no organization claims while the session lives on. Choosing the personal account (null) takes the claims away. The permissions behind the token's role version are read from GET /v1/client/me/organizations/active/permissions, cached for good and revalidated with If-None-Match; a token with no organization gets the uniform organization.permissions_unavailable. The original settings are put back afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -485,6 +485,56 @@
       }
     },
     {
+      "name": "the permissions behind the token's hash are read, cached for good",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/active/permissions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "role": "member",
+          "version": "$any",
+          "permissions": "$any",
+          "hash": "$any"
+        },
+        "headers": {
+          "cache-control": "private, max-age=31536000, immutable",
+          "etag": {
+            "$matches": "^\"[^\"]+\"$"
+          }
+        }
+      },
+      "captureHeaders": {
+        "permissionsEtag": "ETag"
+      }
+    },
+    {
+      "name": "and a copy that is current is a 304",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/active/permissions",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "If-None-Match": "{{permissionsEtag}}"
+        }
+      },
+      "expect": {
+        "status": 304
+      }
+    },
+    {
+      "name": "without a session the lookup is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/active/permissions"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
       "name": "a refresh keeps the choice",
       "request": {
         "method": "POST",
@@ -615,6 +665,20 @@
       "capture": {
         "refreshToken": "refreshToken",
         "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "a token with no organization has no permissions to read: the uniform 404",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/active/permissions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.permissions_unavailable"
+        }
       }
     },
     {
