@@ -199,6 +199,19 @@ describe('organizations switched off', () => {
     ).toBeNull()
   })
 
+  test.each([
+    '/me/organizations/active/permissions',
+    '/me/organizations/active/permissions/latest',
+  ])('GET %s answers organization.disabled once organizations are off', async (path) => {
+    const maya = await signUp()
+    const acme = await organization('acme', [[maya.userId, 'admin']])
+    const active = await json<ActiveOrganization>(await activate(maya.accessToken, acme.id))
+    configure({ enabled: false })
+    const res = await call('GET', path, undefined, { token: String(active.accessToken) })
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('organization.disabled')
+  })
+
   test('an environment that never configured organizations says the same', async () => {
     const maya = await signUp()
     deps.environmentSettings.seed(TEST_TENANT.environmentId, {
@@ -720,6 +733,7 @@ describe('the permissions lookup', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
     expect(res.headers.get('etag')).toBe(`"${claims.org_ph}"`)
+    expect(res.headers.get('vary')).toContain('Authorization')
     const body = await json<ActiveOrganizationPermissions>(res)
     expect(body).toEqual({
       role: 'admin',
@@ -736,6 +750,7 @@ describe('the permissions lookup', () => {
       headers: { 'if-none-match': `"${claims.org_ph}"` },
     })
     expect(res.status).toBe(304)
+    expect(res.headers.get('vary')).toContain('Authorization')
     expect(await res.text()).toBe('')
   })
 

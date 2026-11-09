@@ -8,7 +8,11 @@ import {
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
 } from '@tula-tech/contract/organization-permissions'
-import { type AccessChecker, createAccessChecker } from '@tula-tech/core/access'
+import {
+  type AccessChecker,
+  AccessUnavailableError,
+  createAccessChecker,
+} from '@tula-tech/core/access'
 import { type NextRequest, NextResponse } from 'next/server'
 import { configFor, type TulaConfig, type TulaServerOptions } from './config'
 import { REDIRECT_PARAM, safeRedirectPath } from './paths'
@@ -165,7 +169,7 @@ const checkers = new WeakMap<TulaConfig, AccessChecker>()
  * Whether the session's active organization grants a check. Claims answer it offline, except
  * a permission of a large role: that goes through one checker per
  * configuration, which looks the list up once per hash. A lookup that fails throws
- * `AccessUnavailableError`: it is never read as granted, and the app maps it to a 503.
+ * `AccessUnavailableError`: it is never read as granted, and the middleware answers it with a 503.
  */
 async function grants(
   config: TulaConfig,
@@ -353,12 +357,37 @@ export function tulaMiddleware(
     const { session, setCookies, requestHeaders } = await resolveSession(request, config)
     let response: NextResponse
     const applicable = session ? rulesFor(pathname) : []
-    const denied =
-      applicable.length > 0 &&
-      !(await Promise.all(applicable.map((rule) => grants(config, session, rule.check)))).every(
-        Boolean
-      )
-    if (session && denied) {
+    let denied = false
+    let unavailable = false
+    if (applicable.length > 0) {
+      try {
+        denied = !(
+          await Promise.all(applicable.map((rule) => grants(config, session, rule.check)))
+        ).every(Boolean)
+      } catch (error) {
+        if (!(error instanceof AccessUnavailableError)) {
+          throw error
+        }
+        unavailable = true
+      }
+    }
+    if (unavailable) {
+      // Never read a failed lookup as granted, and never let the handler run.
+      response =
+        isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')
+          ? NextResponse.json(
+              {
+                status: 503,
+                code: 'service.unavailable',
+                detail: 'Access could not be checked right now. Try again.',
+              },
+              { status: 503, headers: { 'cache-control': 'no-store' } }
+            )
+          : new NextResponse('Service Unavailable', {
+              status: 503,
+              headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+            })
+    } else if (session && denied) {
       if (isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')) {
         response = NextResponse.json(
           {

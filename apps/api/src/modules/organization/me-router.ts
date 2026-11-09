@@ -19,6 +19,7 @@ import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Me from '~/modules/organization/me-service'
+import * as Organizations from '~/modules/organization/service'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import * as openapi from '~/openapi'
 
@@ -287,6 +288,7 @@ router.get(
     const claims = c.get('session')
     const deps = c.get('deps')
     const tenant = c.get('tenant')
+    await Organizations.requireEnabled(deps, tenant)
     await proveDevice(c)
     const unavailable = new AuthError('organization.permissions_unavailable')
     const role = claims.org_role
@@ -302,6 +304,7 @@ router.get(
       throw unavailable
     }
     c.header('Cache-Control', 'private, max-age=31536000, immutable')
+    c.header('Vary', 'Authorization')
     c.header('ETag', `"${hash}"`)
     if (etagMatches(c.req.header('if-none-match'), hash)) {
       return c.body(null, 304)
@@ -354,6 +357,7 @@ router.get(
     const claims = c.get('session')
     const deps = c.get('deps')
     const tenant = c.get('tenant')
+    await Organizations.requireEnabled(deps, tenant)
     await proveDevice(c)
     const unavailable = new AuthError('organization.permissions_unavailable')
     const role = claims.org_role
