@@ -403,6 +403,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -494,6 +495,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -593,6 +595,7 @@ describe('purge', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          roleVersions: 0,
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
@@ -847,6 +850,7 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      roleVersions: 0,
       webhookDeliveries: 0,
       events: 0,
       smsCodeCounts: 0,
@@ -1101,11 +1105,11 @@ describe('audit retention', () => {
       const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
       spies.push(deleteAudit)
       deps.clock.advance(4_000 * DAY)
-      // The other environment is purged as ever. Two kinds of this one read its settings
-      // (the audit entries and the password history), and each fails on its own.
+      // The other environment is purged as ever. Three kinds of this one read its settings
+      // (the audit entries, the role snapshots and the password history), and each fails on its own.
       expect(await Retention.purge(deps)).toMatchObject({
         environments: 2,
-        failed: 2,
+        failed: 3,
         auditLogs: 1,
         smsCodeCounts: 2,
       })
@@ -1173,6 +1177,34 @@ describe('audit retention', () => {
     expect(deleteAudit).not.toHaveBeenCalled()
   })
 
+  test('purges superseded role snapshots past the audit period, and none for a null period', async () => {
+    const purge = spyOn(deps.organizations, 'purgeSupersededRoleVersions')
+    spies.push(purge)
+    keepAuditFor(tenant, 30)
+    keepAuditFor(otherTenant, null)
+    await Retention.purge(deps)
+    const calls = purge.mock.calls.filter(
+      ([environmentId]) => environmentId === tenant.environmentId
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.[1]).toEqual(new Date(deps.clock.now().getTime() - 30 * DAY))
+    expect(purge.mock.calls.some(([id]) => id === otherTenant.environmentId)).toBe(false)
+  })
+
+  test('a failing role snapshot purge is counted and does not stop the kinds after it', async () => {
+    spies.push(spyOn(logger, 'warn').mockImplementation(() => undefined))
+    keepAuditFor(tenant, 30)
+    spies.push(
+      spyOn(deps.organizations, 'purgeSupersededRoleVersions').mockRejectedValue(
+        new Error('the role store refused')
+      )
+    )
+    const after = spyOn(deps.hooks, 'deleteCallCountsBefore')
+    spies.push(after)
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, roleVersions: 0 })
+    expect(after).toHaveBeenCalled()
+  })
+
   test('reads the period from the source, past this instance’s settings cache', async () => {
     // A period lengthened on another instance must not be undercut by a stale copy here:
     // unlike every other setting, acting on an old value destroys something.
@@ -1180,10 +1212,12 @@ describe('audit retention', () => {
     spies.push(get)
     await Retention.purge(deps)
     // The memory store declares one parameter (it has no cache to read past): widen the calls.
-    // Twice an environment: its audit period, and its password history (below).
+    // An environment's audit period, its role snapshots' (the same period) and its password history.
     expect(get.mock.calls as unknown[][]).toEqual([
       [tenant.environmentId, true],
       [tenant.environmentId, true],
+      [tenant.environmentId, true],
+      [otherTenant.environmentId, true],
       [otherTenant.environmentId, true],
       [otherTenant.environmentId, true],
     ])
@@ -1208,8 +1242,8 @@ describe('audit retention', () => {
     )
     const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
     spies.push(deleteAudit)
-    // The password history reads the same settings and fails on its own too.
-    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 2, auditLogs: 1 })
+    // The role snapshots and the password history read the same settings and fail on their own too.
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 3, auditLogs: 1 })
     expect(auditIds(tenant)).toEqual([kept])
     expect(auditIds(otherTenant)).toEqual([])
     expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
@@ -1363,6 +1397,7 @@ describe('run', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          roleVersions: 0,
           webhookDeliveries: 0,
           events: 0,
           smsCodeCounts: 0,
@@ -1414,6 +1449,7 @@ describe('run', () => {
         passkeyChallenges: 0,
         instanceAuditLogs: 0,
         auditLogs: 0,
+        roleVersions: 0,
         webhookDeliveries: 0,
         events: 0,
         smsCodeCounts: 0,
@@ -1814,7 +1850,7 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
       // The audit purge reads the same settings and fails on its own too.
       expect(await Retention.purge(deps)).toMatchObject({
         environments: 2,
-        failed: 2,
+        failed: 3,
         passwordHistory: 4,
       })
       expect(purge.mock.calls.map(([environmentId]) => environmentId)).toEqual([
@@ -1868,7 +1904,7 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
       })
     )
     // The audit purge reads the same settings and fails on its own too.
-    expect(await Retention.purge(deps)).toMatchObject({ failed: 2, passwordHistory: 3 })
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 3, passwordHistory: 3 })
     expect(await previous(tenant, kept)).toHaveLength(3)
     expect(await previous(otherTenant, purged)).toEqual([])
   })

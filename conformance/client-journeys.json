@@ -299,6 +299,24 @@
         "decision": "journey"
       }
     },
+    "a large role is read through the permissions lookup": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the client reads the same lookup route and answers the same shape as in 'my organizations and the active organization', which each client's journey already runs; this scenario only adds an administrator's setting (organizations.largeRoles) and a longer role, which no client reaches"
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the client reads the same lookup route and answers the same shape as in 'my organizations and the active organization', which each client's journey already runs; this scenario only adds an administrator's setting (organizations.largeRoles) and a longer role, which no client reaches"
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the client reads the same lookup route and answers the same shape as in 'my organizations and the active organization', which each client's journey already runs; this scenario only adds an administrator's setting (organizations.largeRoles) and a longer role, which no client reaches"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the client reads the same lookup route and answers the same shape as in 'my organizations and the active organization', which each client's journey already runs; this scenario only adds an administrator's setting (organizations.largeRoles) and a longer role, which no client reaches"
+      }
+    },
     "a passkey satisfies two-step verification": {
       "core": {
         "decision": "journey"

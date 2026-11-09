@@ -216,7 +216,7 @@ test.each([
   ['two keys in one element', ['org:a:b,org:c:d']],
   ['a custom key in the reserved feature', ['org:sys:read']],
   ['a null element', ['org:a:b', null as unknown as string]],
-  ['more than 32 keys', Array.from({ length: 33 }, (_, i) => `org:feature${i}:read`)],
+  ['more than 1000 keys', Array.from({ length: 1001 }, (_, i) => `org:feature${i}:read`)],
 ])('a role cannot hold %s', async (_name, permissions) => {
   expect(
     await refused(() => addRole(tenant, { key: 'bad_perms', builtIn: false, permissions }))

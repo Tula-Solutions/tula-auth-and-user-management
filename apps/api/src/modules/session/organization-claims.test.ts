@@ -7,6 +7,7 @@ import {
   EnvironmentSettingsSchema,
   MAX_ORGANIZATION_CLAIMS_BYTES,
   type Organization,
+  permissionsHash,
   RESERVED_CLAIM_NAMES,
   readOrganizationClaims,
 } from '@tula-tech/contract'
@@ -35,10 +36,10 @@ const MAYA = '00000000-0000-7000-8000-0000000000a1'
 const SAM = '00000000-0000-7000-8000-0000000000a2'
 const ADMIN_PERMISSIONS = [
   ...(BUILT_IN_ROLES.find((role) => role.key === 'admin')?.permissions ?? []),
-]
+].sort() // the snapshot's order: by code point
 const MEMBER_PERMISSIONS = [
   ...(BUILT_IN_ROLES.find((role) => role.key === 'member')?.permissions ?? []),
-]
+].sort() // the snapshot's order: by code point
 
 let deps: TestDeps
 let revision = 0
@@ -140,7 +141,7 @@ const self = (tokens: { sessionId: string }, userId = MAYA) => ({
 const setActive = (tokens: { sessionId: string }, id: string | null, userId = MAYA) =>
   Me.setActive(deps, tenant, self(tokens, userId), id)
 
-const ORG_CLAIMS = ['org_id', 'org_perms', 'org_role']
+const ORG_CLAIMS = ['org_id', 'org_perms', 'org_ph', 'org_role', 'org_rv']
 const orgClaimsOf = (claims: AccessTokenClaims) =>
   Object.keys(claims)
     .filter((name) => name.startsWith('org_'))
@@ -190,7 +191,59 @@ describe('setting the active organization', () => {
       orgId: acme.id,
       orgRole: 'admin',
       orgPermissions: ADMIN_PERMISSIONS,
+      roleVersion: 1,
     })
+  })
+
+  test('carries the role version and the hash of the same snapshot', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const claims = claimsOf(await setActive(tokens, acme.id)) as Record<string, unknown>
+    const role = await deps.organizations.findRole(tenant.environmentId, 'admin')
+    const snapshot = await deps.organizations.findRoleVersion(
+      tenant.environmentId,
+      role?.id ?? '',
+      role?.version ?? 0
+    )
+    expect(claims.org_rv).toBe(role?.version)
+    expect(claims.org_ph).toBe(snapshot?.permissionsHash)
+    expect(claims.org_ph).toBe(await permissionsHash(ADMIN_PERMISSIONS))
+  })
+
+  test('org_perms is the snapshot list that was hashed, sorted and distinct', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const real = deps.organizations.findUserMembership.bind(deps.organizations)
+    const spy = spyOn(deps.organizations, 'findUserMembership').mockImplementation(async (...a) => {
+      const held = await real(...a)
+      return (
+        held && {
+          ...held,
+          permissions: [...held.permissions].reverse().concat(held.permissions[0] ?? []),
+        }
+      )
+    })
+    const claims = claimsOf(await setActive(tokens, acme.id)) as Record<string, unknown>
+    spy.mockRestore()
+    expect(claims.org_perms).toEqual(ADMIN_PERMISSIONS)
+    expect(await permissionsHash(claims.org_perms as string[])).toBe(claims.org_ph as string)
+  })
+
+  test('a membership whose role has no snapshot yields a token with no organization claims, and logs', async () => {
+    const acme = await organization()
+    await join(acme, MAYA, 'admin')
+    const tokens = await create()
+    const real = await deps.organizations.findUserMembership(tenant.environmentId, acme.id, MAYA)
+    spyOn(deps.organizations, 'findUserMembership').mockResolvedValue(
+      real && { ...real, snapshot: null }
+    )
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+    const active = await setActive(tokens, acme.id)
+    expect(orgClaimsOf(claimsOf(active))).toEqual([])
+    expect(error).toHaveBeenCalled()
+    error.mockRestore()
   })
 
   test('is not a rotation: the refresh token still works, once', async () => {
@@ -493,7 +546,7 @@ describe('the most a role can put in a token', () => {
   const ACTION = 'a'.repeat(31)
   const maximal = Array.from(
     { length: 32 },
-    (_, index) => `org:${FEATURE}${index % 10}:${ACTION}${index % 10}`
+    (_, index) => `org:${FEATURE}${index % 10}:${ACTION}${Math.floor(index / 10)}`
   )
 
   /** Stores a custom role directly, past what the roles API would accept. */
@@ -526,7 +579,7 @@ describe('the most a role can put in a token', () => {
     for (const issued of [active, await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))]) {
       const read = readOrganizationClaims(claimsOf(issued))
       expect(read?.orgRole).toBe(longest)
-      expect(read?.orgPermissions).toEqual(maximal)
+      expect(read?.orgPermissions).toEqual([...maximal].sort())
       const payload = claimsOf(issued)
       const bytes = JSON.stringify({
         org_id: payload.org_id,
@@ -535,6 +588,30 @@ describe('the most a role can put in a token', () => {
       }).length
       expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
     }
+  })
+
+  test('with large roles on, an oversize role gets lookup claims and a small one stays inline', async () => {
+    configure({ largeRoles: true })
+    await withRole('toolong', [...maximal, 'org:billing:read'])
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'toolong')
+    const tokens = await create()
+    const active = await setActive(tokens, acme.id)
+    for (const issued of [active, await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))]) {
+      const claims = claimsOf(issued)
+      expect(claims).toMatchObject({ org_id: acme.id, org_role: 'toolong' })
+      expect(claims.org_perms).toBeUndefined()
+      expect(claims.org_rv).toBe(1)
+      expect(claims.org_ph).toMatch(/^1\./)
+    }
+    const small = await Sessions.setActiveOrganization(
+      deps,
+      tenant,
+      { userId: SAM, sessionId: (await create(SAM)).sessionId },
+      await deps.organizations.findUserMembership(tenant.environmentId, acme.id, SAM)
+    )
+    expect(claimsOf(small).org_perms).toEqual(ADMIN_PERMISSIONS)
   })
 
   test('a role written by hand past the bounds yields a token with none of the claims, and logs no permission', async () => {

@@ -102,6 +102,48 @@ public struct ActiveOrganization: Codable, Hashable, Sendable {
     }
 }
 
+public struct ActiveOrganizationPermissions: Codable, Hashable, Sendable {
+    public var role: String
+    public var version: Int
+    public var permissions: [String]
+    public var hash: String
+
+    public init(
+        role: String,
+        version: Int,
+        permissions: [String],
+        hash: String
+    ) {
+        self.role = role
+        self.version = version
+        self.permissions = permissions
+        self.hash = hash
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case role
+        case version
+        case permissions
+        case hash
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.version = try container.decode(Int.self, forKey: .version)
+        self.permissions = try container.decode([String].self, forKey: .permissions)
+        self.hash = try container.decode(String.self, forKey: .hash)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.version, forKey: .version)
+        try container.encode(self.permissions, forKey: .permissions)
+        try container.encode(self.hash, forKey: .hash)
+    }
+}
+
 public struct AssignableRole: Codable, Hashable, Sendable {
     public var key: String
     public var name: String

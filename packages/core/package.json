@@ -26,13 +26,18 @@
   },
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./access": "./src/access.ts"
   },
   "publishConfig": {
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./access": {
+        "types": "./dist/access.d.ts",
+        "default": "./dist/access.js"
       },
       "./package.json": "./package.json"
     }

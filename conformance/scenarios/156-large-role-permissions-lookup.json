@@ -1,0 +1,419 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a large role is read through the permissions lookup",
+  "description": "With organizations.largeRoles on, an administrator defines a custom role of 40 permissions and a member holds it. The access token chosen for that organization names the role and carries no org_perms; the permissions are read from GET /v1/client/me/organizations/active/permissions, which answers all 40 with their hash. The organization and the role are deleted afterwards, and the original settings are put back even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        },
+        "attempt": "{{signUpSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "org_id": "$absent",
+            "org_role": "$absent",
+            "org_perms": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken",
+        "sessionId": "session.sessionId"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and large roles on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true,
+            "largeRoles": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true,
+              "largeRoles": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator defines a role of 40 permissions",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organization-roles",
+        "auth": "secret",
+        "body": {
+          "key": "large_{{suffix}}",
+          "name": "Large role",
+          "permissions": [
+            "org:feature_0:read",
+            "org:feature_1:read",
+            "org:feature_2:read",
+            "org:feature_3:read",
+            "org:feature_4:read",
+            "org:feature_5:read",
+            "org:feature_6:read",
+            "org:feature_7:read",
+            "org:feature_8:read",
+            "org:feature_9:read",
+            "org:feature_10:read",
+            "org:feature_11:read",
+            "org:feature_12:read",
+            "org:feature_13:read",
+            "org:feature_14:read",
+            "org:feature_15:read",
+            "org:feature_16:read",
+            "org:feature_17:read",
+            "org:feature_18:read",
+            "org:feature_19:read",
+            "org:feature_20:read",
+            "org:feature_21:read",
+            "org:feature_22:read",
+            "org:feature_23:read",
+            "org:feature_24:read",
+            "org:feature_25:read",
+            "org:feature_26:read",
+            "org:feature_27:read",
+            "org:feature_28:read",
+            "org:feature_29:read",
+            "org:feature_30:read",
+            "org:feature_31:read",
+            "org:feature_32:read",
+            "org:feature_33:read",
+            "org:feature_34:read",
+            "org:feature_35:read",
+            "org:feature_36:read",
+            "org:feature_37:read",
+            "org:feature_38:read",
+            "org:feature_39:read"
+          ]
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "the signed-in user is added with that role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{userId}}",
+          "role": "large_{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "choosing the organization answers a token with no inline permissions",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{orgId}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "organizationId": "{{orgId}}",
+          "accessToken": "$any",
+          "refreshToken": "$absent"
+        },
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "org_id": "{{orgId}}",
+            "org_role": "large_{{suffix}}",
+            "org_perms": "$absent"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      },
+      "capture": {
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "the lookup answers all 40 permissions and a hash",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/active/permissions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "role": "large_{{suffix}}",
+          "permissions": {
+            "$set": [
+              "org:feature_0:read",
+              "org:feature_1:read",
+              "org:feature_2:read",
+              "org:feature_3:read",
+              "org:feature_4:read",
+              "org:feature_5:read",
+              "org:feature_6:read",
+              "org:feature_7:read",
+              "org:feature_8:read",
+              "org:feature_9:read",
+              "org:feature_10:read",
+              "org:feature_11:read",
+              "org:feature_12:read",
+              "org:feature_13:read",
+              "org:feature_14:read",
+              "org:feature_15:read",
+              "org:feature_16:read",
+              "org:feature_17:read",
+              "org:feature_18:read",
+              "org:feature_19:read",
+              "org:feature_20:read",
+              "org:feature_21:read",
+              "org:feature_22:read",
+              "org:feature_23:read",
+              "org:feature_24:read",
+              "org:feature_25:read",
+              "org:feature_26:read",
+              "org:feature_27:read",
+              "org:feature_28:read",
+              "org:feature_29:read",
+              "org:feature_30:read",
+              "org:feature_31:read",
+              "org:feature_32:read",
+              "org:feature_33:read",
+              "org:feature_34:read",
+              "org:feature_35:read",
+              "org:feature_36:read",
+              "org:feature_37:read",
+              "org:feature_38:read",
+              "org:feature_39:read"
+            ]
+          },
+          "hash": "$any"
+        }
+      }
+    },
+    {
+      "name": "the organization is deleted",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and then the role",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organization-roles/large_{{suffix}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

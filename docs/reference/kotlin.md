@@ -2228,10 +2228,11 @@ const val MAX_PERMISSION_KEY_LENGTH = 100
 
 _val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
-The most bytes the three claims' JSON may take.
+The most bytes the three claims' JSON may take: 2,560 for them and a 96-byte reserve
+for the contract's `org_rv` and `org_ph`, so both sides cap alike.
 
 ```kotlin
-const val MAX_BYTES = 2560
+const val MAX_BYTES = 2656
 ```
 
 #### `TulaOrganizationClaims.read`
@@ -2670,6 +2671,24 @@ Withdraw a pending invitation: its link stops working.
 
 ```kotlin
 suspend fun revoke(organizationId: String, invitationId: String)
+```
+
+### `permissionsHash`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/PermissionsHash.kt`
+
+The hash of a set of permission keys, in the form an access token's `perms_hash` claim carries.
+
+The keys are deduplicated, ordered by UTF-16 code unit (Kotlin's `String` order, which is also
+what `@tula-tech/contract`'s `permissionsHash` sorts by), written as a JSON array with no
+spaces and hashed with SHA-256: `1.` and the digest in unpadded base64url. The shared vectors
+in `packages/contract/src/permissions-hash-vectors.json` hold the two to each other.
+
+@param keys The permission keys; order and repeats do not matter.
+@return The versioned hash, for example `1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU` for no keys.
+
+```kotlin
+fun permissionsHash(keys: List<String>): String
 ```
 
 ### `IdTokenSignIn`

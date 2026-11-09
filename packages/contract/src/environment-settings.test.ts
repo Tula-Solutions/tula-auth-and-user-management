@@ -78,6 +78,7 @@ describe('EnvironmentSettingsSchema', () => {
         creatorRole: 'admin',
         defaultRole: 'member',
         personalAccount: true,
+        largeRoles: false,
       },
       notifications: {
         passwordChanged: true,
@@ -466,6 +467,7 @@ describe('EnvironmentSettingsInputSchema', () => {
         creatorRole: 'admin',
         defaultRole: 'member',
         personalAccount: true,
+        largeRoles: false,
       },
       notifications: {
         passwordChanged: true,

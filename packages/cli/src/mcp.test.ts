@@ -340,6 +340,13 @@ const args = (
   list_organizations: {},
   list_organization_members: { organizationId: seededOrganizationId },
   list_organization_roles: {},
+  list_role_versions: { roleKey: 'member' },
+  get_role_version: { roleKey: 'member', version: 1 },
+  explain_access: {
+    organizationId: seededOrganizationId,
+    userId,
+    permission: 'org:sys:memberships:read',
+  },
   list_sso_connections: {},
   get_sso_connection: { connectionId: seededSsoConnectionId },
   run_doctor: {},
@@ -539,7 +546,7 @@ describe('tula mcp against the real API', () => {
     )
     for (const request of w.requests.filter((one) => one.startsWith('GET '))) {
       expect(request).toMatch(
-        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers|organizations(\/[^/]+\/memberships)?|organization-roles|sso-connections(\/[^/]+)?)|instance\/diagnostics|status)$/
+        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers|organizations(\/[^/]+\/memberships)?|organization-roles(\/[^/]+\/versions(\/[^/]+)?)?|organizations\/[^/]+\/members\/[^/]+\/access|sso-connections(\/[^/]+)?)|instance\/diagnostics|status)$/
       )
     }
   })
@@ -1234,7 +1241,7 @@ describe('tula mcp: the wire', () => {
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
     expect(w.stderr()).toContain(
-      'tula mcp: 22 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
+      'tula mcp: 25 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
     )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)

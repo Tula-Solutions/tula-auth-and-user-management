@@ -15,6 +15,17 @@ export interface OrganizationRecord {
   updatedAt: Date
 }
 
+/** One version of a role's permissions (ADR 0068): written with the role, never changed. */
+export interface OrganizationRoleVersionRecord {
+  roleId: string
+  roleKey: string
+  version: number
+  /** Sorted by code point, no duplicates: the list `permissionsHash` is over. */
+  permissions: string[]
+  permissionsHash: string
+  createdAt: Date
+}
+
 /** A role as stored: a set of permission keys, shared by every organization of the environment. */
 export interface OrganizationRoleRecord {
   id: string
@@ -136,6 +147,12 @@ export interface UserMembershipRecord {
   membership: MembershipRecord
   /** The permission keys of the membership's role. */
   permissions: string[]
+  /**
+   * The snapshot of the role's current version, read in the same statement as the membership
+   * so that a token's `org_rv` and `org_ph` can never disagree with its `org_perms`
+   * (ADR 0068). `null` when the role has none; absent where a read does not ask for it.
+   */
+  snapshot?: OrganizationRoleVersionRecord | null
 }
 
 /** What creating an organization for a user, as its first member, came to. */
@@ -433,6 +450,37 @@ export interface OrganizationStore {
    * @returns The role, or `null` when the environment has none with that key.
    */
   findRole(environmentId: string, key: string): Promise<OrganizationRoleRecord | null>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param roleId - The role's id.
+   * @param version - The version of its permissions.
+   * @returns That version's snapshot, or `null` when the environment has none.
+   */
+  findRoleVersion(
+    environmentId: string,
+    roleId: string,
+    version: number
+  ): Promise<OrganizationRoleVersionRecord | null>
+
+  /**
+   * Delete role snapshots older than a cutoff that a later version of their role has replaced,
+   * at most `limit` of them (the retention job's batch). A role's current version is never
+   * deleted, whatever its age: a token minted now carries it.
+   *
+   * @param environmentId - The environment whose snapshots are purged.
+   * @param before - The cutoff: snapshots created earlier go.
+   * @param limit - The most rows to delete.
+   * @returns How many were deleted.
+   */
+  purgeSupersededRoleVersions(environmentId: string, before: Date, limit: number): Promise<number>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param roleId - The role's id.
+   * @returns Every snapshot of the role, oldest version first; empty when it has none.
+   */
+  listRoleVersions(environmentId: string, roleId: string): Promise<OrganizationRoleVersionRecord[]>
 
   /**
    * @param environmentId - The environment to look in.

@@ -3,10 +3,12 @@ import {
   type CustomClaims,
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  ORGANIZATION_ROLE_VERSION_CLAIM,
   readCustomClaims,
-  readOrganizationClaims,
 } from '@tula-tech/contract/custom-claims'
+import { readOrganizationTokenClaims } from '@tula-tech/contract/organization-lookup'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose'
 import type { FetchLike, TulaConfig } from './config'
 
@@ -54,6 +56,10 @@ export interface SessionClaims {
   org_role?: string
   /** The permission keys of that role: each a well-formed key, at most 32. */
   org_perms?: string[]
+  /** A large role's version, with `org_ph` and no `org_perms`: its permissions are looked up. */
+  org_rv?: number
+  /** The hash of that role's permissions. */
+  org_ph?: string
   [claim: string]: unknown
 }
 
@@ -69,10 +75,11 @@ export const NO_CUSTOM_CLAIMS: CustomClaims = Object.freeze({})
  * name is dropped here, for a token and for a `stateful` session's answer alike, so that it
  * never reaches an application as something to rely on.
  *
- * The three organization claims (`org_id`, `org_role`, `org_perms`) are treated alike: they
- * stay only when `readOrganizationClaims` accepts all three, and are all removed otherwise.
- * An application therefore never sees an organization without its role and permissions, nor
- * a permission list that is not made of well-formed keys.
+ * The organization claims are treated alike: `org_id`, `org_role` and `org_perms` stay only
+ * when `readOrganizationClaims` accepts all three; `org_id`, `org_role`, `org_rv` and `org_ph`
+ * stay only as the lookup shape of a large role (`readOrganizationTokenClaims`); anything
+ * else is removed. An application therefore never sees an organization without its role and
+ * permissions (or the means to look them up), nor a list that is not well-formed keys.
  *
  * @param candidate - Claims that were verified: a token's payload after `jwtVerify`, the
  *   API's answer, or the contents of this app's own sealed header.
@@ -96,10 +103,13 @@ export function sessionClaims(
     [ORGANIZATION_ID_CLAIM]: _id,
     [ORGANIZATION_ROLE_CLAIM]: _role,
     [ORGANIZATION_PERMISSIONS_CLAIM]: _permissions,
+    [ORGANIZATION_ROLE_VERSION_CLAIM]: _version,
+    [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: _hash,
     ...claims
   } = candidate
   const custom = readCustomClaims(candidate)
-  const organization = readOrganizationClaims(candidate)
+  const token = readOrganizationTokenClaims(candidate)
+  const organization = token.kind === 'inline' ? token.claims : null
   return {
     ...claims,
     ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
@@ -107,6 +117,13 @@ export function sessionClaims(
       [ORGANIZATION_ID_CLAIM]: organization.orgId,
       [ORGANIZATION_ROLE_CLAIM]: organization.orgRole,
       [ORGANIZATION_PERMISSIONS_CLAIM]: [...organization.orgPermissions],
+    }),
+    // A large role: the token names its permissions by version and hash (ADR 0068, § 5).
+    ...(token.kind === 'lookup' && {
+      [ORGANIZATION_ID_CLAIM]: token.orgId,
+      [ORGANIZATION_ROLE_CLAIM]: token.orgRole,
+      [ORGANIZATION_ROLE_VERSION_CLAIM]: token.roleVersion,
+      [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: token.permissionsHash,
     }),
   }
 }

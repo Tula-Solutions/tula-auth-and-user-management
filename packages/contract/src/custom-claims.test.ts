@@ -18,10 +18,10 @@ import {
   readOrganizationClaims,
   SSO_CONNECTION_CLAIM,
 } from './custom-claims'
+import { roleFitsInline } from './organization-lookup'
 import {
   BUILT_IN_ROLES,
   MAX_PERMISSION_KEY_LENGTH,
-  MAX_PERMISSIONS_PER_ROLE,
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
   rolePermissionRefusal,
@@ -251,7 +251,7 @@ describe('the organization claims (ADR 0065)', () => {
     orgId: ID,
     orgRole: `r${'x'.repeat(31)}`,
     orgPermissions: Array.from(
-      { length: MAX_PERMISSIONS_PER_ROLE },
+      { length: MAX_ORGANIZATION_PERMISSIONS_CLAIM },
       (_, index) => `org:sys:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
     ),
   }
@@ -269,8 +269,8 @@ describe('the organization claims (ADR 0065)', () => {
     const bytes = organizationClaimsBytes(longest)
     expect(bytes).toBe(2541)
     expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
-    expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(64)
-    expect(MAX_PERMISSIONS_PER_ROLE).toBe(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES).toBe(2656)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(160)
   })
 
   test('a custom role at its limits fits the cap: 32 keys of 69 characters at most', () => {
@@ -292,7 +292,7 @@ describe('the organization claims (ADR 0065)', () => {
       expect(rolePermissionRefusal(longer)).not.toBeNull()
     }
     const permissions = Array.from(
-      { length: MAX_PERMISSIONS_PER_ROLE },
+      { length: MAX_ORGANIZATION_PERMISSIONS_CLAIM },
       (_, index) => `org:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
     )
     expect(
@@ -302,6 +302,16 @@ describe('the organization claims (ADR 0065)', () => {
         orgPermissions: permissions,
       })
     ).toBeLessThan(MAX_ORGANIZATION_CLAIMS_BYTES)
+  })
+
+  test('a maximal role with the version and the hash claims fits the cap', () => {
+    const withBoth = {
+      ...longest,
+      roleVersion: 2147483647,
+      permissionsHash: `1.${'A'.repeat(43)}`,
+    }
+    expect(organizationClaimsBytes(withBoth)).toBe(2541 + 20 + 57)
+    expect(organizationClaimsBytes(withBoth)).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
   })
 
   test('the cap is its own: the custom claims keep their 1,024 bytes', () => {
@@ -445,5 +455,46 @@ describe('hasOrganizationAccess', () => {
     ['a string', 'org:billing:read'],
   ])('a check that names %s never grants', (_name, check) => {
     expect(hasOrganizationAccess(claims, check as never)).toBe(false)
+  })
+})
+
+describe('roleFitsInline (a role whose permissions can ride in the token)', () => {
+  const keys = (n: number, key: (i: number) => string) =>
+    Array.from({ length: n }, (_, i) => key(i))
+
+  test('a role of at most the inline cap, within the budget, fits', () => {
+    expect(roleFitsInline('member', [])).toBe(true)
+    expect(
+      roleFitsInline(
+        'billing',
+        keys(32, (i) => `org:feature${i}:read`)
+      )
+    ).toBe(true)
+  })
+
+  test('one permission over the inline cap does not', () => {
+    expect(
+      roleFitsInline(
+        'billing',
+        keys(33, (i) => `org:feature${i}:read`)
+      )
+    ).toBe(false)
+  })
+
+  test('a role under the cap but over the byte budget does not (judged with a maximal id, version and hash)', () => {
+    const long = keys(32, (i) => `org:${'f'.repeat(31)}${i % 10}:${'a'.repeat(31)}${i % 10}`)
+    expect(roleFitsInline(`r${'x'.repeat(31)}`, long)).toBe(true)
+    expect(
+      roleFitsInline(`r${'x'.repeat(31)}`, [
+        ...long.slice(1),
+        `org:sys:${'f'.repeat(32)}:${'a'.repeat(32)}`,
+      ])
+    ).toBe(true)
+    expect(
+      roleFitsInline(
+        `r${'x'.repeat(31)}`,
+        keys(32, (i) => `org:sys:${'f'.repeat(31)}${i % 10}:${'a'.repeat(31)}${i % 10}xxxx`)
+      )
+    ).toBe(false)
   })
 })

@@ -23,6 +23,8 @@ export interface Schemas {
     sso_conn?: string
     org_role?: string
     org_perms?: string[]
+    org_rv?: number
+    org_ph?: string
     ext?: {
       [key: string]: string | number | boolean
     }
@@ -425,6 +427,7 @@ export interface Schemas {
       creatorRole?: Schemas['OrganizationRoleKey']
       defaultRole?: Schemas['OrganizationRoleKey']
       personalAccount?: boolean
+      largeRoles?: boolean
     }
     sso?: {
       enabled?: boolean
@@ -502,6 +505,7 @@ export interface Schemas {
         creatorRole?: Schemas['OrganizationRoleKey']
         defaultRole?: Schemas['OrganizationRoleKey']
         personalAccount?: boolean
+        largeRoles?: boolean
       }
       sso?: {
         enabled?: boolean
@@ -552,7 +556,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'user.managed' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.url_not_https' | 'sso.test_required' | 'sso.test_not_found' | 'sso.role_not_allowed' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'user.managed' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.permissions_unavailable' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.role_too_large' | 'organization.large_roles_in_use' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.url_not_https' | 'sso.test_required' | 'sso.test_not_found' | 'sso.role_not_allowed' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -968,6 +972,19 @@ export interface Schemas {
     createdAt: string
     updatedAt: string
   }
+  OrganizationAccessExplanation: {
+    organizationId: string
+    userId: string
+    permission: Schemas['PermissionKey']
+    member: boolean
+    role: {
+      key: string
+      version: number
+      permissionsHash: string
+    } | null
+    granted: boolean
+    reason: 'not_a_member' | 'permission_granted' | 'permission_not_granted'
+  }
   OrganizationCreatedEvent: {
     id: string
     type: 'organization.created'
@@ -1311,7 +1328,28 @@ export interface Schemas {
     role: Schemas['OrganizationRoleKey']
     changed: ('name' | 'permissions')[]
     permissions: number
+    version: number
+    hash: string
     weakened?: true
+  }
+  OrganizationRoleVersion: {
+    version: number
+    createdAt: string
+    permissionCount: number
+    permissionsHash: string
+    roleKey: string
+    permissions: string[]
+    added: string[]
+    removed: string[]
+  }
+  OrganizationRoleVersionList: {
+    data: Schemas['OrganizationRoleVersionSummary'][]
+  }
+  OrganizationRoleVersionSummary: {
+    version: number
+    createdAt: string
+    permissionCount: number
+    permissionsHash: string
   }
   OrganizationSlug: string
   OrganizationUpdatedEvent: {
@@ -1361,6 +1399,7 @@ export interface Schemas {
     history: number
     expiryDays: number | null
   }
+  PermissionKey: string
   Project: {
     id: string
     workspaceId: string
@@ -2775,6 +2814,8 @@ export interface Operations {
   deleteUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a webhook endpoint (`DELETE /v1/admin/webhook-endpoints/{id}`). */
   deleteWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
+  /** Explain a member’s access to a permission (`GET /v1/admin/organizations/{id}/members/{userId}/access`). */
+  explainOrganizationAccess: { params: { id: string; userId: string }; query: { permission: Schemas['PermissionKey'] }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationAccessExplanation'] }
   /** Export the audit log (`POST /v1/admin/audit-logs/export`). */
   exportAuditLogs: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['AuditExportRequest']; response: undefined }
   /** Read the environment’s settings (`GET /v1/admin/settings`). */
@@ -2789,6 +2830,8 @@ export interface Operations {
   getOrganization: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Organization'] }
   /** Get an organization role (`GET /v1/admin/organization-roles/{key}`). */
   getOrganizationRole: { params: { key: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRole'] }
+  /** Get one version of an organization role (`GET /v1/admin/organization-roles/{key}/versions/{version}`). */
+  getOrganizationRoleVersion: { params: { key: string; version: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleVersion'] }
   /** Read a proposal (`GET /v1/admin/proposals/{id}`). */
   getProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
   /** Read one session by its id (`GET /v1/admin/sessions/{sessionId}`). */
@@ -2833,6 +2876,8 @@ export interface Operations {
   listOrganizationMemberships: { params: { id: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationMembershipList'] }
   /** List organization roles (`GET /v1/admin/organization-roles`). */
   listOrganizationRoles: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleList'] }
+  /** List the versions of an organization role (`GET /v1/admin/organization-roles/{key}/versions`). */
+  listOrganizationRoleVersions: { params: { key: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleVersionList'] }
   /** List organizations (`GET /v1/admin/organizations`). */
   listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number; q?: string }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
   /** List proposals (`GET /v1/admin/proposals`). */
@@ -2963,6 +3008,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   deleteSsoConnection: { method: 'DELETE', path: '/v1/admin/sso-connections/{id}' },
   deleteUser: { method: 'DELETE', path: '/v1/admin/users/{userId}' },
   deleteWebhookEndpoint: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}' },
+  explainOrganizationAccess: { method: 'GET', path: '/v1/admin/organizations/{id}/members/{userId}/access' },
   exportAuditLogs: { method: 'POST', path: '/v1/admin/audit-logs/export' },
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getHook: { method: 'GET', path: '/v1/admin/hooks/{id}' },
@@ -2970,6 +3016,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getOAuthProviderDependents: { method: 'GET', path: '/v1/admin/oauth-providers/{provider}/dependents' },
   getOrganization: { method: 'GET', path: '/v1/admin/organizations/{id}' },
   getOrganizationRole: { method: 'GET', path: '/v1/admin/organization-roles/{key}' },
+  getOrganizationRoleVersion: { method: 'GET', path: '/v1/admin/organization-roles/{key}/versions/{version}' },
   getProposal: { method: 'GET', path: '/v1/admin/proposals/{id}' },
   getSession: { method: 'GET', path: '/v1/admin/sessions/{sessionId}' },
   getSmsUsage: { method: 'GET', path: '/v1/admin/sms/usage' },
@@ -2992,6 +3039,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOrganizationInvitations: { method: 'GET', path: '/v1/admin/organizations/{id}/invitations' },
   listOrganizationMemberships: { method: 'GET', path: '/v1/admin/organizations/{id}/memberships' },
   listOrganizationRoles: { method: 'GET', path: '/v1/admin/organization-roles' },
+  listOrganizationRoleVersions: { method: 'GET', path: '/v1/admin/organization-roles/{key}/versions' },
   listOrganizations: { method: 'GET', path: '/v1/admin/organizations' },
   listProposals: { method: 'GET', path: '/v1/admin/proposals' },
   listScimTokens: { method: 'GET', path: '/v1/admin/scim-tokens' },

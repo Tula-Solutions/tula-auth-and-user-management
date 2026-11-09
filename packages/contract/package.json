@@ -33,6 +33,7 @@
     "./headers": "./src/headers.ts",
     "./issuer": "./src/issuer.ts",
     "./organization-domain-rules": "./src/organization-domain-rules.ts",
+    "./organization-lookup": "./src/organization-lookup.ts",
     "./organization-permissions": "./src/organization-permissions.ts",
     "./password-rules": "./src/password-rules.ts",
     "./redirect-url": "./src/redirect-url.ts",
@@ -73,6 +74,10 @@
       "./organization-domain-rules": {
         "types": "./dist/organization-domain-rules.d.ts",
         "default": "./dist/organization-domain-rules.js"
+      },
+      "./organization-lookup": {
+        "types": "./dist/organization-lookup.d.ts",
+        "default": "./dist/organization-lookup.js"
       },
       "./organization-permissions": {
         "types": "./dist/organization-permissions.d.ts",

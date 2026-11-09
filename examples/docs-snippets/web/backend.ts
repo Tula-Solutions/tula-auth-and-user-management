@@ -45,4 +45,40 @@ export async function handleInvoices(request: Request): Promise<Response> {
   }
   return Response.json({ organizationId: organization?.orgId, invoices: [] })
 }
+
+// #endregion
+
+// #region backend-access-checker
+import { AccessUnavailableError, createAccessChecker } from '@tula-tech/core/access'
+import { Hono } from 'hono'
+
+// One checker for the process: it verifies the token, and fetches a large role's permission
+// list once per hash (a role change is a new hash, so the cache cannot go stale).
+const access = createAccessChecker({
+  apiUrl: 'https://auth.example.com',
+  environmentId,
+  publishableKey: 'tula_pk_prod_...',
+})
+
+const app = new Hono()
+
+app.use('/invoices/*', async (c, next) => {
+  const token = c.req.header('authorization')?.replace(/^Bearer /, '')
+  if (!token) {
+    return c.json({ code: 'auth.unauthorized' }, 401)
+  }
+  try {
+    const decision = await access.check(token, 'org:invoices:read')
+    if (!decision.allowed) {
+      return c.json({ code: 'auth.forbidden' }, decision.reason === 'invalid_token' ? 401 : 403)
+    }
+  } catch (error) {
+    if (error instanceof AccessUnavailableError) {
+      // The list could not be fetched: not allowed, and not a "no" either.
+      return c.json({ code: 'service.unavailable' }, 503)
+    }
+    throw error
+  }
+  await next()
+})
 // #endregion

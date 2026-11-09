@@ -45,6 +45,14 @@ data class ActiveOrganization(
 )
 
 @Serializable
+data class ActiveOrganizationPermissions(
+    val role: String,
+    val version: Long,
+    val permissions: List<String>,
+    val hash: String,
+)
+
+@Serializable
 data class AssignableRole(
     val key: String,
     val name: String,

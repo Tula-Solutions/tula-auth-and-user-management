@@ -13,13 +13,16 @@ describe('the read-only facade', () => {
 
   test('the allow-list is exactly what the tools need: no key listing, no signing keys', () => {
     expect([...READ_OPERATIONS].sort()).toEqual([
+      'explainOrganizationAccess',
       'getEnvironmentSettings',
+      'getOrganizationRoleVersion',
       'getSsoConnection',
       'getUser',
       'getUserAuthentication',
       'listAuditLogs',
       'listOAuthProviders',
       'listOrganizationMemberships',
+      'listOrganizationRoleVersions',
       'listOrganizationRoles',
       'listOrganizations',
       'listSsoConnections',

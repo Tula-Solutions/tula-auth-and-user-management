@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   createDpopProof,
+  DEFAULT_ENVIRONMENT_SETTINGS,
   type DeviceKey,
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
@@ -430,6 +431,56 @@ describe('POST /v1/client/sessions/refresh for a bound session', () => {
     const res = await refresh(first.refreshToken, 'not.a.proof')
     expect(res.status).toBe(200)
     expect(res.headers.get(DPOP_NONCE_HEADER)).toBeNull()
+  })
+})
+
+describe('GET /v1/client/me/organizations/active/permissions for a bound session', () => {
+  const PERMISSIONS = '/me/organizations/active/permissions'
+  // The lookup answers 403 organization.disabled before the proof check when organizations are off.
+  beforeEach(() => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      },
+    })
+  })
+  const getProof = async (signer: DeviceKey) =>
+    proofFor(signer, {
+      now: deps.clock.now(),
+      path: `/v1/client${PERMISSIONS}`,
+      method: 'GET',
+      nonce: await serverNonce(),
+    })
+  const lookup = async (dpop?: string) => {
+    const { session } = await completed(await signUp(key))
+    const headers: Record<string, string> = {
+      'x-tula-publishable-key': PK,
+      authorization: `Bearer ${session.accessToken}`,
+    }
+    if (dpop !== undefined) {
+      headers[DPOP_HEADER] = dpop
+    }
+    return app.request(`/v1/client${PERMISSIONS}`, { headers })
+  }
+
+  test('without a proof: 401 device.proof_invalid, as at a refresh', async () => {
+    const res = await lookup()
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('device.proof_invalid')
+  })
+
+  test('a wrong key: 401 device.proof_invalid', async () => {
+    const res = await lookup(await getProof(otherKey))
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('device.proof_invalid')
+  })
+
+  test('the session’s key passes the proof check (this token names no role: the uniform 404)', async () => {
+    const res = await lookup(await getProof(key))
+    expect(res.status).toBe(404)
+    expect(await code(res)).toBe('organization.permissions_unavailable')
   })
 })
 

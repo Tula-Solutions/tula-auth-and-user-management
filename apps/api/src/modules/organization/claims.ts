@@ -3,7 +3,9 @@ import {
   MAX_ORGANIZATION_PERMISSIONS_CLAIM,
   ORGANIZATION_ID_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  ORGANIZATION_ROLE_VERSION_CLAIM,
   type OrganizationClaims,
   organizationClaimsBytes,
 } from '@tula-tech/contract'
@@ -12,6 +14,11 @@ import * as logger from '~/lib/logger'
 import * as Settings from '~/modules/settings/service'
 import type { UserMembershipRecord } from '~/ports/organization-store'
 import type { SessionRecord } from '~/ports/session-store'
+
+/** The claims a token is issued with: `orgPermissions` is absent for a lookup token. */
+export type IssuedOrganizationClaims = Omit<OrganizationClaims, 'orgPermissions'> & {
+  readonly orgPermissions?: readonly string[]
+}
 
 /** What building a session's organization claims reads. */
 type ClaimDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config'>
@@ -42,7 +49,7 @@ export async function claimsOf(
   deps: ClaimDeps,
   scope: Pick<Tenant, 'environmentId'>,
   session: Pick<SessionRecord, 'userId' | 'activeOrganizationId'>
-): Promise<OrganizationClaims | undefined> {
+): Promise<IssuedOrganizationClaims | undefined> {
   const { activeOrganizationId } = session
   if (activeOrganizationId === null) {
     return undefined
@@ -56,7 +63,7 @@ export async function claimsOf(
     activeOrganizationId,
     session.userId
   )
-  return held ? fromMembership(scope, held) : undefined
+  return held ? fromMembership(scope, held, organizations.largeRoles) : undefined
 }
 
 /**
@@ -66,21 +73,41 @@ export async function claimsOf(
  *
  * @param scope - The environment, for the log line.
  * @param held - The user's membership with its role's permissions.
- * @returns The three claims, or `undefined` when they would not fit.
+ * @param largeRoles - The environment's `organizations.largeRoles`: a role too large for a
+ *   token then gets the lookup claims (no `org_perms`) instead of none.
+ * @returns The claims, or `undefined` when they would not fit and large roles are off.
  */
 export function fromMembership(
   scope: Pick<Tenant, 'environmentId'>,
-  held: UserMembershipRecord
-): OrganizationClaims | undefined {
-  const claims: OrganizationClaims = {
+  held: UserMembershipRecord,
+  largeRoles = false
+): IssuedOrganizationClaims | undefined {
+  const { snapshot } = held
+  if (!snapshot) {
+    // Fail closed: a version or hash from anywhere else could disagree with `org_perms`.
+    logger.error('organization role has no snapshot; the token carries no organization claims', {
+      environmentId: scope.environmentId,
+      organizationId: held.organization.id,
+      roleId: held.membership.roleId,
+    })
+    return undefined
+  }
+  const claims = {
     orgId: held.organization.id,
     orgRole: held.membership.roleKey,
-    orgPermissions: held.permissions,
+    // The snapshot's list is the one `permissionsHash` covers (sorted, distinct): never the role's raw one.
+    orgPermissions: snapshot.permissions,
+    roleVersion: snapshot.version,
+    permissionsHash: snapshot.permissionsHash,
   }
   if (
     claims.orgPermissions.length > MAX_ORGANIZATION_PERMISSIONS_CLAIM ||
     organizationClaimsBytes(claims) > MAX_ORGANIZATION_CLAIMS_BYTES
   ) {
+    if (largeRoles) {
+      // The verifier fetches the permissions by `org_rv` and `org_ph`; see `readOrganizationTokenClaims`.
+      return { ...claims, orgPermissions: undefined }
+    }
     // Ids and a count, never a role's contents.
     logger.error('organization claims over their cap; the token carries none', {
       environmentId: scope.environmentId,
@@ -96,12 +123,14 @@ export function fromMembership(
  * The claims as they are written into a token.
  *
  * @param claims - The organization claims.
- * @returns The three top-level claims, under their reserved names.
+ * @returns The five top-level claims, under their reserved names.
  */
-export function asTokenClaims(claims: OrganizationClaims) {
+export function asTokenClaims(claims: IssuedOrganizationClaims) {
   return {
     [ORGANIZATION_ID_CLAIM]: claims.orgId,
     [ORGANIZATION_ROLE_CLAIM]: claims.orgRole,
-    [ORGANIZATION_PERMISSIONS_CLAIM]: [...claims.orgPermissions],
+    ...(claims.orgPermissions && { [ORGANIZATION_PERMISSIONS_CLAIM]: [...claims.orgPermissions] }),
+    [ORGANIZATION_ROLE_VERSION_CLAIM]: claims.roleVersion,
+    [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: claims.permissionsHash,
   }
 }

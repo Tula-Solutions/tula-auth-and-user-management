@@ -244,6 +244,20 @@ export const ActiveOrganizationSchema = z
   .meta({ ref: 'ActiveOrganization' })
 
 /**
+ * The permissions of the role version an access token names (`org_role`, `org_rv`), with the
+ * hash the token carries as `org_ph`. Immutable for that hash, so a client caches it for good.
+ */
+export const ActiveOrganizationPermissionsSchema = z
+  .object({
+    role: z.string(),
+    version: z.number().int().min(1),
+    /** Sorted by code point, each once: the list `hash` is over. */
+    permissions: z.array(z.string()),
+    hash: z.string(),
+  })
+  .meta({ ref: 'ActiveOrganizationPermissions' })
+
+/**
  * A member of an organization as another member sees them: who they are
  * and the key of their role. The name and the address are shown so that a member list can be
  * read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
@@ -338,6 +352,8 @@ export type UserOrganization = z.infer<typeof UserOrganizationSchema>
 export type UserOrganizationList = z.infer<typeof UserOrganizationListSchema>
 /** The body that sets or clears the active organization. */
 export type SetActiveOrganizationRequest = z.infer<typeof SetActiveOrganizationRequestSchema>
+/** The permissions of the role version the session's token names. */
+export type ActiveOrganizationPermissions = z.infer<typeof ActiveOrganizationPermissionsSchema>
 /** The session after its active organization changed. */
 export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
 
@@ -395,6 +411,67 @@ export const UpdateOrganizationRoleRequestSchema = z
     message: 'send a name, permissions or both',
   })
   .meta({ ref: 'UpdateOrganizationRoleRequest' })
+
+/** One version of a role in its history: the number, when, how many permissions, the hash. */
+export const OrganizationRoleVersionSummarySchema = z
+  .object({
+    version: z.number().int().min(1),
+    createdAt: z.iso.datetime(),
+    permissionCount: z.number().int().min(0),
+    /** The `permissionsHash` an access token carries as `org_ph` while the role is at this version. */
+    permissionsHash: z.string(),
+  })
+  .meta({ ref: 'OrganizationRoleVersionSummary' })
+
+/** A role's versions, oldest first. */
+export const OrganizationRoleVersionListSchema = z
+  .object({ data: z.array(OrganizationRoleVersionSummarySchema) })
+  .meta({ ref: 'OrganizationRoleVersionList' })
+
+/** One version of a role: its permissions, and what changed from the version before. */
+export const OrganizationRoleVersionSchema = OrganizationRoleVersionSummarySchema.extend({
+  roleKey: z.string(),
+  /** The permission keys of this version, each once, sorted. */
+  permissions: z.array(z.string()),
+  /** Keys this version has that the one before did not; all of them for version 1. */
+  added: z.array(z.string()),
+  /** Keys the version before had that this one does not; empty for version 1. */
+  removed: z.array(z.string()),
+}).meta({ ref: 'OrganizationRoleVersion' })
+
+/** Why {@link OrganizationAccessExplanationSchema} decided as it did. */
+export const ACCESS_REASONS = [
+  'not_a_member',
+  'permission_granted',
+  'permission_not_granted',
+] as const
+
+/**
+ * The answer to "can this member do this?" and how it was reached. The dashboard shows it as
+ * "Why?" and an agent reads it as is.
+ */
+export const OrganizationAccessExplanationSchema = z
+  .object({
+    organizationId: z.string(),
+    userId: z.string(),
+    permission: PermissionKeySchema,
+    /** Whether the user is a member of the organization. */
+    member: z.boolean(),
+    /** The role the member holds, at the version it has now; `null` for a non-member. */
+    role: z
+      .object({ key: z.string(), version: z.number().int().min(1), permissionsHash: z.string() })
+      .nullable(),
+    granted: z.boolean(),
+    reason: z.enum(ACCESS_REASONS),
+  })
+  .meta({ ref: 'OrganizationAccessExplanation' })
+
+/** A role's version history. */
+export type OrganizationRoleVersionList = z.infer<typeof OrganizationRoleVersionListSchema>
+/** One version of a role. */
+export type OrganizationRoleVersion = z.infer<typeof OrganizationRoleVersionSchema>
+/** The decision about one permission of one member. */
+export type OrganizationAccessExplanation = z.infer<typeof OrganizationAccessExplanationSchema>
 
 /** A role. */
 export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>

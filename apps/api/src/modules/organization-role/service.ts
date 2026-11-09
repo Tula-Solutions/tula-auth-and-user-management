@@ -7,7 +7,11 @@ import {
   type OrganizationRole,
   type OrganizationRoleField,
   type OrganizationRoleList,
+  type OrganizationRoleVersion,
+  type OrganizationRoleVersionList,
   organizationRoleWeakenings,
+  permissionsHash,
+  roleFitsInline,
   type UpdateOrganizationRoleRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -15,10 +19,32 @@ import { AuthError, NotFoundError, ServiceException } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
-import type { OrganizationRoleRecord, RoleChanges } from '~/ports/organization-store'
+import * as Settings from '~/modules/settings/service'
+import type {
+  OrganizationRoleRecord,
+  OrganizationRoleVersionRecord,
+  RoleChanges,
+} from '~/ports/organization-store'
 
 /** What the service reads: the role store, the settings, ids and clock. */
 type ReadDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config' | 'ids' | 'clock'>
+
+/**
+ * Refuse a role whose claims would not fit a token, while the environment has not turned on
+ * `organizations.largeRoles` (ADR 0068): its holders would otherwise get no permissions.
+ */
+async function requireFits(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  key: string,
+  permissions: readonly string[]
+): Promise<void> {
+  // Past the cache: a stale `largeRoles: true` would store a role whose holders get no permissions.
+  const { organizations } = (await Settings.get(deps, tenant, true)).settings
+  if (!organizations.largeRoles && !roleFitsInline(key, permissions)) {
+    throw new AuthError('organization.role_too_large')
+  }
+}
 
 /** The public view of a stored role. Permissions are always the sorted set. */
 function view(record: OrganizationRoleRecord): OrganizationRole {
@@ -52,6 +78,75 @@ async function requireRole(
     throw new NotFoundError()
   }
   return record
+}
+
+function versionSummary(record: OrganizationRoleVersionRecord) {
+  return {
+    version: record.version,
+    createdAt: record.createdAt.toISOString(),
+    permissionCount: record.permissions.length,
+    permissionsHash: record.permissionsHash,
+  }
+}
+
+/**
+ * List every version of a role, oldest first, with its size and hash (never the keys).
+ *
+ * @param deps - The role store and the settings.
+ * @param tenant - The environment.
+ * @param key - The role's key.
+ * @returns The versions.
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the environment has no role with that key.
+ */
+export async function listVersions(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string
+): Promise<OrganizationRoleVersionList> {
+  await Organizations.requireEnabled(deps, tenant)
+  const role = await requireRole(deps, tenant, key)
+  const versions = await deps.organizations.listRoleVersions(tenant.environmentId, role.id)
+  return { data: versions.map(versionSummary) }
+}
+
+/**
+ * Read one version of a role: its permissions and what changed from the version before.
+ *
+ * @param deps - The role store and the settings.
+ * @param tenant - The environment.
+ * @param key - The role's key.
+ * @param version - The version number.
+ * @returns The version, with `added` and `removed` against the one before (all added for the first).
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the role, or that version of it, does not exist.
+ */
+export async function getVersion(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string,
+  version: number
+): Promise<OrganizationRoleVersion> {
+  await Organizations.requireEnabled(deps, tenant)
+  const role = await requireRole(deps, tenant, key)
+  const found = await deps.organizations.findRoleVersion(tenant.environmentId, role.id, version)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const before = await deps.organizations.findRoleVersion(
+    tenant.environmentId,
+    role.id,
+    version - 1
+  )
+  const had = new Set(before?.permissions ?? [])
+  const has = new Set(found.permissions)
+  return {
+    ...versionSummary(found),
+    roleKey: found.roleKey,
+    permissions: found.permissions,
+    added: found.permissions.filter((p) => !had.has(p)),
+    removed: (before?.permissions ?? []).filter((p) => !has.has(p)),
+  }
 }
 
 /** The 412 for a role that is no longer at the version the caller read. */
@@ -118,6 +213,8 @@ export async function get(
  *   built-in one.
  * @throws AuthError `organization.role_limit` when the environment has `MAX_CUSTOM_ROLES`
  *   custom roles (`params.max`).
+ * @throws AuthError `organization.role_too_large` when the role's claims would not fit a token
+ *   and `organizations.largeRoles` is off.
  * @throws ServiceUnavailableError when the environment's lock could not be had in time.
  */
 export async function create(
@@ -139,6 +236,7 @@ export async function create(
       throw new AuthError('organization.role_limit', { max: MAX_CUSTOM_ROLES })
     }
     const permissions = normalizePermissions(input.permissions)
+    await requireFits(deps, tenant, input.key, permissions)
     const id = deps.ids.next()
     const activity = Audit.entry(deps, tenant, {
       type: 'organization_role.created',
@@ -192,8 +290,26 @@ export async function create(
  * @throws AuthError `organization.last_manager` when the change takes
  *   `org:sys:memberships:manage` from the role and an organization would be left with no
  *   member who holds it.
+ * @throws AuthError `organization.role_too_large` when the new permissions would not fit a token
+ *   and `organizations.largeRoles` is off.
+ * @throws ServiceUnavailableError when the environment's lock could not be had in time.
  */
 export async function update(
+  deps: ReadDeps & Pick<Deps, 'environmentLock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string,
+  expectedVersion: number,
+  input: UpdateOrganizationRoleRequest,
+  actor: Actor
+): Promise<OrganizationRole> {
+  // The same lock `Settings.replace` takes to turn large roles off, so that a role cannot grow
+  // past a token while the setting is being switched off.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'organization_roles', () =>
+    updateLocked(deps, tenant, key, expectedVersion, input, actor)
+  )
+}
+
+async function updateLocked(
   deps: ReadDeps,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   key: string,
@@ -216,6 +332,7 @@ export async function update(
   }
   const after = input.permissions === undefined ? before : normalizePermissions(input.permissions)
   if (after.join('\n') !== before.join('\n')) {
+    await requireFits(deps, tenant, current.key, after)
     changes.permissions = after
   }
   const changed: OrganizationRoleField[] = ORGANIZATION_ROLE_FIELDS.filter(
@@ -239,6 +356,9 @@ export async function update(
         role: current.key,
         changed,
         permissions: after.length,
+        // A verifier narrows tokens of an older version by fetching this one; ids and a hash only.
+        version: expectedVersion + 1,
+        hash: await permissionsHash(after),
         ...(weakened && { weakened: true as const }),
       },
     })
