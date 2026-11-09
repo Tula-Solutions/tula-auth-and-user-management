@@ -21,9 +21,15 @@ A role has a **key** (what code and tokens use), a **name** (what a person reads
 | --- | --- | --- | --- |
 | `key` | `string` | yes | Lower-case letters, digits and underscores, starting with a letter, at most 32 characters (`^[a-z][a-z0-9_]{0,31}$`). It cannot be changed: another key is another role. `admin` and `member` are taken. |
 | `name` | `string` | yes | The label shown to people. It can change. |
-| `permissions` | `string[]` | yes | At most 32 permission keys. A set: order and repeats do not matter, and they are stored sorted. |
+| `permissions` | `string[]` | yes | At most 32 permission keys, or 1000 with `organizations.largeRoles` on. A set: order and repeats do not matter, and they are stored sorted. |
 
 :::
+
+## Large roles
+
+A token carries a role's permissions only when they fit: 32 at most, and fewer when the keys are long. With `organizations.largeRoles` on, a role may hold up to 1000, and the token of a role that does not fit carries no permission list (no `org_perms`); the access checker (`@tula-tech/core/access` or the Next.js SDK) then looks the permissions up. A service that reads `org_perms` by hand sees none. **Turn the setting on only once every service that checks your tokens runs an SDK with the access checker.**
+
+A role too big for a token is refused with `organization.role_too_large` (422) while the setting is off. Switching it off is refused with `organization.large_roles_in_use` (409) while any role is too big. The setting is not a weakening: it gives nobody a permission.
 
 ## The permission grammar
 

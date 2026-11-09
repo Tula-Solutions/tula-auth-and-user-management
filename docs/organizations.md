@@ -32,6 +32,7 @@ them while production stays as it is.
 | `creatorRole` | `string` | no | `admin` | The role a creator gets in the organization they create. |
 | `defaultRole` | `string` | no | `member` | The role of someone who joins without being given one. Used by [invitations and verified domains](#invitations-and-verified-domains). |
 | `personalAccount` | `boolean` | no | `true` | Whether a user may work outside any organization. With `false`, clearing the active organization is refused with `organization.personal_account_disabled` (409). |
+| `largeRoles` | `boolean` | no | `false` | Whether a role may hold up to 1000 permissions, its token then carrying none when they do not fit. Turn it on only once every service that checks tokens runs an SDK with the access checker ([roles and permissions](roles-and-permissions.md#large-roles)). |
 
 :::
 
@@ -161,6 +162,8 @@ The errors you will meet:
 | `organization.member_exists` | 409 | The user is already a member. |
 | `organization.role_unknown` | 422 | The role named does not exist. |
 | `organization.personal_account_disabled` | 409 | The user cleared the active organization where `personalAccount` is off. |
+| `organization.role_too_large` | 422 | A role's permissions do not fit in a token and `largeRoles` is off. |
+| `organization.large_roles_in_use` | 409 | `largeRoles` was switched off while a role is too big for a token. |
 | `organization.last_manager` | 409 | The change would leave an organization with nobody who can manage its members. |
 | `user.last_organization_manager` | 409 | Deleting the user would do the same. |
 
@@ -344,6 +347,7 @@ export async function handleInvoices(request: Request): Promise<Response> {
   }
   return Response.json({ organizationId: organization?.orgId, invoices: [] })
 }
+
 ```
 <!-- /snippet -->
 

@@ -92,6 +92,12 @@ function OrganizationFields({ draft, update, errors }: SettingsEditor) {
             checked={organizations.personalAccount ?? true}
             onChange={(checked) => change({ personalAccount: checked })}
           />
+          <SwitchRow
+            label='Allow large roles'
+            description='Off, a role holds at most 32 permissions and every token carries them. On, a role may hold up to 1000, and a token for a role too big to fit carries no permission list: only an SDK with the access checker can check it. Turn it on once every service that checks your tokens runs one. Switching it off is refused while a role is too big for a token.'
+            checked={organizations.largeRoles ?? false}
+            onChange={(checked) => change({ largeRoles: checked })}
+          />
         </div>
       </Section>
       <Section
