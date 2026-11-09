@@ -1,5 +1,18 @@
 # @tula-tech/nextjs
 
+## 0.4.0
+
+### Minor Changes
+
+- 673501e: Role permission snapshots (ADR 0068): the `org_rv` and `org_ph` token claims, the `@tula-tech/core/access` checker with `access.apply`, Next.js permission rules that use the permissions lookup, `organizations.largeRoles`, and MCP tools that read a role's history.
+
+### Patch Changes
+
+- Updated dependencies [673501e]
+  - @tula-tech/contract@0.4.0
+  - @tula-tech/core@0.4.0
+  - @tula-tech/react@0.4.0
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @tula-tech/config
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [673501e]
+  - @tula-tech/contract@0.4.0
+
 ## 0.3.2
 
 ### Patch Changes

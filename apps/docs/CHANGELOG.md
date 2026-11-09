@@ -1,5 +1,14 @@
 # @tula-tech/docs
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [673501e]
+  - @tula-tech/contract@0.4.0
+  - @tula-tech/core@0.4.0
+  - @tula-tech/react@0.4.0
+
 ## 0.0.4
 
 ### Patch Changes
