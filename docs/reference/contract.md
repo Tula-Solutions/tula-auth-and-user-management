@@ -5047,11 +5047,12 @@ policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accep
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-How many permissions one role can hold. The permissions of the active organization's role are
-a claim of every access token, so the number is capped.
+How many permissions one role can hold. Up to `MAX_ORGANIZATION_PERMISSIONS_CLAIM` travel in the
+access token; a larger role is allowed only where the environment's `organizations.largeRoles`
+is on, and its token then carries no list (the permissions are looked up by role version).
 
 ```ts
-const MAX_PERMISSIONS_PER_ROLE: 32
+const MAX_PERMISSIONS_PER_ROLE: 1000
 ```
 
 ### `MAX_PERMISSION_KEY_LENGTH`
@@ -13545,6 +13546,27 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 // 'admin' when profiles.admin.clientSelectable, otherwise 'web'
 ```
 
+### `roleFitsInline`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a role's permissions can ride in a token as `org_perms`: at most
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
+{@link MAX_ORGANIZATION_CLAIMS_BYTES} for an id, a version and a hash of their longest.
+The longest case is used so that the answer holds for every organization and every version of
+the role: saving a role is judged once, a token is issued later.
+
+```ts
+export function roleFitsInline(roleKey: string, permissions: readonly string[]): boolean
+```
+
+**Parameters**
+
+- `roleKey`: The role's key.
+- `permissions`: The role's permission keys.
+
+**Returns** `true` when a token can carry the list.
+
 ### `rolePermissionRefusal`
 
 _function_, defined in `packages/contract/src/organization-permissions.ts`
@@ -14710,6 +14732,27 @@ export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenC
 - `claims`: A session's verified claims.
 
 **Returns** The shape found.
+
+### `roleFitsInline`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a role's permissions can ride in a token as `org_perms`: at most
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
+{@link MAX_ORGANIZATION_CLAIMS_BYTES} for an id, a version and a hash of their longest.
+The longest case is used so that the answer holds for every organization and every version of
+the role: saving a role is judged once, a token is issued later.
+
+```ts
+export function roleFitsInline(roleKey: string, permissions: readonly string[]): boolean
+```
+
+**Parameters**
+
+- `roleKey`: The role's key.
+- `permissions`: The role's permission keys.
+
+**Returns** `true` when a token can carry the list.
 
 ### `verifyPermissionsHash`
 
@@ -16004,11 +16047,12 @@ const MAX_CUSTOM_ROLES: 50
 
 _constant_, defined in `packages/contract/src/organization-permissions.ts`
 
-How many permissions one role can hold. The permissions of the active organization's role are
-a claim of every access token, so the number is capped.
+How many permissions one role can hold. Up to `MAX_ORGANIZATION_PERMISSIONS_CLAIM` travel in the
+access token; a larger role is allowed only where the environment's `organizations.largeRoles`
+is on, and its token then carries no list (the permissions are looked up by role version).
 
 ```ts
-const MAX_PERMISSIONS_PER_ROLE: 32
+const MAX_PERMISSIONS_PER_ROLE: 1000
 ```
 
 ### `MAX_PERMISSION_KEY_LENGTH`

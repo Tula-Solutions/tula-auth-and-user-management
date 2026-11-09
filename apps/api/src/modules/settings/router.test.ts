@@ -8,6 +8,7 @@ import {
 } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { ADMIN_RATE_LIMIT, CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
+import * as Audit from '~/modules/audit/service'
 import { refreshCookieName } from '~/modules/session/cookies'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -556,6 +557,46 @@ describe('two environments in one deployment', () => {
     // Each origin is refused by the other environment.
     expect(await allowOrigin(PK, 'https://app.acme.test')).toBeNull()
     expect(await allowOrigin(PROD_PK, 'https://dev.acme.test')).toBeNull()
+  })
+})
+
+describe('turning large roles off', () => {
+  const ON = { organizations: { enabled: true, largeRoles: true } }
+
+  async function bigRole() {
+    const at = deps.clock.now()
+    await deps.organizations.insertRole(
+      {
+        id: Bun.randomUUIDv7(),
+        projectId: TEST_TENANT.projectId,
+        environmentId: TEST_TENANT.environmentId,
+        key: 'big',
+        name: 'Big',
+        permissions: Array.from({ length: 33 }, (_, i) => `org:feature${i}:read`),
+        builtIn: false,
+        version: 1,
+        createdAt: at,
+        updatedAt: at,
+      },
+      Audit.none('fixture')
+    )
+  }
+
+  test('is refused while a role is too large for a token', async () => {
+    expect((await put(ON, '"0"')).status).toBe(200)
+    await bigRole()
+    const res = await put({ organizations: { enabled: true, largeRoles: false } }, '"1"')
+    expect(res.status).toBe(409)
+    expect((await res.json()) as Failure).toMatchObject({
+      code: 'organization.large_roles_in_use',
+    })
+    expect(((await (await read()).json()) as State).settings.organizations.largeRoles).toBe(true)
+  })
+
+  test('goes through when every role fits', async () => {
+    expect((await put(ON, '"0"')).status).toBe(200)
+    const res = await put({ organizations: { enabled: true, largeRoles: false } }, '"1"')
+    expect(res.status).toBe(200)
   })
 })
 

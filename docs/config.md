@@ -486,9 +486,12 @@ organizationRoles: [
 - **A role is its key**: lower-case letters, digits and underscores, starting with a letter,
   at most 32 characters. It cannot be changed: another key is another role. A key listed
   twice, `admin` or `member` as a key, a permission outside the grammar `org:<feature>:<action>`,
-  an `org:sys:…` key that Tula does not define, a role of more than 32 permissions and a list
+  an `org:sys:…` key that Tula does not define, a role of more than 1000 permissions and a list
   of more than 50 roles are refused when the file is loaded, by position
-  (`organizationRoles.1.key`).
+  (`organizationRoles.1.key`). A role of more than 32 permissions, or one too big for a token,
+  is applied only where `settings.organizations.largeRoles` is `true` (it is set in the same
+  file; turn it on only once every service that checks tokens runs an SDK with the access
+  checker, [roles and permissions](roles-and-permissions.md#large-roles)).
 - **What can change** is the role's `name` and its `permissions`, a set: order and repeats are
   not a change, and a change shows the permissions added and removed. A role may hold the
   system permissions Tula defines (such as `org:sys:memberships:manage`, which makes a second

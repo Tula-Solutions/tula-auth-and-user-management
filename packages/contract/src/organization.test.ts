@@ -144,6 +144,7 @@ describe('the organizations settings', () => {
       creatorRole: 'admin',
       defaultRole: 'member',
       personalAccount: true,
+      largeRoles: false,
     })
   })
 
@@ -288,7 +289,7 @@ describe('the requests that define and change a custom role', () => {
     expect(issue(['org:a:b', 'org:a:b'])?.message).toContain('once')
   })
 
-  test('hold at most 32 permissions', () => {
+  test('hold at most 1000 permissions', () => {
     const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
     expect(create({ permissions: keys(MAX_PERMISSIONS_PER_ROLE) }).success).toBe(true)
     expect(create({ permissions: keys(MAX_PERMISSIONS_PER_ROLE + 1) }).success).toBe(false)

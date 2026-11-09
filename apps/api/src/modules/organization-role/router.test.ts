@@ -25,12 +25,16 @@ let deps: TestDeps
 let app: ReturnType<typeof createApp>
 
 /** Switch organizations on (or off) for an environment. */
-function enable(environmentId: string = TEST_TENANT.environmentId, enabled = true) {
+function enable(
+  environmentId: string = TEST_TENANT.environmentId,
+  enabled = true,
+  largeRoles = false
+) {
   deps.environmentSettings.seed(environmentId, {
     revision: 1,
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
-      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled },
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled, largeRoles },
     },
   })
 }
@@ -280,7 +284,8 @@ describe('POST /v1/admin/organization-roles', () => {
     expect(roleActions()).toEqual([])
   })
 
-  test('holds at most 32 permissions', async () => {
+  test('holds at most 1000 permissions, with large roles on', async () => {
+    enable(TEST_TENANT.environmentId, true, true)
     const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
     expect(
       (
@@ -297,6 +302,25 @@ describe('POST /v1/admin/organization-roles', () => {
       permissions: keys(MAX_PERMISSIONS_PER_ROLE + 1),
     })
     expect(res.status).toBe(422)
+    expect(roleActions()).toEqual(['organization_role.created'])
+  })
+
+  test('refuses a role too large for a token while large roles are off', async () => {
+    const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
+    const res = await roles('POST', '', { ...BILLING, key: 'big', permissions: keys(33) })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('organization.role_too_large')
+    expect(roleActions()).toEqual([])
+    const small = await define({ ...BILLING, key: 'small' })
+    const update = await roles(
+      'PATCH',
+      '/small',
+      { permissions: keys(33) },
+      SK,
+      ifMatch(small.version)
+    )
+    expect(update.status).toBe(422)
+    expect(await code(update)).toBe('organization.role_too_large')
     expect(roleActions()).toEqual(['organization_role.created'])
   })
 

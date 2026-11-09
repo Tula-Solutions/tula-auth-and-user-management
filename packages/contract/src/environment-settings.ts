@@ -323,6 +323,17 @@ const Organizations = z.object({
    * by default. `false` makes a client choose an organization before it can work.
    */
   personalAccount: z.boolean().default(true),
+  /**
+   * Whether a role may hold more permissions than a token carries: more than 32, or a list
+   * that does not fit the claims budget. `false` (the default) refuses such a role
+   * (`organization.role_too_large`). On, a session whose role is too large gets a token with
+   * `org_id`, `org_role`, `org_rv` and `org_ph` and **no** `org_perms`: a service checks a
+   * permission by looking the role version up (`@tula-tech/core/access`). Not a weakening: a
+   * service on an older SDK finds no permissions and denies. Turn it on once every service
+   * that checks tokens runs an SDK with the access checker. Switching it off while a role is
+   * over the inline cap is refused (`organization.large_roles_in_use`).
+   */
+  largeRoles: z.boolean().default(false),
 })
 
 const Notifications = z.object({

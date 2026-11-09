@@ -5405,7 +5405,7 @@
           "permissions": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 32
+            "maximum": 1000
           }
         },
         "required": [
@@ -5496,7 +5496,7 @@
           "permissions": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 32
+            "maximum": 1000
           },
           "version": {
             "type": "integer",
@@ -7949,6 +7949,8 @@
           "organization.role_in_use",
           "organization.role_built_in",
           "organization.role_limit",
+          "organization.role_too_large",
+          "organization.large_roles_in_use",
           "organization.permission_required",
           "organization.role_not_assignable",
           "organization.invitation_exists",
@@ -11690,6 +11692,10 @@
                   "personalAccount": {
                     "default": true,
                     "type": "boolean"
+                  },
+                  "largeRoles": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -12038,6 +12044,10 @@
               },
               "personalAccount": {
                 "default": true,
+                "type": "boolean"
+              },
+              "largeRoles": {
+                "default": false,
                 "type": "boolean"
               }
             },
@@ -14393,7 +14403,7 @@
         ]
       },
       "OrganizationRolePermissions": {
-        "maxItems": 32,
+        "maxItems": 1000,
         "type": "array",
         "items": {
           "type": "string"
@@ -34788,7 +34798,7 @@
           "Organizations"
         ],
         "summary": "Define a custom role",
-        "description": "Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "description": "Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 1000, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
         "security": [
           {
             "secretKey": []
@@ -35305,7 +35315,7 @@
           "Organizations"
         ],
         "summary": "Change a custom role",
-        "description": "Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "description": "Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 1000, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
         "security": [
           {
             "secretKey": []
