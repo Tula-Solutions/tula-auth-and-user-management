@@ -437,7 +437,7 @@ final class OrganizationTests: XCTestCase {
 
     func testTheClaimsAreHeldToTheirByteCap() throws {
         // The contract's maximal claims (custom-claims.test.ts): a 36-character id, a role of 32
-        // characters and 32 permissions of 73, which take 2,541 bytes inside the cap of 2,560.
+        // characters and 32 permissions of 73, which take 2,541 bytes inside the cap of 2,656 (which holds a 96-byte reserve for org_rv and org_ph).
         let f = String(repeating: "f", count: 31)
         let a = String(repeating: "a", count: 31)
         let longest = (0..<32).map { "org:sys:\(f)\($0 % 10):\(a)\($0 % 10)" }
@@ -451,11 +451,13 @@ final class OrganizationTests: XCTestCase {
         let small = try XCTUnwrap(
             TulaOrganizationClaims.read(accessToken: token("a", claims: orgClaims(id: "o1", role: "member", permissions: "[]"))))
         XCTAssertEqual(small.bytes, 50)
-        // An id the grammar allows can still push the claims over the cap: nothing is repaired,
-        // the organization is simply not active.
+        // The longest id the grammar allows still fits: the reserve leaves room for it, so the
+        // grammar's bounds, not the cap, are what stop a larger set.
         let bigId = String(repeating: "i", count: 64)
-        XCTAssertNil(
+        let long = try XCTUnwrap(
             TulaOrganizationClaims.read(accessToken: token("a", claims: orgClaims(id: bigId, role: role, permissions: list))))
+        XCTAssertEqual(long.bytes, 2569)
+        XCTAssertLessThanOrEqual(long.bytes, TulaOrganizationClaims.maxBytes)
     }
 
     func testAPermissionOrARoleIsMatchedExactly() {
