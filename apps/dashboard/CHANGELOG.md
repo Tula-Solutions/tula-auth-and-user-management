@@ -1,5 +1,12 @@
 # @tula-tech/dashboard
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [673501e]
+  - @tula-tech/contract@0.4.0
+
 ## 0.0.6
 
 ### Patch Changes
