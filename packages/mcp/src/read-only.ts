@@ -21,13 +21,16 @@ export const UPSTREAM_TIMEOUT_MS = 15_000
  * ```
  */
 export const READ_OPERATIONS = [
+  'explainOrganizationAccess',
   'getEnvironmentSettings',
+  'getOrganizationRoleVersion',
   'getSsoConnection',
   'getUser',
   'getUserAuthentication',
   'listAuditLogs',
   'listOAuthProviders',
   'listOrganizationMemberships',
+  'listOrganizationRoleVersions',
   'listOrganizationRoles',
   'listOrganizations',
   'listSsoConnections',

@@ -193,6 +193,32 @@ const ORGANIZATION_ROLE = S.object({
   updatedAt: S.string(40),
 })
 
+const ROLE_VERSION_SUMMARY = S.object({
+  version: S.number,
+  createdAt: S.string(40),
+  permissionCount: S.number,
+  permissionsHash: S.string(80),
+})
+const ROLE_VERSION = S.object({
+  version: S.number,
+  createdAt: S.string(40),
+  permissionCount: S.number,
+  permissionsHash: S.string(80),
+  roleKey: S.string(40),
+  permissions: S.array(S.string(100), 32),
+  added: S.array(S.string(100), 32),
+  removed: S.array(S.string(100), 32),
+})
+const ACCESS_EXPLANATION = S.object({
+  organizationId: S.string(64),
+  userId: S.string(64),
+  permission: S.string(100),
+  member: S.boolean,
+  role: S.object({ key: S.string(40), version: S.number, permissionsHash: S.string(80) }),
+  granted: S.boolean,
+  reason: S.string(40),
+})
+
 // A connection's identity provider addresses, issuer, client id and certificate fingerprints are
 // left out on purpose: the tools say whether a connection works, not where it points (ADR 0067).
 const SSO_CONNECTION = S.object({
@@ -409,6 +435,21 @@ const listSsoConnectionsInput = z.strictObject({
 })
 const ssoConnectionInput = z.strictObject({
   connectionId: id.describe('The connection’s id, as list_sso_connections returns it.'),
+})
+const roleKeyInput = z.strictObject({
+  roleKey: z
+    .string()
+    .min(1)
+    .max(40)
+    .describe('The role’s key, as list_organization_roles returns it.'),
+})
+const roleVersionInput = roleKeyInput.extend({
+  version: z.number().int().min(1).describe('The version, as list_role_versions returns it.'),
+})
+const explainAccessInput = z.strictObject({
+  organizationId: id.describe('The organization’s id, as list_organizations returns it.'),
+  userId: id.describe('The member’s user id, as list_organization_members returns it.'),
+  permission: z.string().min(1).max(100).describe('A permission key, org:<feature>:<action>.'),
 })
 const noInput = z.strictObject({})
 const detectInput = z.strictObject({
@@ -796,6 +837,47 @@ export const TOOLS: readonly ToolDefinition[] = [
       shaped(
         await reads().read('listOrganizationRoles'),
         S.object({ data: S.array(ORGANIZATION_ROLE, 100) })
+      ),
+  },
+  {
+    name: 'list_role_versions',
+    title: 'List a role’s versions',
+    group: 'read',
+    description: `A custom or built-in organization role’s history, oldest first: each version’s number, time, permission count and permissions hash (the org_ph an access token carries).${UNTRUSTED}`,
+    input: roleKeyInput,
+    run: async ({ reads }, input: z.infer<typeof roleKeyInput>) =>
+      shaped(
+        await reads().read('listOrganizationRoleVersions', { params: { key: input.roleKey } }),
+        S.object({ data: S.array(ROLE_VERSION_SUMMARY, 100) })
+      ),
+  },
+  {
+    name: 'get_role_version',
+    title: 'Read one version of a role',
+    group: 'read',
+    description: `One version of an organization role: its permission keys and what it added and removed against the version before.${UNTRUSTED}`,
+    input: roleVersionInput,
+    run: async ({ reads }, input: z.infer<typeof roleVersionInput>) =>
+      shaped(
+        await reads().read('getOrganizationRoleVersion', {
+          params: { key: input.roleKey, version: String(input.version) },
+        }),
+        ROLE_VERSION
+      ),
+  },
+  {
+    name: 'explain_access',
+    title: 'Explain a member’s access',
+    group: 'read',
+    description: `Whether a member of an organization holds a permission, and why: the role and version they hold now, its permissions hash and the reason (not_a_member, permission_granted, permission_not_granted).${UNTRUSTED}`,
+    input: explainAccessInput,
+    run: async ({ reads }, input: z.infer<typeof explainAccessInput>) =>
+      shaped(
+        await reads().read('explainOrganizationAccess', {
+          params: { id: input.organizationId, userId: input.userId },
+          query: { permission: input.permission },
+        }),
+        ACCESS_EXPLANATION
       ),
   },
   {

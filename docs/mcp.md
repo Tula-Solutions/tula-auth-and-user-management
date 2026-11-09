@@ -130,6 +130,9 @@ not name is refused.
 | `list_organizations` | `page?`, `size?` (≤ 50, default 20) | `{ meta, data: [organization] }` |
 | `list_organization_members` | `organizationId`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [membership] }` |
 | `list_organization_roles` | none | `{ data: [role] }` (the built-in roles and the custom ones, at most 100) |
+| `list_role_versions` | `roleKey` | `{ data: [version] }` (number, time, permission count and `permissionsHash`, oldest first) |
+| `get_role_version` | `roleKey`, `version` | one version with its `permissions`, and what it `added` and `removed` |
+| `explain_access` | `organizationId`, `userId`, `permission` | `{ member, role: { key, version, permissionsHash }, granted, reason }` |
 | `list_sso_connections` | `organizationId?` | `{ connections: [connection] }` (at most 100) |
 | `get_sso_connection` | `connectionId` | `connection` |
 | `run_doctor` | none | `{ apiUrl, version, environment, checks: [{ id, source, status, summary, fix?, values? }] }` |

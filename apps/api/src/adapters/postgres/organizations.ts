@@ -1366,4 +1366,31 @@ export class PostgresOrganizationStore implements OrganizationStore {
         : null
     })
   }
+
+  /** @inheritdoc */
+  async listRoleVersions(
+    environmentId: string,
+    roleId: string
+  ): Promise<OrganizationRoleVersionRecord[]> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(organizationRoleVersions)
+        .where(
+          and(
+            eq(organizationRoleVersions.environmentId, environmentId),
+            eq(organizationRoleVersions.roleId, roleId)
+          )
+        )
+        .orderBy(asc(organizationRoleVersions.version))
+      return rows.map((row) => ({
+        roleId: row.roleId,
+        roleKey: row.roleKey,
+        version: row.version,
+        permissions: row.permissions,
+        permissionsHash: row.permissionsHash,
+        createdAt: row.createdAt,
+      }))
+    })
+  }
 }

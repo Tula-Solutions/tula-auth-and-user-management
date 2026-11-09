@@ -1219,6 +1219,22 @@ export function describeOrganizationStore(
       }
     })
 
+    test("listRoleVersions returns every version, oldest first, and only the environment's own", async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { permissions: ['org:billing:read', 'org:billing:write'] },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      const list = await ctx.store.listRoleVersions(ctx.a.environmentId, role.id)
+      expect(list.map((v) => v.version)).toEqual([1, 2])
+      expect(list[1]?.permissions).toEqual(['org:billing:read', 'org:billing:write'])
+      expect(await ctx.store.listRoleVersions(ctx.b.environmentId, role.id)).toEqual([])
+    })
+
     test('a snapshot is not found through another environment', async () => {
       const role = await storedRole(ctx.a)
       expect(await ctx.store.findRoleVersion(ctx.b.environmentId, role.id, 1)).toBeNull()

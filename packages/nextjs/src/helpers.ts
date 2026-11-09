@@ -70,6 +70,10 @@ export type Auth =
        * verified claims. **False** with no active organization. A permission is matched
        * exactly: there is no wildcard and `manage` does not imply `read`.
        *
+       * It is synchronous, so it is **false** for a permission of a role too large for the
+       * token (the token carries `org_rv` and `org_ph` and the list is looked up): the
+       * middleware's `access` rules resolve those, or use `@tula-tech/core/access`.
+       *
        * Use it to decide what a page shows and what a route lets through; the server that
        * changes data still authorizes the change itself.
        *

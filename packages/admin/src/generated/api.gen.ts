@@ -970,6 +970,19 @@ export interface Schemas {
     createdAt: string
     updatedAt: string
   }
+  OrganizationAccessExplanation: {
+    organizationId: string
+    userId: string
+    permission: Schemas['PermissionKey']
+    member: boolean
+    role: {
+      key: string
+      version: number
+      permissionsHash: string
+    } | null
+    granted: boolean
+    reason: 'not_a_member' | 'permission_granted' | 'permission_not_granted'
+  }
   OrganizationCreatedEvent: {
     id: string
     type: 'organization.created'
@@ -1315,6 +1328,25 @@ export interface Schemas {
     permissions: number
     weakened?: true
   }
+  OrganizationRoleVersion: {
+    version: number
+    createdAt: string
+    permissionCount: number
+    permissionsHash: string
+    roleKey: string
+    permissions: string[]
+    added: string[]
+    removed: string[]
+  }
+  OrganizationRoleVersionList: {
+    data: Schemas['OrganizationRoleVersionSummary'][]
+  }
+  OrganizationRoleVersionSummary: {
+    version: number
+    createdAt: string
+    permissionCount: number
+    permissionsHash: string
+  }
   OrganizationSlug: string
   OrganizationUpdatedEvent: {
     id: string
@@ -1363,6 +1395,7 @@ export interface Schemas {
     history: number
     expiryDays: number | null
   }
+  PermissionKey: string
   Project: {
     id: string
     workspaceId: string
@@ -2777,6 +2810,8 @@ export interface Operations {
   deleteUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a webhook endpoint (`DELETE /v1/admin/webhook-endpoints/{id}`). */
   deleteWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
+  /** Explain a member’s access to a permission (`GET /v1/admin/organizations/{id}/members/{userId}/access`). */
+  explainOrganizationAccess: { params: { id: string; userId: string }; query: { permission: Schemas['PermissionKey'] }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationAccessExplanation'] }
   /** Export the audit log (`POST /v1/admin/audit-logs/export`). */
   exportAuditLogs: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['AuditExportRequest']; response: undefined }
   /** Read the environment’s settings (`GET /v1/admin/settings`). */
@@ -2791,6 +2826,8 @@ export interface Operations {
   getOrganization: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Organization'] }
   /** Get an organization role (`GET /v1/admin/organization-roles/{key}`). */
   getOrganizationRole: { params: { key: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRole'] }
+  /** Get one version of an organization role (`GET /v1/admin/organization-roles/{key}/versions/{version}`). */
+  getOrganizationRoleVersion: { params: { key: string; version: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleVersion'] }
   /** Read a proposal (`GET /v1/admin/proposals/{id}`). */
   getProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
   /** Read one session by its id (`GET /v1/admin/sessions/{sessionId}`). */
@@ -2835,6 +2872,8 @@ export interface Operations {
   listOrganizationMemberships: { params: { id: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationMembershipList'] }
   /** List organization roles (`GET /v1/admin/organization-roles`). */
   listOrganizationRoles: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleList'] }
+  /** List the versions of an organization role (`GET /v1/admin/organization-roles/{key}/versions`). */
+  listOrganizationRoleVersions: { params: { key: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleVersionList'] }
   /** List organizations (`GET /v1/admin/organizations`). */
   listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number; q?: string }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
   /** List proposals (`GET /v1/admin/proposals`). */
@@ -2965,6 +3004,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   deleteSsoConnection: { method: 'DELETE', path: '/v1/admin/sso-connections/{id}' },
   deleteUser: { method: 'DELETE', path: '/v1/admin/users/{userId}' },
   deleteWebhookEndpoint: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}' },
+  explainOrganizationAccess: { method: 'GET', path: '/v1/admin/organizations/{id}/members/{userId}/access' },
   exportAuditLogs: { method: 'POST', path: '/v1/admin/audit-logs/export' },
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getHook: { method: 'GET', path: '/v1/admin/hooks/{id}' },
@@ -2972,6 +3012,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getOAuthProviderDependents: { method: 'GET', path: '/v1/admin/oauth-providers/{provider}/dependents' },
   getOrganization: { method: 'GET', path: '/v1/admin/organizations/{id}' },
   getOrganizationRole: { method: 'GET', path: '/v1/admin/organization-roles/{key}' },
+  getOrganizationRoleVersion: { method: 'GET', path: '/v1/admin/organization-roles/{key}/versions/{version}' },
   getProposal: { method: 'GET', path: '/v1/admin/proposals/{id}' },
   getSession: { method: 'GET', path: '/v1/admin/sessions/{sessionId}' },
   getSmsUsage: { method: 'GET', path: '/v1/admin/sms/usage' },
@@ -2994,6 +3035,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOrganizationInvitations: { method: 'GET', path: '/v1/admin/organizations/{id}/invitations' },
   listOrganizationMemberships: { method: 'GET', path: '/v1/admin/organizations/{id}/memberships' },
   listOrganizationRoles: { method: 'GET', path: '/v1/admin/organization-roles' },
+  listOrganizationRoleVersions: { method: 'GET', path: '/v1/admin/organization-roles/{key}/versions' },
   listOrganizations: { method: 'GET', path: '/v1/admin/organizations' },
   listProposals: { method: 'GET', path: '/v1/admin/proposals' },
   listScimTokens: { method: 'GET', path: '/v1/admin/scim-tokens' },

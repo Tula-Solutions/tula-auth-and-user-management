@@ -477,6 +477,13 @@ export interface OrganizationStore {
 
   /**
    * @param environmentId - The environment to look in.
+   * @param roleId - The role's id.
+   * @returns Every snapshot of the role, oldest version first; empty when it has none.
+   */
+  listRoleVersions(environmentId: string, roleId: string): Promise<OrganizationRoleVersionRecord[]>
+
+  /**
+   * @param environmentId - The environment to look in.
    * @param id - The role's id.
    * @returns The role, or `null` when the environment has none with that id.
    */

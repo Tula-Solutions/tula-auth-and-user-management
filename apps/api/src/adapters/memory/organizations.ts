@@ -906,6 +906,19 @@ export class MemoryOrganizationStore implements OrganizationStore {
     return due.length
   }
 
+  /** @inheritdoc */
+  async listRoleVersions(
+    environmentId: string,
+    roleId: string
+  ): Promise<OrganizationRoleVersionRecord[]> {
+    const prefix = `${environmentId}/${roleId}/`
+    return [...this.#versions.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, v]) => v)
+      .sort((x, y) => x.version - y.version)
+      .map((v) => structuredClone(v))
+  }
+
   /** Store the snapshot of a role's current version, unless that version has one. */
   async #snapshot(role: OrganizationRoleRecord): Promise<void> {
     const key = `${role.environmentId}/${role.id}/${role.version}`
