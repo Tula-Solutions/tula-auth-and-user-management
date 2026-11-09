@@ -3092,10 +3092,11 @@ public static let maxPermissionKeyLength = 100
 
 _let_, defined in `native/swift/Sources/TulaAuth/TulaOrganizations.swift`
 
-The most bytes the three claims' JSON may take.
+The most bytes the three claims' JSON may take: 2,560 for them and a 96-byte reserve
+for the contract's `org_rv` and `org_ph`, so both sides cap alike.
 
 ```swift
-public static let maxBytes = 2560
+public static let maxBytes = 2656
 ```
 
 #### `TulaOrganizationClaims.organizationId`

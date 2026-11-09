@@ -5504,7 +5504,8 @@
             "maximum": 9007199254740991
           },
           "hash": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 64
           },
           "weakened": {
             "type": "boolean",
