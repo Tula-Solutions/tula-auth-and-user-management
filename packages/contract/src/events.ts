@@ -862,7 +862,7 @@ export const EVENT_DATA_SCHEMAS = {
       permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE),
       /** The role's new version and the hash of its permissions: what a verifier narrows tokens to. */
       version: z.number().int().min(1),
-      hash: z.string(),
+      hash: z.string().max(64),
       weakened: z.literal(true).optional(),
     }
   ),

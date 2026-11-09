@@ -293,6 +293,7 @@ describe('documentation routes', () => {
       '/v1/client/me/organizations',
       '/v1/client/me/organizations/active',
       '/v1/client/me/organizations/active/permissions',
+      '/v1/client/me/organizations/active/permissions/latest',
       '/v1/admin/organizations/{id}/domains',
       '/v1/admin/organizations/{id}/domains/{domainId}/verify',
       '/v1/admin/organizations/{id}/domains/{domainId}',

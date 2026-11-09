@@ -740,6 +740,14 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         ),
       },
       {
+        // A version of a role is history: only the retention job deletes one, a day on (ADR 0068).
+        table: 'organization_role_versions',
+        name: 'organization_role_versions_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        using: expect.stringMatching(/created_at < \(now\(\) - '1 day'::interval\)/),
+      },
+      {
         // Custom roles are changed and deleted by the API; no statement of the runtime role
         // reaches a built-in one (ADR 0065).
         table: 'organization_roles',

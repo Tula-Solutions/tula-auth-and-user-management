@@ -283,8 +283,11 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * exactly those, to 72,546: the room is still 436.
    * The tab's setup links (create, list, revoke and their words) added 1,080 bytes, to 73,190. The
    * budget moved by exactly those, to 73,626: the room is still 436.
+   * The role permission snapshots (ADR 0068: the `org_rv` and `org_ph` claims and the error
+   * codes they came with) added 477 bytes, to 73,667. The budget moved by exactly those, to
+   * 74,103: the room is still 436.
    */
-  const GZIP_BUDGET_BYTES = 73_626
+  const GZIP_BUDGET_BYTES = 74_103
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

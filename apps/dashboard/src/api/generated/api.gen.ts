@@ -2517,6 +2517,7 @@ export interface OrganizationRoleUpdatedEventData {
      * @maximum 9007199254740991
      */
   version: number;
+  /** @maxLength 64 */
   hash: string;
   weakened?: true;
 }
