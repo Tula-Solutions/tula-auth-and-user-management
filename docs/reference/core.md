@@ -3934,6 +3934,21 @@ export interface AccessChecker {
    * @throws AccessUnavailableError when a needed lookup fails or its answer is not the token's.
    */
   check(token: string, permission: string): Promise<AccessDecision>
+
+  /**
+   * Take in a webhook event so that a removal takes effect before the tokens it concerns expire.
+   *
+   * The caller verifies the webhook's signature first (`verifyWebhook`): this takes the event as
+   * trusted. It can only narrow what `check` allows, never widen it: a removed membership, a
+   * revoked session and a role change deny by id for 15 minutes, and a role's new version makes
+   * `check` read that version and intersect it with the token's list. An added permission is
+   * granted only by a refreshed token. Unknown, malformed and test events are ignored. Nothing is
+   * kept but ids, a version and a time, and nothing is persisted: a restart forgets them, and
+   * a lost event leaves a token valid until it expires.
+   *
+   * @param event - A verified event of any type.
+   */
+  apply(event: unknown): void
 }
 ```
 

@@ -773,6 +773,68 @@ describe('the permissions lookup', () => {
   })
 })
 
+describe('the latest permissions lookup', () => {
+  const LATEST = '/me/organizations/active/permissions/latest'
+
+  async function acting() {
+    const maya = await signUp()
+    const acme = await organization('acme', [[maya.userId, 'admin']])
+    const active = await json<ActiveOrganization>(await activate(maya.accessToken, acme.id))
+    return {
+      token: String(active.accessToken),
+      claims: decodeJwt(String(active.accessToken)),
+      acme,
+      maya,
+    }
+  }
+
+  test("answers the role's current snapshot, never cached", async () => {
+    const { token, claims } = await acting()
+    const res = await call('GET', LATEST, undefined, { token })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const body = await json<ActiveOrganizationPermissions>(res)
+    expect(body.hash).toBe(claims.org_ph as string)
+    expect(body.version).toBe(claims.org_rv as number)
+  })
+
+  test('answers a newer version than the token holds', async () => {
+    const { token, claims } = await acting()
+    const role = await deps.organizations.findRole(TEST_TENANT.environmentId, 'admin')
+    const next = spyOn(deps.organizations, 'findRole').mockResolvedValue(
+      role && {
+        ...role,
+        version: (claims.org_rv as number) + 1,
+        permissions: ['org:sys:memberships:read'],
+      }
+    )
+    const find = spyOn(deps.organizations, 'findRoleVersion').mockResolvedValue({
+      permissions: ['org:sys:memberships:read'],
+      permissionsHash: 'sha256:new',
+    } as never)
+    const res = await call('GET', LATEST, undefined, { token })
+    next.mockRestore()
+    find.mockRestore()
+    expect(await json<ActiveOrganizationPermissions>(res)).toEqual({
+      role: 'admin',
+      version: (claims.org_rv as number) + 1,
+      permissions: ['org:sys:memberships:read'],
+      hash: 'sha256:new',
+    })
+  })
+
+  test('a removed member, and no session answer as the rest do', async () => {
+    const { token, acme, maya } = await acting()
+    spyOn(deps.organizations, 'findMembership').mockResolvedValueOnce(null)
+    const gone = await call('GET', LATEST, undefined, { token })
+    expect(gone.status).toBe(404)
+    expect(await codeOf(gone)).toBe('organization.permissions_unavailable')
+    expect((await call('GET', LATEST)).status).toBe(401)
+    expect(acme.id).toBeString()
+    expect(maya.userId).toBeString()
+  })
+})
+
 describe('rate limits', () => {
   test.each([
     ['POST', '/me/organizations', { name: 'Acme', slug: 'acme' }],

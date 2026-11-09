@@ -90,6 +90,9 @@ public enum TulaOperations {
     /// Client configuration (`GET /v1/client/config`). No body. Answers `ClientConfig`.
     public static let getClientConfig = TulaOperation(id: "getClientConfig", method: "GET", path: "/v1/client/config", requiresSession: false)
 
+    /// Read the latest permissions of the token's role (`GET /v1/client/me/organizations/active/permissions/latest`). No body. Answers `ActiveOrganizationPermissions`.
+    public static let getLatestActiveOrganizationPermissions = TulaOperation(id: "getLatestActiveOrganizationPermissions", method: "GET", path: "/v1/client/me/organizations/active/permissions/latest", requiresSession: true)
+
     /// Get the signed-in user (`GET /v1/client/me`). No body. Answers `CurrentUser`.
     public static let getMe = TulaOperation(id: "getMe", method: "GET", path: "/v1/client/me", requiresSession: true)
 
@@ -365,6 +368,7 @@ public enum TulaOperations {
         finishPasskeyRegistration,
         getActiveOrganizationPermissions,
         getClientConfig,
+        getLatestActiveOrganizationPermissions,
         getMe,
         getMyFactors,
         getMyOrganizationSsoConnection,

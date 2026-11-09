@@ -10,6 +10,7 @@ import {
   type OrganizationRoleVersion,
   type OrganizationRoleVersionList,
   organizationRoleWeakenings,
+  permissionsHash,
   roleFitsInline,
   type UpdateOrganizationRoleRequest,
 } from '@tula-tech/contract'
@@ -354,6 +355,9 @@ async function updateLocked(
         role: current.key,
         changed,
         permissions: after.length,
+        // A verifier narrows tokens of an older version by fetching this one; ids and a hash only.
+        version: expectedVersion + 1,
+        hash: await permissionsHash(after),
         ...(weakened && { weakened: true as const }),
       },
     })

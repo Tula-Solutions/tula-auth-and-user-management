@@ -182,8 +182,13 @@ import { join } from 'node:path'
  * One transport rule (TULA-187, H-313, H-314, H-296): plain http to another machine refused
  * unless allowed, `redirect: 'manual'`, and a success body that is not an object refused,
  * added 153 bytes, to 19,979; the budget moved by exactly those, to 19,983.
+ * The generated operations of the role snapshots (`getLatestActiveOrganizationPermissions`,
+ * TULA-211a, and the one before it) added 50 bytes, to 20,033; the budget moved by exactly
+ * those, to 20,037.
+ * After merging the role-snapshot branch the bundle is 20,087; the budget moved by exactly
+ * those, to 20,091.
  */
-const GZIP_BUDGET_BYTES = 19_983
+const GZIP_BUDGET_BYTES = 20_091
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

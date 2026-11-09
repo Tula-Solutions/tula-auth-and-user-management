@@ -860,6 +860,9 @@ export const EVENT_DATA_SCHEMAS = {
         .min(1)
         .max(ORGANIZATION_ROLE_FIELDS.length),
       permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE),
+      /** The role's new version and the hash of its permissions: what a verifier narrows tokens to. */
+      version: z.number().int().min(1),
+      hash: z.string(),
       weakened: z.literal(true).optional(),
     }
   ),
