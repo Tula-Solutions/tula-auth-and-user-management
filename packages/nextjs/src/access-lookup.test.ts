@@ -21,7 +21,7 @@ beforeAll(async () => {
   LOOKUP.org_ph = await permissionsHash(PERMS)
 })
 
-async function setup(reply?: () => Response) {
+async function setup(reply?: () => Response, extra: Record<string, unknown> = {}) {
   const api = createFakeApi([signer])
   api.on(
     PATH,
@@ -29,7 +29,7 @@ async function setup(reply?: () => Response) {
       (() =>
         Response.json({ role: 'iso_manager', version: 7, permissions: PERMS, hash: LOOKUP.org_ph }))
   )
-  const cookie = `tula_at=${await signer.sign(LOOKUP)}`
+  const cookie = `tula_at=${await signer.sign({ ...LOOKUP, ...extra })}`
   // One middleware per permission, as an app has: each keeps its own checker and cache.
   const guards = new Map<string, ReturnType<typeof tulaMiddleware>>()
   const guard = (permission: string) => {
@@ -61,9 +61,18 @@ describe('a token whose role is looked up', () => {
     expect((await guard('org:leads:delete')).status).toBe(403)
   })
 
-  test('a lookup that fails is an error, never an allowed request', async () => {
+  test('a lookup that fails answers 503 and never reaches the handler', async () => {
     const { guard } = await setup(() => new Response('no', { status: 500 }))
-    await expect(guard('org:leads:view')).rejects.toThrow('access lookup')
+    const res = await guard('org:leads:view')
+    expect(res.status).toBe(503)
+    expect(res.headers.get('x-middleware-next')).toBeNull()
+  })
+
+  test('a device-bound lookup token with no headers hook answers 503', async () => {
+    const { guard } = await setup(undefined, { cnf: { jkt: 'thumbprint' } })
+    const res = await guard('org:leads:view')
+    expect(res.status).toBe(503)
+    expect(res.headers.get('x-middleware-next')).toBeNull()
   })
 
   test('the synchronous has() of auth() is false: it cannot wait for a lookup', async () => {
