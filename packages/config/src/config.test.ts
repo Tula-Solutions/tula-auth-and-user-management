@@ -887,7 +887,9 @@ describe('JWT templates', () => {
     expect(await hash({ organizations: { enabled: false } })).toBe(before)
     const on = await hash({ organizations: { enabled: true } })
     const roles = await hash({ organizations: { defaultRole: 'viewer' } })
-    expect(new Set([before, on, roles]).size).toBe(3)
+    const large = await hash({ organizations: { enabled: true, largeRoles: true } })
+    expect(await hash({ organizations: { enabled: true, largeRoles: false } })).toBe(on)
+    expect(new Set([before, on, roles, large]).size).toBe(4)
   })
 
   test('the sign-in test setting is validated by the contract: a word is refused, by its path', () => {
@@ -1819,8 +1821,8 @@ describe('custom organization roles', () => {
     ])
   })
 
-  test('more than 32 permissions on a role are refused', () => {
-    const permissions = Array.from({ length: 33 }, (_, index) => `org:feature${index}:read`)
+  test('more than 1000 permissions on a role are refused', () => {
+    const permissions = Array.from({ length: 1001 }, (_, index) => `org:feature${index}:read`)
     const error = refusal(() =>
       defineConfig({ environments: { dev: { organizationRoles: [{ ...billing, permissions }] } } })
     )

@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "admin organization roles",
-  "description": "An administrator switches organizations on (while they are off the role routes answer organization.disabled) and defines a custom role: a key of the documented grammar, a name and permissions of the form org:<feature>:<action>, which may include the system permissions Tula defines. A key that is taken, the key of a built-in role, a permission of the reserved sys feature that Tula does not define, a malformed or repeated permission and a role of more than 32 permissions are refused with their codes, and a publishable key cannot reach the routes. A role is changed only over the version that was read (If-Match, the ETag of the role): without it the change is refused, a stale version is refused, the built-in roles cannot be changed or deleted, and a role a member holds cannot be deleted until the member has another. The audit log records a change by the names of its fields and holds no name and no permission. The original settings are put back afterwards, even when a step fails.",
+  "description": "An administrator switches organizations on (while they are off the role routes answer organization.disabled) and defines a custom role: a key of the documented grammar, a name and permissions of the form org:<feature>:<action>, which may include the system permissions Tula defines. A key that is taken, the key of a built-in role, a permission of the reserved sys feature that Tula does not define, a malformed or repeated permission and a role too big for a token (more than 32 permissions) while large roles are off are refused with their codes, and a publishable key cannot reach the routes. A role is changed only over the version that was read (If-Match, the ETag of the role): without it the change is refused, a stale version is refused, the built-in roles cannot be changed or deleted, and a role a member holds cannot be deleted until the member has another. The audit log records a change by the names of its fields and holds no name and no permission. The original settings are put back afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "memberEmail": {
@@ -326,7 +326,7 @@
       "expect": {
         "status": 422,
         "body": {
-          "code": "validation.failed"
+          "code": "organization.role_too_large"
         }
       }
     },

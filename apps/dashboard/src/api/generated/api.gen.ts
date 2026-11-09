@@ -2462,7 +2462,7 @@ export interface OrganizationRoleCreatedEventData {
   role: OrganizationRoleKey;
   /**
      * @minimum 0
-     * @maximum 32
+     * @maximum 1000
      */
   permissions: number;
 }
@@ -2509,7 +2509,7 @@ export interface OrganizationRoleUpdatedEventData {
   changed: OrganizationRoleUpdatedEventDataChangedItem[];
   /**
      * @minimum 0
-     * @maximum 32
+     * @maximum 1000
      */
   permissions: number;
   weakened?: true;
@@ -3612,6 +3612,8 @@ export const ErrorCode = {
   organizationrole_in_use: 'organization.role_in_use',
   organizationrole_built_in: 'organization.role_built_in',
   organizationrole_limit: 'organization.role_limit',
+  organizationrole_too_large: 'organization.role_too_large',
+  organizationlarge_roles_in_use: 'organization.large_roles_in_use',
   organizationpermission_required: 'organization.permission_required',
   organizationrole_not_assignable: 'organization.role_not_assignable',
   organizationinvitation_exists: 'organization.invitation_exists',
@@ -5152,6 +5154,7 @@ export type EnvironmentSettingsStateSettingsOrganizations = {
   creatorRole?: OrganizationRoleKey;
   defaultRole?: OrganizationRoleKey;
   personalAccount?: boolean;
+  largeRoles?: boolean;
 };
 
 export type EnvironmentSettingsStateSettingsSso = {
@@ -5299,6 +5302,7 @@ export type EnvironmentSettingsInputOrganizations = {
   creatorRole?: OrganizationRoleKey;
   defaultRole?: OrganizationRoleKey;
   personalAccount?: boolean;
+  largeRoles?: boolean;
 };
 
 export type EnvironmentSettingsInputSso = {
@@ -6395,7 +6399,7 @@ export interface OrganizationRoleList {
 }
 
 /**
- * @maxItems 32
+ * @maxItems 1000
  */
 export type OrganizationRolePermissions = string[];
 
@@ -13441,7 +13445,7 @@ export const getCreateOrganizationRoleUrl = () => {
 }
 
 /**
- * Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 1000, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
  * @summary Define a custom role
  */
 export const createOrganizationRole = async (createOrganizationRoleRequest: CreateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
@@ -13844,7 +13848,7 @@ export const getUpdateOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
 }
 
 /**
- * Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 1000, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
  * @summary Change a custom role
  */
 export const updateOrganizationRole = async (key: OrganizationRoleKey,

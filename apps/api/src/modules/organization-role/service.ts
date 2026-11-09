@@ -10,6 +10,7 @@ import {
   type OrganizationRoleVersion,
   type OrganizationRoleVersionList,
   organizationRoleWeakenings,
+  roleFitsInline,
   type UpdateOrganizationRoleRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -17,6 +18,7 @@ import { AuthError, NotFoundError, ServiceException } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import * as Settings from '~/modules/settings/service'
 import type {
   OrganizationRoleRecord,
   OrganizationRoleVersionRecord,
@@ -25,6 +27,22 @@ import type {
 
 /** What the service reads: the role store, the settings, ids and clock. */
 type ReadDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config' | 'ids' | 'clock'>
+
+/**
+ * Refuse a role whose claims would not fit a token, while the environment has not turned on
+ * `organizations.largeRoles` (ADR 0068): its holders would otherwise get no permissions.
+ */
+async function requireFits(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  key: string,
+  permissions: readonly string[]
+): Promise<void> {
+  const { organizations } = await Settings.current(deps, tenant)
+  if (!organizations.largeRoles && !roleFitsInline(key, permissions)) {
+    throw new AuthError('organization.role_too_large')
+  }
+}
 
 /** The public view of a stored role. Permissions are always the sorted set. */
 function view(record: OrganizationRoleRecord): OrganizationRole {
@@ -193,6 +211,8 @@ export async function get(
  *   built-in one.
  * @throws AuthError `organization.role_limit` when the environment has `MAX_CUSTOM_ROLES`
  *   custom roles (`params.max`).
+ * @throws AuthError `organization.role_too_large` when the role's claims would not fit a token
+ *   and `organizations.largeRoles` is off.
  * @throws ServiceUnavailableError when the environment's lock could not be had in time.
  */
 export async function create(
@@ -214,6 +234,7 @@ export async function create(
       throw new AuthError('organization.role_limit', { max: MAX_CUSTOM_ROLES })
     }
     const permissions = normalizePermissions(input.permissions)
+    await requireFits(deps, tenant, input.key, permissions)
     const id = deps.ids.next()
     const activity = Audit.entry(deps, tenant, {
       type: 'organization_role.created',
@@ -267,8 +288,26 @@ export async function create(
  * @throws AuthError `organization.last_manager` when the change takes
  *   `org:sys:memberships:manage` from the role and an organization would be left with no
  *   member who holds it.
+ * @throws AuthError `organization.role_too_large` when the new permissions would not fit a token
+ *   and `organizations.largeRoles` is off.
+ * @throws ServiceUnavailableError when the environment's lock could not be had in time.
  */
 export async function update(
+  deps: ReadDeps & Pick<Deps, 'environmentLock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  key: string,
+  expectedVersion: number,
+  input: UpdateOrganizationRoleRequest,
+  actor: Actor
+): Promise<OrganizationRole> {
+  // The same lock `Settings.replace` takes to turn large roles off, so that a role cannot grow
+  // past a token while the setting is being switched off.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'organization_roles', () =>
+    updateLocked(deps, tenant, key, expectedVersion, input, actor)
+  )
+}
+
+async function updateLocked(
   deps: ReadDeps,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   key: string,
@@ -291,6 +330,7 @@ export async function update(
   }
   const after = input.permissions === undefined ? before : normalizePermissions(input.permissions)
   if (after.join('\n') !== before.join('\n')) {
+    await requireFits(deps, tenant, current.key, after)
     changes.permissions = after
   }
   const changed: OrganizationRoleField[] = ORGANIZATION_ROLE_FIELDS.filter(

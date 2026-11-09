@@ -12,7 +12,6 @@ import {
   MAX_ACCESS_TOKEN_TTL,
   type NamedJwtTemplate,
   type NamedSessionProfile,
-  type OrganizationClaims,
   type ProposalApprover,
   profileOfSession,
   REFRESH_TOKEN_PREFIX,
@@ -354,7 +353,7 @@ function claimsOf(
   profile: SessionProfile,
   now: Date,
   custom: CustomClaims.Claims | undefined,
-  organization: OrganizationClaims | undefined
+  organization: OrganizationClaimsOf.IssuedOrganizationClaims | undefined
 ): AccessTokenClaims {
   const iat = Math.floor(now.getTime() / 1000)
   return {
@@ -401,7 +400,7 @@ async function signAccessToken(
   now: Date,
   { kid, privateKey }: SigningKey,
   custom: CustomClaims.Claims | undefined,
-  organization: OrganizationClaims | undefined
+  organization: OrganizationClaimsOf.IssuedOrganizationClaims | undefined
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
   const { iss, sub, aud, iat, exp, ...claims } = claimsOf(
     deps,
@@ -1112,7 +1111,7 @@ async function replayOrRevoke(
     profile: SessionProfile
     token: RefreshTokenRecord
     custom: CustomClaims.Claims | undefined
-    organization: OrganizationClaims | undefined
+    organization: OrganizationClaimsOf.IssuedOrganizationClaims | undefined
   },
   usedAt: Date,
   now: Date,
@@ -1297,7 +1296,13 @@ export async function setActiveOrganization(
     now,
     signingKey,
     custom,
-    held ? OrganizationClaimsOf.fromMembership(scope, held) : undefined
+    held
+      ? OrganizationClaimsOf.fromMembership(
+          scope,
+          held,
+          (await Settings.current(deps, scope)).organizations.largeRoles
+        )
+      : undefined
   )
   return { sessionId: updated.id, organizationId, ...access }
 }

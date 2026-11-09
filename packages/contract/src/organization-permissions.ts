@@ -4,10 +4,11 @@
 // requests are in `./organization`, built from these.
 
 /**
- * How many permissions one role can hold. The permissions of the active organization's role are
- * a claim of every access token, so the number is capped.
+ * How many permissions one role can hold. Up to `MAX_ORGANIZATION_PERMISSIONS_CLAIM` travel in the
+ * access token; a larger role is allowed only where the environment's `organizations.largeRoles`
+ * is on, and its token then carries no list (the permissions are looked up by role version).
  */
-export const MAX_PERMISSIONS_PER_ROLE = 32
+export const MAX_PERMISSIONS_PER_ROLE = 1000
 
 /** How many custom roles an environment can define, beside the built-in ones. */
 export const MAX_CUSTOM_ROLES = 50

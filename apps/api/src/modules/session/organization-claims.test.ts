@@ -569,6 +569,30 @@ describe('the most a role can put in a token', () => {
     }
   })
 
+  test('with large roles on, an oversize role gets lookup claims and a small one stays inline', async () => {
+    configure({ largeRoles: true })
+    await withRole('toolong', [...maximal, 'org:billing:read'])
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'toolong')
+    const tokens = await create()
+    const active = await setActive(tokens, acme.id)
+    for (const issued of [active, await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))]) {
+      const claims = claimsOf(issued)
+      expect(claims).toMatchObject({ org_id: acme.id, org_role: 'toolong' })
+      expect(claims.org_perms).toBeUndefined()
+      expect(claims.org_rv).toBe(1)
+      expect(claims.org_ph).toMatch(/^1\./)
+    }
+    const small = await Sessions.setActiveOrganization(
+      deps,
+      tenant,
+      { userId: SAM, sessionId: (await create(SAM)).sessionId },
+      await deps.organizations.findUserMembership(tenant.environmentId, acme.id, SAM)
+    )
+    expect(claimsOf(small).org_perms).toEqual(ADMIN_PERMISSIONS)
+  })
+
   test('a role written by hand past the bounds yields a token with none of the claims, and logs no permission', async () => {
     await withRole('toolong', [...maximal, 'org:billing:read'])
     const acme = await organization()

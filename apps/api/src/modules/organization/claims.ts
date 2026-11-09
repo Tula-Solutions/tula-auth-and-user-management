@@ -16,6 +16,11 @@ import type { UserMembershipRecord } from '~/ports/organization-store'
 import type { SessionRecord } from '~/ports/session-store'
 
 /** What building a session's organization claims reads. */
+/** The claims a token is issued with: `orgPermissions` is absent for a lookup token. */
+export type IssuedOrganizationClaims = Omit<OrganizationClaims, 'orgPermissions'> & {
+  readonly orgPermissions?: readonly string[]
+}
+
 type ClaimDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config'>
 
 /**
@@ -44,7 +49,7 @@ export async function claimsOf(
   deps: ClaimDeps,
   scope: Pick<Tenant, 'environmentId'>,
   session: Pick<SessionRecord, 'userId' | 'activeOrganizationId'>
-): Promise<OrganizationClaims | undefined> {
+): Promise<IssuedOrganizationClaims | undefined> {
   const { activeOrganizationId } = session
   if (activeOrganizationId === null) {
     return undefined
@@ -58,7 +63,7 @@ export async function claimsOf(
     activeOrganizationId,
     session.userId
   )
-  return held ? fromMembership(scope, held) : undefined
+  return held ? fromMembership(scope, held, organizations.largeRoles) : undefined
 }
 
 /**
@@ -68,12 +73,15 @@ export async function claimsOf(
  *
  * @param scope - The environment, for the log line.
  * @param held - The user's membership with its role's permissions.
- * @returns The three claims, or `undefined` when they would not fit.
+ * @param largeRoles - The environment's `organizations.largeRoles`: a role too large for a
+ *   token then gets the lookup claims (no `org_perms`) instead of none.
+ * @returns The claims, or `undefined` when they would not fit and large roles are off.
  */
 export function fromMembership(
   scope: Pick<Tenant, 'environmentId'>,
-  held: UserMembershipRecord
-): OrganizationClaims | undefined {
+  held: UserMembershipRecord,
+  largeRoles = false
+): IssuedOrganizationClaims | undefined {
   const { snapshot } = held
   if (!snapshot) {
     // Fail closed: a version or hash from anywhere else could disagree with `org_perms`.
@@ -84,7 +92,7 @@ export function fromMembership(
     })
     return undefined
   }
-  const claims: OrganizationClaims = {
+  const claims = {
     orgId: held.organization.id,
     orgRole: held.membership.roleKey,
     orgPermissions: held.permissions,
@@ -95,6 +103,10 @@ export function fromMembership(
     claims.orgPermissions.length > MAX_ORGANIZATION_PERMISSIONS_CLAIM ||
     organizationClaimsBytes(claims) > MAX_ORGANIZATION_CLAIMS_BYTES
   ) {
+    if (largeRoles) {
+      // The verifier fetches the permissions by `org_rv` and `org_ph`; see `readOrganizationTokenClaims`.
+      return { ...claims, orgPermissions: undefined }
+    }
     // Ids and a count, never a role's contents.
     logger.error('organization claims over their cap; the token carries none', {
       environmentId: scope.environmentId,
@@ -112,11 +124,11 @@ export function fromMembership(
  * @param claims - The organization claims.
  * @returns The five top-level claims, under their reserved names.
  */
-export function asTokenClaims(claims: OrganizationClaims) {
+export function asTokenClaims(claims: IssuedOrganizationClaims) {
   return {
     [ORGANIZATION_ID_CLAIM]: claims.orgId,
     [ORGANIZATION_ROLE_CLAIM]: claims.orgRole,
-    [ORGANIZATION_PERMISSIONS_CLAIM]: [...claims.orgPermissions],
+    ...(claims.orgPermissions && { [ORGANIZATION_PERMISSIONS_CLAIM]: [...claims.orgPermissions] }),
     [ORGANIZATION_ROLE_VERSION_CLAIM]: claims.roleVersion,
     [ORGANIZATION_PERMISSIONS_HASH_CLAIM]: claims.permissionsHash,
   }
