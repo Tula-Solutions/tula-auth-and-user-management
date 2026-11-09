@@ -354,6 +354,54 @@ hand: verify, then look for `org_id`, `org_role` and `org_perms`.
 
 :::
 
+#### Roles with many permissions
+
+A role with more permissions than fit in a token (32 inline) is carried as `org_rv` and `org_ph`
+(its version and the hash of its permissions) and no `org_perms`. `readOrganizationClaims` is
+`null` for such a token, and `hasOrganizationAccess` answers `false`: the synchronous checks
+fail closed. The Next.js SDK's middleware `access` rules resolve a permission of such a role
+for you; `auth().has()` is synchronous and stays `false` for it (a role check still works in
+the middleware). Elsewhere, use one `@tula-tech/core/access` checker, which verifies the token
+and fetches the list once per hash. When the list cannot be fetched it throws
+`AccessUnavailableError`: answer 503, never allow.
+
+<!-- snippet: examples/docs-snippets/web/backend.ts#backend-access-checker -->
+```ts
+import { AccessUnavailableError, createAccessChecker } from '@tula-tech/core/access'
+import { Hono } from 'hono'
+
+// One checker for the process: it verifies the token, and fetches a large role's permission
+// list once per hash (a role change is a new hash, so the cache cannot go stale).
+const access = createAccessChecker({
+  apiUrl: 'https://auth.example.com',
+  environmentId,
+  publishableKey: 'tula_pk_prod_...',
+})
+
+const app = new Hono()
+
+app.use('/invoices/*', async (c, next) => {
+  const token = c.req.header('authorization')?.replace(/^Bearer /, '')
+  if (!token) {
+    return c.json({ code: 'auth.unauthorized' }, 401)
+  }
+  try {
+    const decision = await access.check(token, 'org:invoices:read')
+    if (!decision.allowed) {
+      return c.json({ code: 'auth.forbidden' }, decision.reason === 'invalid_token' ? 401 : 403)
+    }
+  } catch (error) {
+    if (error instanceof AccessUnavailableError) {
+      // The list could not be fetched: not allowed, and not a "no" either.
+      return c.json({ code: 'service.unavailable' }, 503)
+    }
+    throw error
+  }
+  await next()
+})
+```
+<!-- /snippet -->
+
 ### How fresh the claims are
 
 A role is copied into the token when the token is issued. So a change reaches a signed-in user

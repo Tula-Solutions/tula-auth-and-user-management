@@ -108,6 +108,8 @@ describe('a Request is never built from another Request', () => {
     'config.ts': ["'http://localhost:3000/dashboard'"],
     // The stand-in `auth()` reads headers through: a string literal.
     'helpers.ts': ["'http://localhost/'"],
+    // The access checker's `fetch(url: string, init)`, handed to the in-process `fetch`.
+    'middleware.ts': ['url'],
     // `callApi`'s `url: string`: the one place a call to the API is built.
     'upstream.ts': ['url'],
     // jose's `customFetch` hands over the URL it would fetch (a string) and its init.
