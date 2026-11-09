@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   createDpopProof,
+  DEFAULT_ENVIRONMENT_SETTINGS,
   type DeviceKey,
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
@@ -435,6 +436,16 @@ describe('POST /v1/client/sessions/refresh for a bound session', () => {
 
 describe('GET /v1/client/me/organizations/active/permissions for a bound session', () => {
   const PERMISSIONS = '/me/organizations/active/permissions'
+  // The lookup answers 403 organization.disabled before the proof check when organizations are off.
+  beforeEach(() => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      },
+    })
+  })
   const getProof = async (signer: DeviceKey) =>
     proofFor(signer, {
       now: deps.clock.now(),
