@@ -17,8 +17,11 @@ const b64 = (bytes: Uint8Array | string) =>
     .replace(/\//g, '_')
     .replace(/=+$/, '')
 
-async function mint(claims: Record<string, unknown>, over: { iss?: string; exp?: number } = {}) {
-  const header = b64(JSON.stringify({ alg: 'EdDSA', typ: 'JWT', kid: 'k1' }))
+async function mint(
+  claims: Record<string, unknown>,
+  over: { iss?: string; exp?: number; kid?: string } = {}
+) {
+  const header = b64(JSON.stringify({ alg: 'EdDSA', typ: 'JWT', kid: over.kid ?? 'k1' }))
   const payload = b64(
     JSON.stringify({
       iss: over.iss ?? ISS,
@@ -238,6 +241,43 @@ describe('createAccessChecker', () => {
     expect(calls.every((c) => c.url.startsWith(API))).toBe(true)
   })
 
+  test('an unknown kid inside the refetch cooldown is unavailable, after a real refetch invalid', async () => {
+    const { access } = setup()
+    const claims = { org_id: ORG, org_role: 'admin', org_perms: ['org:a:b'] }
+    const fresh = await mint(claims, { kid: 'k2' })
+    // The first lookup is a real refetch, and k2 is not in it.
+    expect(await access.check(fresh, 'org:a:b')).toEqual({
+      allowed: false,
+      reason: 'invalid_token',
+    })
+    // A second one is inside the cooldown: the key may be new, so ask the caller to retry.
+    expect(access.check(fresh, 'org:a:b')).rejects.toBeInstanceOf(AccessUnavailableError)
+  })
+
+  test('a token that is not yet valid (nbf) is invalid_token, within 5 seconds of skew', async () => {
+    const { access } = setup()
+    const now = Math.floor(Date.now() / 1000)
+    const claims = { org_id: ORG, org_role: 'admin', org_perms: ['org:a:b'] }
+    expect((await access.check(await mint({ ...claims, nbf: now + 60 }), 'org:a:b')).allowed).toBe(
+      false
+    )
+    expect((await access.check(await mint({ ...claims, nbf: now + 3 }), 'org:a:b')).allowed).toBe(
+      true
+    )
+  })
+
+  test('one key that cannot be imported does not drop the others', async () => {
+    const bad = { kty: 'OKP', crv: 'Ed25519', kid: 'bad', x: 'AAAA' }
+    const access = createAccessChecker({
+      apiUrl: API,
+      environmentId: ENV,
+      publishableKey: 'tula_pk_dev_x',
+      fetch: (async () => Response.json({ keys: [bad, jwk] })) as unknown as typeof fetch,
+    })
+    const token = await mint({ org_id: ORG, org_role: 'admin', org_perms: ['org:a:b'] })
+    expect((await access.check(token, 'org:a:b')).allowed).toBe(true)
+  })
+
   test('the cache is bounded in bytes, least recently used out', async () => {
     const { access, lookups } = setup({ cacheBytes: 1 })
     const token = await lookupToken()
@@ -285,7 +325,10 @@ describe('access.apply: closing the window with webhooks', () => {
   })
 
   /** A checker whose `/latest` answers with `latest`; the other lookup answers with `PERMS`. */
-  function withLatest(latest: { version: number; permissions: string[] } | 'fail') {
+  function withLatest(
+    latest: { version: number; permissions: string[] } | 'fail',
+    cacheBytes?: number
+  ) {
     const calls: string[] = []
     const fetchFake = (async (input: string | URL | Request) => {
       const url = String(input)
@@ -316,8 +359,13 @@ describe('access.apply: closing the window with webhooks', () => {
       environmentId: ENV,
       publishableKey: 'tula_pk_dev_x',
       fetch: fetchFake,
+      cacheBytes,
     })
-    return { access, latestCalls: () => calls.filter((u) => u.endsWith('/latest')) }
+    return {
+      access,
+      latestCalls: () => calls.filter((u) => u.endsWith('/latest')),
+      listCalls: () => calls.filter((u) => u.endsWith('/permissions')),
+    }
   }
 
   const roleUpdated = (version: number, data: Record<string, unknown> = {}) =>
@@ -475,5 +523,76 @@ describe('access.apply: closing the window with webhooks', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+
+  test('a late role_changed does not lift an earlier removal', async () => {
+    const { access } = withLatest({ version: 7, permissions: PERMS })
+    const token = await mint({
+      iat: Math.floor(Date.now() / 1000),
+      org_id: ORG,
+      org_role: 'a',
+      org_perms: ['org:a:b'],
+    })
+    const data = { organizationId: ORG, userId: 'u1' }
+    access.apply(event('organization_membership.removed', 'm1', data))
+    access.apply(
+      event('organization_membership.role_changed', 'm1', data, new Date(0).toISOString())
+    )
+    expect((await access.check(token, 'org:a:b')).allowed).toBe(false)
+  })
+
+  test('remembering a key twice does not double its bytes', async () => {
+    const hash = await permissionsHash(PERMS)
+    const size = (key: string) => key.length * 2 + PERMS.reduce((n, p) => n + p.length * 2, 0)
+    const max = size(`${ISS}|${hash}`) + size(`${ISS}|iso_manager|9`)
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let listFetches = 0
+    const fetchFake = (async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/jwks.json')) {
+        return Response.json({ keys: [jwk] })
+      }
+      if (url.endsWith('/latest')) {
+        await gate
+      } else {
+        listFetches++
+      }
+      return Response.json({ role: 'iso_manager', version: 9, permissions: PERMS, hash })
+    }) as typeof fetch
+    const access = createAccessChecker({
+      apiUrl: API,
+      environmentId: ENV,
+      publishableKey: 'tula_pk_dev_x',
+      fetch: fetchFake,
+      cacheBytes: max,
+    })
+    const token = await lookupToken()
+    await access.check(token, 'org:leads:view')
+    access.apply(roleUpdated(8))
+    const first = access.check(token, 'org:leads:view')
+    await Bun.sleep(5)
+    access.apply(roleUpdated(10)) // a second flight, which the server also answers with 9
+    const second = access.check(token, 'org:leads:view')
+    await Bun.sleep(5)
+    release()
+    await Promise.all([first, second])
+    const before = listFetches
+    await access.check(token, 'org:leads:view')
+    expect(listFetches).toBe(before)
+  })
+
+  test('the deny maps are bounded: the oldest entry goes past the cap', async () => {
+    const { access } = withLatest({ version: 7, permissions: PERMS })
+    for (let i = 0; i <= 10_000; i++) {
+      access.apply(event('session.revoked', `s${i}`, {}))
+    }
+    const claims = { org_id: ORG, org_role: 'a', org_perms: ['org:a:b'] }
+    expect((await access.check(await mint({ ...claims, sid: 's0' }), 'org:a:b')).allowed).toBe(true)
+    expect((await access.check(await mint({ ...claims, sid: 's10000' }), 'org:a:b')).allowed).toBe(
+      false
+    )
   })
 })

@@ -18,6 +18,9 @@ const DEFAULT_TIMEOUT_MS = 5000
 /** How long a denial is kept: the longest an access token lives, so no token it names outlasts it. */
 const DENY_MS = 15 * 60_000
 
+/** The most entries one deny map (or the latest-version map) holds; the oldest go first. */
+const MAX_ENTRIES = 10_000
+
 /**
  * Thrown by {@link AccessChecker.check} when a decision cannot be made safely: the permission
  * list could not be fetched, or did not prove to be the token's. Map it to 503; never allow.
@@ -188,10 +191,14 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
         for (const jwk of Array.isArray(body?.keys) ? body.keys : []) {
           if (jwk?.kty === 'OKP' && jwk.crv === 'Ed25519' && typeof jwk.kid === 'string') {
             const { kty, crv, x } = jwk
-            next.set(
-              jwk.kid,
-              await crypto.subtle.importKey('jwk', { kty, crv, x }, 'Ed25519', false, ['verify'])
-            )
+            try {
+              next.set(
+                jwk.kid,
+                await crypto.subtle.importKey('jwk', { kty, crv, x }, 'Ed25519', false, ['verify'])
+              )
+            } catch {
+              // One malformed key must not take the valid ones down with it.
+            }
           }
         }
         keys.clear()
@@ -229,11 +236,17 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
       return null
     }
     let key = keys.get(header.kid)
+    let refetched = false
     if (!key && (keysInFlight || Date.now() - keysFetchedAt >= JWKS_REFETCH_MS)) {
+      refetched = true
       await refreshKeys() // a failure here is the API being unreachable, not a bad token
       key = keys.get(header.kid)
     }
     if (!key) {
+      if (!refetched) {
+        // The cooldown stopped the lookup: a new key may be valid, so the answer is "try again".
+        throw new AccessUnavailableError('The signing key is not known yet; retry shortly.')
+      }
       return null
     }
     let signature: Uint8Array<ArrayBuffer>
@@ -250,6 +263,9 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     if (
       iss !== issuer ||
       aud !== options.environmentId ||
+      (claims.nbf !== undefined &&
+        (typeof claims.nbf !== 'number' ||
+          claims.nbf - CLOCK_TOLERANCE_SECONDS > Date.now() / 1000)) ||
       typeof exp !== 'number' ||
       exp + CLOCK_TOLERANCE_SECONDS < Date.now() / 1000
     ) {
@@ -259,6 +275,11 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
   }
 
   function remember(key: string, permissions: Set<string>): void {
+    const previous = cache.get(key)
+    if (previous) {
+      cache.delete(key) // re-inserted last, and its bytes counted once
+      cachedBytes -= previous.bytes
+    }
     let bytes = key.length * 2
     for (const permission of permissions) {
       bytes += permission.length * 2
@@ -347,7 +368,7 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
         const permissions = new Set<string>(list)
         remember(`${issuer}|${role}|${body.version}`, permissions)
         // The server's answer is the truth: it also repairs a version an event overstated.
-        latestVersion.set(role, body.version)
+        setLatest(role, body.version)
         return { version: body.version, permissions }
       })().finally(() => latestInFlight.delete(flight))
       latestInFlight.set(flight, pending)
@@ -355,7 +376,8 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     return pending
   }
 
-  function denied(claims: Record<string, unknown>, orgId: string | null): boolean {
+  /** Drop what expired, then the oldest past the cap: the maps never grow without bound. */
+  function trim(): void {
     const now = Date.now()
     for (const map of [deniedSessions, deniedMembers]) {
       for (const [key, entry] of map) {
@@ -365,6 +387,24 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
         map.delete(key)
       }
     }
+    for (const map of [deniedSessions, deniedMembers, latestVersion]) {
+      for (const key of map.keys()) {
+        if (map.size <= MAX_ENTRIES) {
+          break
+        }
+        map.delete(key)
+      }
+    }
+  }
+
+  /** Record a role's latest version; the Map keeps the most recently touched role last. */
+  function setLatest(role: string, version: number): void {
+    latestVersion.delete(role)
+    latestVersion.set(role, version)
+  }
+
+  function denied(claims: Record<string, unknown>, orgId: string | null): boolean {
+    trim()
     const sid = asString(claims.sid)
     if (sid && deniedSessions.has(sid)) {
       return true
@@ -393,7 +433,7 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
         const sid = asString((target as { id?: unknown } | null)?.id)
         if (sid) {
           deniedSessions.delete(sid) // re-inserted last: the Map stays in expiry order
-          deniedSessions.set(sid, until)
+          deniedSessions.set(sid, Math.max(until, deniedSessions.get(sid) ?? 0))
         }
       } else if (
         type === 'organization_membership.removed' ||
@@ -408,16 +448,23 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
             type === 'organization_membership.removed' || Number.isNaN(at)
               ? Number.POSITIVE_INFINITY
               : at
-          deniedMembers.delete(`${orgId}|${userId}`)
-          deniedMembers.set(`${orgId}|${userId}`, { until, before })
+          const k = `${orgId}|${userId}`
+          // Strictest wins: a late role change never lifts an earlier removal.
+          const prev = deniedMembers.get(k)
+          deniedMembers.delete(k)
+          deniedMembers.set(k, {
+            until: Math.max(until, prev?.until ?? 0),
+            before: Math.max(before, prev?.before ?? 0),
+          })
         }
       } else if (type === 'organization_role.updated') {
         const role = asString(d.role)
         const version = d.version
         if (role && typeof version === 'number' && Number.isInteger(version)) {
-          latestVersion.set(role, Math.max(version, latestVersion.get(role) ?? 0))
+          setLatest(role, Math.max(version, latestVersion.get(role) ?? 0))
         }
       }
+      trim()
     },
     async check(token, permission) {
       const claims = await verify(token)
