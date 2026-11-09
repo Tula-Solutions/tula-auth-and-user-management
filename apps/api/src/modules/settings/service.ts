@@ -15,6 +15,7 @@ import {
   hasForbiddenRedirectCharacter,
   isPhoneNumberAllowed,
   type OAuthProvider,
+  roleFitsInline,
   type SessionClient,
   type SignInMethod,
   settingsWeakenings,
@@ -385,11 +386,14 @@ function managerChanges(
  * @throws ValidationError (422) when a deployment default the request relied on cannot be
  *   stored (see {@link withDeploymentDefaults}), or when the document enables no sign-in method
  *   and the environment has no OAuth provider enabled.
+ * @throws AuthError `organization.large_roles_in_use` (409) when the document turns
+ *   `organizations.largeRoles` off while a role is too large for a token.
  * @throws ServiceException `precondition.failed` (412) when the settings are no longer at
  *   `expectedRevision`; `params.revision` is the current one.
  */
 export async function replace(
-  deps: ReadDeps & Pick<Deps, 'ids' | 'clock' | 'oauthProviders' | 'environmentLock'>,
+  deps: ReadDeps &
+    Pick<Deps, 'ids' | 'clock' | 'oauthProviders' | 'environmentLock' | 'organizations'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   input: ReplaceInput,
   actor: Actor
@@ -414,34 +418,52 @@ export async function replace(
     if (changed.length === 0 && !managed) {
       return before
     }
-    const replaced = await deps.environmentSettings.replace(
-      tenant.environmentId,
-      input.expectedRevision,
-      settings,
-      deps.clock.now(),
-      Audit.entry(deps, tenant, {
-        type: 'environment.settings_updated',
-        actor,
-        target: { type: 'environment', id: tenant.environmentId },
-        data: {
-          revision: input.expectedRevision + 1,
-          changed,
-          // A flag, never the values: enough to find the change that loosened the policy.
-          ...(weakened(before.settings, settings) && { weakened: true }),
-          // Which tool applied a config file, or that its record was removed (`null`).
-          ...(manager && { managedBy: manager.tool }),
-          ...(manager === null && { managedBy: null }),
-          // Settings a config file manages, changed around it: the next `tula diff` shows it.
-          ...(manager === undefined && before.managedBy !== null && { outsideConfig: true }),
-        },
-      }),
-      manager
-    )
-    if (!replaced) {
-      // Another writer got in between the read and the write.
-      throw new ServiceException('precondition.failed')
+    const write = async () => {
+      const replaced = await deps.environmentSettings.replace(
+        tenant.environmentId,
+        input.expectedRevision,
+        settings,
+        deps.clock.now(),
+        Audit.entry(deps, tenant, {
+          type: 'environment.settings_updated',
+          actor,
+          target: { type: 'environment', id: tenant.environmentId },
+          data: {
+            revision: input.expectedRevision + 1,
+            changed,
+            // A flag, never the values: enough to find the change that loosened the policy.
+            ...(weakened(before.settings, settings) && { weakened: true }),
+            // Which tool applied a config file, or that its record was removed (`null`).
+            ...(manager && { managedBy: manager.tool }),
+            ...(manager === null && { managedBy: null }),
+            // Settings a config file manages, changed around it: the next `tula diff` shows it.
+            ...(manager === undefined && before.managedBy !== null && { outsideConfig: true }),
+          },
+        }),
+        manager
+      )
+      if (!replaced) {
+        // Another writer got in between the read and the write.
+        throw new ServiceException('precondition.failed')
+      }
+      return toState(replaced)
     }
-    return toState(replaced)
+    if (!before.settings.organizations.largeRoles || settings.organizations.largeRoles) {
+      return write()
+    }
+    // Turning large roles off: no role may be past a token's size, and none may grow while the
+    // write happens (role writes take the same lock).
+    return deps.environmentLock.runExclusive(
+      tenant.environmentId,
+      'organization_roles',
+      async () => {
+        const roles = await deps.organizations.listRoles(tenant.environmentId)
+        if (roles.some((role) => !roleFitsInline(role.key, role.permissions))) {
+          throw new AuthError('organization.large_roles_in_use')
+        }
+        return write()
+      }
+    )
   })
 }
 
