@@ -279,7 +279,7 @@ describe('POST /v1/admin/organization-roles', () => {
     expect(roleActions()).toEqual([])
   })
 
-  test('holds at most 32 permissions', async () => {
+  test('holds at most 1000 permissions', async () => {
     const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
     expect(
       (

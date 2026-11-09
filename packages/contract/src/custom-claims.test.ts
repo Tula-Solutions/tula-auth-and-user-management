@@ -21,7 +21,6 @@ import {
 import {
   BUILT_IN_ROLES,
   MAX_PERMISSION_KEY_LENGTH,
-  MAX_PERMISSIONS_PER_ROLE,
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
   rolePermissionRefusal,
@@ -251,7 +250,7 @@ describe('the organization claims (ADR 0065)', () => {
     orgId: ID,
     orgRole: `r${'x'.repeat(31)}`,
     orgPermissions: Array.from(
-      { length: MAX_PERMISSIONS_PER_ROLE },
+      { length: MAX_ORGANIZATION_PERMISSIONS_CLAIM },
       (_, index) => `org:sys:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
     ),
   }
@@ -271,7 +270,6 @@ describe('the organization claims (ADR 0065)', () => {
     expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
     expect(MAX_ORGANIZATION_CLAIMS_BYTES).toBe(2656)
     expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(160)
-    expect(MAX_PERMISSIONS_PER_ROLE).toBe(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
   })
 
   test('a custom role at its limits fits the cap: 32 keys of 69 characters at most', () => {
@@ -293,7 +291,7 @@ describe('the organization claims (ADR 0065)', () => {
       expect(rolePermissionRefusal(longer)).not.toBeNull()
     }
     const permissions = Array.from(
-      { length: MAX_PERMISSIONS_PER_ROLE },
+      { length: MAX_ORGANIZATION_PERMISSIONS_CLAIM },
       (_, index) => `org:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
     )
     expect(

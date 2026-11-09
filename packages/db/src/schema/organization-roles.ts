@@ -63,7 +63,7 @@ export const organizationRoles = tula.table(
     // feature with a fourth segment.
     check(
       'organization_roles_permissions_shape',
-      sql`cardinality(${t.permissions}) <= 32 and array_position(${t.permissions}, null) is null and array_to_string(${t.permissions}, ',') ~ '^((org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})(,org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})*)?$' and char_length(array_to_string(${t.permissions}, ',')) - char_length(replace(array_to_string(${t.permissions}, ','), ',', '')) = greatest(cardinality(${t.permissions}) - 1, 0)`
+      sql`cardinality(${t.permissions}) <= 1000 and array_position(${t.permissions}, null) is null and array_to_string(${t.permissions}, ',') ~ '^((org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})(,org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})*)?$' and char_length(array_to_string(${t.permissions}, ',')) - char_length(replace(array_to_string(${t.permissions}, ','), ',', '')) = greatest(cardinality(${t.permissions}) - 1, 0)`
     ),
     ...tenantConstraints('organization_roles', t),
     // Restrictive: ANDed with the tenant policy, so they can only take rows away. A built-in
