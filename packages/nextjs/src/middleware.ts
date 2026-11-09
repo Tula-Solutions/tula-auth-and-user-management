@@ -2,8 +2,8 @@ import {
   hasOrganizationAccess,
   type OrganizationCheck,
   readOrganizationClaims,
-  readOrganizationTokenClaims,
 } from '@tula-tech/contract/custom-claims'
+import { readOrganizationTokenClaims } from '@tula-tech/contract/organization-lookup'
 import {
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,

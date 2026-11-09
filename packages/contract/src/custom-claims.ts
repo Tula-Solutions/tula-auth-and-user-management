@@ -192,10 +192,11 @@ export function readOrganizationClaims(claims: unknown): OrganizationClaims | nu
     return null
   }
   const record = claims as Record<string, unknown>
-  const [id, role, permissions] = [
+  const [id, role, permissions, version] = [
     record[ORGANIZATION_ID_CLAIM],
     record[ORGANIZATION_ROLE_CLAIM],
     record[ORGANIZATION_PERMISSIONS_CLAIM],
+    record[ORGANIZATION_ROLE_VERSION_CLAIM],
   ]
   if (
     typeof id !== 'string' ||
@@ -217,6 +218,10 @@ export function readOrganizationClaims(claims: unknown): OrganizationClaims | nu
     orgId: id,
     orgRole: role,
     orgPermissions: Object.freeze([...(permissions as string[])]),
+    // A verifier narrows an inline list by the version it was read at, so read it when valid.
+    ...(typeof version === 'number' &&
+      Number.isSafeInteger(version) &&
+      version >= 1 && { roleVersion: version }),
   })
   return organizationClaimsBytes(read) > MAX_ORGANIZATION_CLAIMS_BYTES ? null : read
 }
@@ -501,10 +506,3 @@ export function readCustomClaims(claims: unknown): CustomClaims | null {
   const read = Object.fromEntries(entries)
   return customClaimsBytes(read) <= MAX_CUSTOM_CLAIMS_BYTES ? Object.freeze(read) : null
 }
-
-// Kept here for importers of the Zod-free entry point that read the hash helpers from it.
-export {
-  permissionsHash,
-  readOrganizationTokenClaims,
-  verifyPermissionsHash,
-} from './organization-lookup'

@@ -1,8 +1,8 @@
+import { environmentIssuer, jwksUrl } from '@tula-tech/contract/issuer'
 import {
   readOrganizationTokenClaims,
   verifyPermissionsHash,
-} from '@tula-tech/contract/custom-claims'
-import { environmentIssuer, jwksUrl } from '@tula-tech/contract/issuer'
+} from '@tula-tech/contract/organization-lookup'
 import { PERMISSION_KEY_PATTERN } from '@tula-tech/contract/organization-permissions'
 
 // The server-side permission check ([ADR 0068](../../../docs/adr/0068-role-permission-snapshots.md),
@@ -38,6 +38,26 @@ const MAX_ENTRIES = 10_000
  */
 export class AccessUnavailableError extends Error {
   override readonly name = 'AccessUnavailableError'
+  /**
+   * Why: `device_proof_required` when the token is device-bound (`cnf`) and no `headers` option
+   * can supply the user's DPoP proof, so the lookup was not attempted; `lookup_failed` otherwise.
+   */
+  readonly reason: 'device_proof_required' | 'lookup_failed'
+
+  constructor(
+    message: string,
+    options?: ErrorOptions & { reason?: 'device_proof_required' | 'lookup_failed' }
+  ) {
+    super(message, options)
+    this.reason = options?.reason ?? 'lookup_failed'
+  }
+}
+
+/** A non-2xx answer of the API, kept as the cause so a 404 can be told from an outage. */
+class StatusError extends Error {
+  constructor(readonly status: number) {
+    super(`status ${status}`)
+  }
 }
 
 /** What {@link AccessChecker.check} answers. */
@@ -65,6 +85,17 @@ export interface AccessCheckerOptions {
   cacheBytes?: number
   /** The deadline of one request to the API, in milliseconds. Default 5000. */
   timeoutMs?: number
+  /**
+   * Extra headers for a permission lookup, such as the user's DPoP proof. The API requires a
+   * device proof on the lookup routes when the token is device-bound (`cnf`), which a resource
+   * server cannot produce itself: without this option such a token throws
+   * `AccessUnavailableError` (`reason: 'device_proof_required'`) and no request is made.
+   */
+  headers?: (request: {
+    url: string
+    method: 'GET'
+    token: string
+  }) => Promise<Record<string, string>> | Record<string, string>
 }
 
 /** The checker {@link createAccessChecker} builds. */
@@ -172,13 +203,27 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
       const work = (async () => {
         const response = await doFetch(url, { headers, signal, redirect: 'error' })
         if (!response.ok) {
-          throw new Error(`status ${response.status}`)
+          throw new StatusError(response.status)
         }
         return response.json() as Promise<unknown>
       })()
       return await Promise.race([work, deadline])
     } catch (cause) {
       throw new AccessUnavailableError('The access lookup failed.', { cause })
+    }
+  }
+
+  /** The headers of a lookup; a device-bound token needs the `headers` hook for its proof. */
+  async function lookupHeaders(token: string, url: string, bound: boolean) {
+    if (bound && !options.headers) {
+      throw new AccessUnavailableError('The token is device-bound; the lookup needs its proof.', {
+        reason: 'device_proof_required',
+      })
+    }
+    return {
+      authorization: `Bearer ${token}`,
+      'x-tula-publishable-key': options.publishableKey,
+      ...(await options.headers?.({ url, method: 'GET', token })),
     }
   }
 
@@ -295,14 +340,12 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     }
   }
 
-  async function fetchList(token: string, hash: string): Promise<Set<string>> {
-    const body = (await request(
-      `${options.apiUrl.replace(/\/+$/, '')}/v1/client/me/organizations/active/permissions`,
-      {
-        authorization: `Bearer ${token}`,
-        'x-tula-publishable-key': options.publishableKey,
-      }
-    )) as { hash?: unknown; permissions?: unknown } | null
+  async function fetchList(token: string, hash: string, bound: boolean): Promise<Set<string>> {
+    const url = `${options.apiUrl.replace(/\/+$/, '')}/v1/client/me/organizations/active/permissions`
+    const body = (await request(url, await lookupHeaders(token, url, bound))) as {
+      hash?: unknown
+      permissions?: unknown
+    } | null
     const list = body?.permissions
     if (
       body?.hash !== hash ||
@@ -315,7 +358,8 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     return new Set(list)
   }
 
-  async function permissionsOf(token: string, hash: string): Promise<Set<string>> {
+  async function permissionsOf(token: string, hash: string, bound: boolean): Promise<Set<string>> {
+    // '|' joins key parts: safe because role keys and permission hashes never contain it.
     const key = `${issuer}|${hash}`
     const hit = cache.get(key)
     if (hit) {
@@ -325,7 +369,7 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     }
     let pending = inFlight.get(key)
     if (!pending) {
-      pending = fetchList(token, hash)
+      pending = fetchList(token, hash, bound)
         .then((set) => {
           remember(key, set)
           return set
@@ -337,7 +381,12 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
   }
 
   /** The newest version of the token's own role, read with the token and cached by version. */
-  async function latestOf(token: string, role: string, known: number): Promise<LatestRole> {
+  async function latestOf(
+    token: string,
+    role: string,
+    known: number,
+    bound: boolean
+  ): Promise<LatestRole> {
     const hit = cache.get(`${issuer}|${role}|${known}`)
     if (hit) {
       return { version: known, permissions: hit.permissions }
@@ -346,13 +395,13 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
     let pending = latestInFlight.get(flight)
     if (!pending) {
       pending = (async () => {
-        const body = (await request(
-          `${options.apiUrl.replace(/\/+$/, '')}/v1/client/me/organizations/active/permissions/latest`,
-          {
-            authorization: `Bearer ${token}`,
-            'x-tula-publishable-key': options.publishableKey,
-          }
-        )) as { role?: unknown; version?: unknown; hash?: unknown; permissions?: unknown } | null
+        const url = `${options.apiUrl.replace(/\/+$/, '')}/v1/client/me/organizations/active/permissions/latest`
+        const body = (await request(url, await lookupHeaders(token, url, bound))) as {
+          role?: unknown
+          version?: unknown
+          hash?: unknown
+          permissions?: unknown
+        } | null
         const list = body?.permissions
         if (
           body?.role !== role ||
@@ -478,21 +527,34 @@ export function createAccessChecker(options: AccessCheckerOptions): AccessChecke
       if (denied(claims, found.kind === 'inline' ? found.claims.orgId : found.orgId)) {
         return { allowed: false, reason: 'not_granted' }
       }
-      if (found.kind === 'inline') {
-        const { orgId, orgRole, orgPermissions } = found.claims
-        return orgPermissions.includes(permission)
-          ? { allowed: true, orgId, role: orgRole, version: undefined }
-          : { allowed: false, reason: 'not_granted' }
-      }
-      const granted = await permissionsOf(token, found.permissionsHash)
-      const newest = latestVersion.get(found.orgRole) ?? 0
+      const inline = found.kind === 'inline'
+      const orgId = inline ? found.claims.orgId : found.orgId
+      const orgRole = inline ? found.claims.orgRole : found.orgRole
+      const roleVersion = inline ? found.claims.roleVersion : found.roleVersion
+      const bound = typeof claims.cnf === 'object' && claims.cnf !== null
+      const granted = inline
+        ? new Set(found.claims.orgPermissions)
+        : await permissionsOf(token, found.permissionsHash, bound)
+      const newest = latestVersion.get(orgRole) ?? 0
       // Only a removal takes effect early: the token's list intersected with the newest one.
-      const narrowed =
-        newest > found.roleVersion
-          ? (await latestOf(token, found.orgRole, newest)).permissions
-          : null
+      let narrowed: Set<string> | null = null
+      if (roleVersion !== undefined && newest > roleVersion) {
+        try {
+          narrowed = (await latestOf(token, orgRole, newest, bound)).permissions
+        } catch (error) {
+          // A 404 means the membership or the role is gone: nothing is granted.
+          if (
+            error instanceof AccessUnavailableError &&
+            error.cause instanceof StatusError &&
+            error.cause.status === 404
+          ) {
+            return { allowed: false, reason: 'not_granted' }
+          }
+          throw error
+        }
+      }
       return granted.has(permission) && (!narrowed || narrowed.has(permission))
-        ? { allowed: true, orgId: found.orgId, role: found.orgRole, version: found.roleVersion }
+        ? { allowed: true, orgId, role: orgRole, version: roleVersion }
         : { allowed: false, reason: 'not_granted' }
     },
   }

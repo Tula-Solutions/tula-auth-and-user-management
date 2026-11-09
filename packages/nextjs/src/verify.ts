@@ -7,8 +7,8 @@ import {
   ORGANIZATION_ROLE_CLAIM,
   ORGANIZATION_ROLE_VERSION_CLAIM,
   readCustomClaims,
-  readOrganizationTokenClaims,
 } from '@tula-tech/contract/custom-claims'
+import { readOrganizationTokenClaims } from '@tula-tech/contract/organization-lookup'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose'
 import type { FetchLike, TulaConfig } from './config'
 

@@ -172,6 +172,8 @@ const requirePermission = (permission: string) =>
   })
 ```
 
+The lookup of a device-bound session (a token with `cnf`) needs a DPoP proof, which the checker cannot make: the caller passes a `headers` option that returns it, and without one the checker throws `AccessUnavailableError` with `reason: 'device_proof_required'` and calls nothing.
+
 ### 6. Larger roles, switched on by the operator
 
 - The bound becomes **1,000 permissions per role** in the contract schema and the database

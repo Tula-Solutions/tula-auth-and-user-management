@@ -3972,6 +3972,17 @@ export interface AccessCheckerOptions {
   cacheBytes?: number
   /** The deadline of one request to the API, in milliseconds. Default 5000. */
   timeoutMs?: number
+  /**
+   * Extra headers for a permission lookup, such as the user's DPoP proof. The API requires a
+   * device proof on the lookup routes when the token is device-bound (`cnf`), which a resource
+   * server cannot produce itself: without this option such a token throws
+   * `AccessUnavailableError` (`reason: 'device_proof_required'`) and no request is made.
+   */
+  headers?: (request: {
+    url: string
+    method: 'GET'
+    token: string
+  }) => Promise<Record<string, string>> | Record<string, string>
 }
 ```
 
@@ -4003,6 +4014,11 @@ list could not be fetched, or did not prove to be the token's. Map it to 503; ne
 ```ts
 export class AccessUnavailableError extends Error {
   override readonly name = 'AccessUnavailableError'
+  readonly reason: 'device_proof_required' | 'lookup_failed'
+  constructor(
+    message: string,
+    options?: ErrorOptions & { reason?: 'device_proof_required' | 'lookup_failed' }
+  )
 }
 ```
 

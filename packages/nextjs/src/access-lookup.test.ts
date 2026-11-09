@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { permissionsHash } from '@tula-tech/contract/custom-claims'
+import { permissionsHash } from '@tula-tech/contract/organization-lookup'
 import { NextRequest } from 'next/server'
 import { authenticate } from './helpers'
 import { tulaMiddleware } from './middleware'

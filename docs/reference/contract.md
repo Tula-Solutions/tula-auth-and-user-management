@@ -14640,31 +14640,6 @@ export function organizationClaimsBytes(claims: OrganizationClaims): number
 organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
 ```
 
-### `permissionsHash`
-
-_function_, defined in `packages/contract/src/organization-lookup.ts`
-
-The hash of a role's permission keys: `1.` and the base64url (no
-padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
-
-Web Crypto, so it is the same in Bun, Node, browsers and edge runtimes.
-
-```ts
-export async function permissionsHash(keys: readonly string[]): Promise<string>
-```
-
-**Parameters**
-
-- `keys`: The role's permission keys, in any order, duplicates allowed.
-
-**Returns** The hash, 45 characters.
-
-**Example**
-
-```ts
-await permissionsHash([]) // '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU'
-```
-
 ### `readCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -14732,63 +14707,6 @@ readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:m
 })
 // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
 readOrganizationClaims({ org_id: 'o1' }) // null
-```
-
-### `readOrganizationTokenClaims`
-
-_function_, defined in `packages/contract/src/organization-lookup.ts`
-
-Tell apart the three shapes an organization token takes: permissions
-`inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
-organization (`none`).
-
-Fail closed: a partial or malformed claim set is `none`, and a malformed `org_perms` is never
-read as a lookup. Call it only with verified claims.
-
-```ts
-export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenClaims
-```
-
-**Parameters**
-
-- `claims`: A session's verified claims.
-
-**Returns** The shape found.
-
-**Example**
-
-```ts
-const found = readOrganizationTokenClaims(payload)
-if (found.kind === 'lookup') {
-  // fetch the list for found.roleVersion, then verifyPermissionsHash(list, found.permissionsHash)
-}
-```
-
-### `verifyPermissionsHash`
-
-_function_, defined in `packages/contract/src/organization-lookup.ts`
-
-Whether permission keys hash to the given value: how a verifier checks that `org_perms`
-and `org_ph` agree, or that a fetched list is the one a token named.
-
-```ts
-export async function verifyPermissionsHash(
-  keys: readonly string[],
-  hash: string
-): Promise<boolean>
-```
-
-**Parameters**
-
-- `keys`: The permission keys.
-- `hash`: The hash a token carries.
-
-**Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
-
-**Example**
-
-```ts
-await verifyPermissionsHash([], '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU') // true
 ```
 
 ## `@tula-tech/contract/device-binding`
