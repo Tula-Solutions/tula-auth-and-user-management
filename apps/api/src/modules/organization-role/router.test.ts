@@ -200,6 +200,18 @@ describe('GET /v1/admin/organization-roles', () => {
   })
 })
 
+describe('the role history routes', () => {
+  test('an unknown role or version is a 404 with resource.not_found', async () => {
+    await define()
+    for (const path of ['/nobody/versions', '/nobody/versions/1', '/billing/versions/9']) {
+      const res = await roles('GET', path)
+      expect(res.status).toBe(404)
+      expect(await json<{ code: string }>(res)).toMatchObject({ code: 'resource.not_found' })
+    }
+    expect((await roles('GET', '/billing/versions/1')).status).toBe(200)
+  })
+})
+
 describe('POST /v1/admin/organization-roles', () => {
   test('defines a role at version 1 with sorted permissions and records it', async () => {
     const created = await define({
