@@ -191,6 +191,7 @@ describe('setting the active organization', () => {
       orgId: acme.id,
       orgRole: 'admin',
       orgPermissions: ADMIN_PERMISSIONS,
+      roleVersion: 1,
     })
   })
 
