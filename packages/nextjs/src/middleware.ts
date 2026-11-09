@@ -163,7 +163,7 @@ const checkers = new WeakMap<TulaConfig, AccessChecker>()
 
 /**
  * Whether the session's active organization grants a check. Claims answer it offline, except
- * a permission of a large role (ADR 0068, § 5): that goes through one checker per
+ * a permission of a large role: that goes through one checker per
  * configuration, which looks the list up once per hash. A lookup that fails throws
  * `AccessUnavailableError`: it is never read as granted, and the app maps it to a 503.
  */

@@ -739,6 +739,24 @@ describe('the permissions lookup', () => {
     expect(await res.text()).toBe('')
   })
 
+  test.each([
+    ['a comma list', (hash: string) => `"other", "${hash}"`],
+    ['the weak form', (hash: string) => `W/"${hash}"`],
+  ])('If-None-Match as %s is a 304; a different tag is a 200', async (_name, header) => {
+    const { token, claims } = await acting()
+    const hash = String(claims.org_ph)
+    const same = await call('GET', PATH, undefined, {
+      token,
+      headers: { 'if-none-match': header(hash) },
+    })
+    expect(same.status).toBe(304)
+    const other = await call('GET', PATH, undefined, {
+      token,
+      headers: { 'if-none-match': '"other", W/"another"' },
+    })
+    expect(other.status).toBe(200)
+  })
+
   test('no active organization answers the uniform 404', async () => {
     const maya = await signUp()
     const res = await call('GET', PATH, undefined, { token: maya.accessToken })

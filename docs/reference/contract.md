@@ -6033,6 +6033,16 @@ The access token's claim naming the active organization.
 const ORGANIZATION_ID_CLAIM: "org_id"
 ```
 
+### `ORGANIZATION_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+What an organization id in a token looks like.
+
+```ts
+const ORGANIZATION_ID_PATTERN: {}
+```
+
 ### `ORGANIZATION_INVITATION_TOKEN_PARAM`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -6658,7 +6668,7 @@ const OrganizationSuggestionSchema: z.ZodObject<{ id: z.ZodString; name: z.ZodSt
 
 ### `OrganizationTokenClaims`
 
-_type_, defined in `packages/contract/src/custom-claims.ts`
+_type_, defined in `packages/contract/src/organization-lookup.ts`
 
 What {@link readOrganizationTokenClaims} found in a session's claims.
 
@@ -13034,7 +13044,7 @@ parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).password.minLength // 
 
 ### `permissionsHash`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 The hash of a role's permission keys: `1.` and the base64url (no
 padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
@@ -13285,7 +13295,7 @@ readOrganizationClaims({ org_id: 'o1' }) // null
 
 ### `readOrganizationTokenClaims`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 Tell apart the three shapes an organization token takes: permissions
 `inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
@@ -13303,6 +13313,15 @@ export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenC
 - `claims`: A session's verified claims.
 
 **Returns** The shape found.
+
+**Example**
+
+```ts
+const found = readOrganizationTokenClaims(payload)
+if (found.kind === 'lookup') {
+  // fetch the list for found.roleVersion, then verifyPermissionsHash(list, found.permissionsHash)
+}
+```
 
 ### `readStoredEmailTemplates`
 
@@ -13548,7 +13567,7 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 
 ### `roleFitsInline`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 Whether a role's permissions can ride in a token as `org_perms`: at most
 {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
@@ -13566,6 +13585,12 @@ export function roleFitsInline(roleKey: string, permissions: readonly string[]):
 - `permissions`: The role's permission keys.
 
 **Returns** `true` when a token can carry the list.
+
+**Example**
+
+```ts
+roleFitsInline('admin', ['org:billing:read']) // true
+```
 
 ### `rolePermissionRefusal`
 
@@ -14029,7 +14054,7 @@ themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' 
 
 ### `verifyPermissionsHash`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 Whether permission keys hash to the given value: how a verifier checks that `org_perms`
 and `org_ph` agree, or that a fetched list is the one a token named.
@@ -14047,6 +14072,12 @@ export async function verifyPermissionsHash(
 - `hash`: The hash a token carries.
 
 **Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
+
+**Example**
+
+```ts
+await verifyPermissionsHash([], '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU') // true
+```
 
 ### `visibleEmailText`
 
@@ -14321,6 +14352,16 @@ The access token's claim naming the active organization.
 const ORGANIZATION_ID_CLAIM: "org_id"
 ```
 
+### `ORGANIZATION_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+What an organization id in a token looks like.
+
+```ts
+const ORGANIZATION_ID_PATTERN: {}
+```
+
 ### `ORGANIZATION_PERMISSIONS_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -14401,25 +14442,6 @@ export interface OrganizationClaims {
   /** The permissions hash of that version (`org_ph`), when issued. */
   readonly permissionsHash?: string
 }
-```
-
-### `OrganizationTokenClaims`
-
-_type_, defined in `packages/contract/src/custom-claims.ts`
-
-What {@link readOrganizationTokenClaims} found in a session's claims.
-
-```ts
-export type OrganizationTokenClaims =
-| { readonly kind: 'inline'; readonly claims: OrganizationClaims }
-| {
-    readonly kind: 'lookup'
-    readonly orgId: string
-    readonly orgRole: string
-    readonly roleVersion: number
-    readonly permissionsHash: string
-  }
-| { readonly kind: 'none' }
 ```
 
 ### `RESERVED_CLAIM_NAMES`
@@ -14620,7 +14642,7 @@ organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) 
 
 ### `permissionsHash`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 The hash of a role's permission keys: `1.` and the base64url (no
 padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
@@ -14714,7 +14736,7 @@ readOrganizationClaims({ org_id: 'o1' }) // null
 
 ### `readOrganizationTokenClaims`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 Tell apart the three shapes an organization token takes: permissions
 `inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
@@ -14733,30 +14755,18 @@ export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenC
 
 **Returns** The shape found.
 
-### `roleFitsInline`
-
-_function_, defined in `packages/contract/src/custom-claims.ts`
-
-Whether a role's permissions can ride in a token as `org_perms`: at most
-{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
-{@link MAX_ORGANIZATION_CLAIMS_BYTES} for an id, a version and a hash of their longest.
-The longest case is used so that the answer holds for every organization and every version of
-the role: saving a role is judged once, a token is issued later.
+**Example**
 
 ```ts
-export function roleFitsInline(roleKey: string, permissions: readonly string[]): boolean
+const found = readOrganizationTokenClaims(payload)
+if (found.kind === 'lookup') {
+  // fetch the list for found.roleVersion, then verifyPermissionsHash(list, found.permissionsHash)
+}
 ```
-
-**Parameters**
-
-- `roleKey`: The role's key.
-- `permissions`: The role's permission keys.
-
-**Returns** `true` when a token can carry the list.
 
 ### `verifyPermissionsHash`
 
-_function_, defined in `packages/contract/src/custom-claims.ts`
+_function_, defined in `packages/contract/src/organization-lookup.ts`
 
 Whether permission keys hash to the given value: how a verifier checks that `org_perms`
 and `org_ph` agree, or that a fetched list is the one a token named.
@@ -14774,6 +14784,12 @@ export async function verifyPermissionsHash(
 - `hash`: The hash a token carries.
 
 **Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
+
+**Example**
+
+```ts
+await verifyPermissionsHash([], '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU') // true
+```
 
 ## `@tula-tech/contract/device-binding`
 
@@ -15976,6 +15992,138 @@ export function isPublicEmailDomain(domain: string): boolean
 isPublicEmailDomain('gmail.com') // true
 isPublicEmailDomain('yahoo.co.uk') // true
 isPublicEmailDomain('acme.com') // false
+```
+
+## `@tula-tech/contract/organization-lookup`
+
+Source: `packages/contract/src/organization-lookup.ts`
+
+### `OrganizationTokenClaims`
+
+_type_, defined in `packages/contract/src/organization-lookup.ts`
+
+What {@link readOrganizationTokenClaims} found in a session's claims.
+
+```ts
+export type OrganizationTokenClaims =
+| { readonly kind: 'inline'; readonly claims: OrganizationClaims }
+| {
+    readonly kind: 'lookup'
+    readonly orgId: string
+    readonly orgRole: string
+    readonly roleVersion: number
+    readonly permissionsHash: string
+  }
+| { readonly kind: 'none' }
+```
+
+### `permissionsHash`
+
+_function_, defined in `packages/contract/src/organization-lookup.ts`
+
+The hash of a role's permission keys: `1.` and the base64url (no
+padding) of SHA-256 over the JSON of the keys, deduplicated and sorted by code point.
+
+Web Crypto, so it is the same in Bun, Node, browsers and edge runtimes.
+
+```ts
+export async function permissionsHash(keys: readonly string[]): Promise<string>
+```
+
+**Parameters**
+
+- `keys`: The role's permission keys, in any order, duplicates allowed.
+
+**Returns** The hash, 45 characters.
+
+**Example**
+
+```ts
+await permissionsHash([]) // '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU'
+```
+
+### `readOrganizationTokenClaims`
+
+_function_, defined in `packages/contract/src/organization-lookup.ts`
+
+Tell apart the three shapes an organization token takes: permissions
+`inline` (`org_perms`), absent and to be fetched by version and hash (`lookup`), or no
+organization (`none`).
+
+Fail closed: a partial or malformed claim set is `none`, and a malformed `org_perms` is never
+read as a lookup. Call it only with verified claims.
+
+```ts
+export function readOrganizationTokenClaims(claims: unknown): OrganizationTokenClaims
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** The shape found.
+
+**Example**
+
+```ts
+const found = readOrganizationTokenClaims(payload)
+if (found.kind === 'lookup') {
+  // fetch the list for found.roleVersion, then verifyPermissionsHash(list, found.permissionsHash)
+}
+```
+
+### `roleFitsInline`
+
+_function_, defined in `packages/contract/src/organization-lookup.ts`
+
+Whether a role's permissions can ride in a token as `org_perms`: at most
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
+{@link MAX_ORGANIZATION_CLAIMS_BYTES} for an id, a version and a hash of their longest.
+The longest case is used so that the answer holds for every organization and every version of
+the role: saving a role is judged once, a token is issued later.
+
+```ts
+export function roleFitsInline(roleKey: string, permissions: readonly string[]): boolean
+```
+
+**Parameters**
+
+- `roleKey`: The role's key.
+- `permissions`: The role's permission keys.
+
+**Returns** `true` when a token can carry the list.
+
+**Example**
+
+```ts
+roleFitsInline('admin', ['org:billing:read']) // true
+```
+
+### `verifyPermissionsHash`
+
+_function_, defined in `packages/contract/src/organization-lookup.ts`
+
+Whether permission keys hash to the given value: how a verifier checks that `org_perms`
+and `org_ph` agree, or that a fetched list is the one a token named.
+
+```ts
+export async function verifyPermissionsHash(
+  keys: readonly string[],
+  hash: string
+): Promise<boolean>
+```
+
+**Parameters**
+
+- `keys`: The permission keys.
+- `hash`: The hash a token carries.
+
+**Returns** `true` only for an exact match; an unknown scheme prefix is `false`.
+
+**Example**
+
+```ts
+await verifyPermissionsHash([], '1.T1PNoYwrqgwDVLtfmj7L5e0Sq02OEbqHPC8RFhICuUU') // true
 ```
 
 ## `@tula-tech/contract/organization-permissions`

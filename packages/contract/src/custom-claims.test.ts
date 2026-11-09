@@ -16,9 +16,9 @@ import {
   RESERVED_CLAIM_NAMES,
   readCustomClaims,
   readOrganizationClaims,
-  roleFitsInline,
   SSO_CONNECTION_CLAIM,
 } from './custom-claims'
+import { roleFitsInline } from './organization-lookup'
 import {
   BUILT_IN_ROLES,
   MAX_PERMISSION_KEY_LENGTH,

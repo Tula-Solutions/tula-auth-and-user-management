@@ -5,7 +5,7 @@ import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /**
- * One version of a role's permissions (ADR 0068, "Snapshots"): written with every role creation
+ * One version of a role's permissions: written with every role creation
  * and every change of its permissions, in the same transaction, and never changed or removed by
  * the runtime role (it holds `INSERT` and `SELECT` only, migration 0062).
  *
