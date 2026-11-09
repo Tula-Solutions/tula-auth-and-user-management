@@ -108,8 +108,11 @@ class TulaOrganizationClaims internal constructor(
         /** The longest a permission key may be, in characters. */
         const val MAX_PERMISSION_KEY_LENGTH = 100
 
-        /** The most bytes the three claims' JSON may take. */
-        const val MAX_BYTES = 2560
+        /**
+         * The most bytes the three claims' JSON may take: 2,560 for them and a 96-byte reserve
+         * for the contract's `org_rv` and `org_ph`, so both sides cap alike.
+         */
+        const val MAX_BYTES = 2656
 
         /**
          * The organization claims of an access token, or `null` when it has no active

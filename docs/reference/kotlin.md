@@ -2228,10 +2228,11 @@ const val MAX_PERMISSION_KEY_LENGTH = 100
 
 _val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
-The most bytes the three claims' JSON may take.
+The most bytes the three claims' JSON may take: 2,560 for them and a 96-byte reserve
+for the contract's `org_rv` and `org_ph`, so both sides cap alike.
 
 ```kotlin
-const val MAX_BYTES = 2560
+const val MAX_BYTES = 2656
 ```
 
 #### `TulaOrganizationClaims.read`
