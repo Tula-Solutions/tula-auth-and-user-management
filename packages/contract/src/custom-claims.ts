@@ -599,3 +599,27 @@ export function readCustomClaims(claims: unknown): CustomClaims | null {
   const read = Object.fromEntries(entries)
   return customClaimsBytes(read) <= MAX_CUSTOM_CLAIMS_BYTES ? Object.freeze(read) : null
 }
+
+/**
+ * Whether a role's permissions can ride in a token as `org_perms`: at most
+ * {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} of them, and the claims within
+ * {@link MAX_ORGANIZATION_CLAIMS_BYTES} for an id, a version and a hash of their longest.
+ * The longest case is used so that the answer holds for every organization and every version of
+ * the role: saving a role is judged once, a token is issued later.
+ *
+ * @param roleKey - The role's key.
+ * @param permissions - The role's permission keys.
+ * @returns `true` when a token can carry the list.
+ */
+export function roleFitsInline(roleKey: string, permissions: readonly string[]): boolean {
+  return (
+    permissions.length <= MAX_ORGANIZATION_PERMISSIONS_CLAIM &&
+    organizationClaimsBytes({
+      orgId: '0'.repeat(36),
+      orgRole: roleKey,
+      orgPermissions: permissions,
+      roleVersion: 2147483647,
+      permissionsHash: `1.${'A'.repeat(43)}`,
+    }) <= MAX_ORGANIZATION_CLAIMS_BYTES
+  )
+}

@@ -443,6 +443,17 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message: 'This environment has the most custom roles it can have.',
   },
+  // `role_too_large`: the role's permissions would not fit a token and the environment has
+  // not turned on `organizations.largeRoles`. `large_roles_in_use`: that setting cannot be
+  // turned off while a role is over what a token carries.
+  'organization.role_too_large': {
+    status: 422,
+    message: 'This role has more permissions than an access token can carry.',
+  },
+  'organization.large_roles_in_use': {
+    status: 409,
+    message: 'A role has more permissions than an access token can carry. Shorten it first.',
+  },
   // Invitations to an organization. `permission_required`: the signed-in
   // user is a member but their role lacks the permission the route needs (`params.permission`).
   // `role_not_assignable`: an inviter may only invite to a role whose permissions they hold

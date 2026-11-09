@@ -144,6 +144,7 @@ describe('the organizations settings', () => {
       creatorRole: 'admin',
       defaultRole: 'member',
       personalAccount: true,
+      largeRoles: false,
     })
   })
 

@@ -16,6 +16,7 @@ import {
   RESERVED_CLAIM_NAMES,
   readCustomClaims,
   readOrganizationClaims,
+  roleFitsInline,
   SSO_CONNECTION_CLAIM,
 } from './custom-claims'
 import {
@@ -454,5 +455,46 @@ describe('hasOrganizationAccess', () => {
     ['a string', 'org:billing:read'],
   ])('a check that names %s never grants', (_name, check) => {
     expect(hasOrganizationAccess(claims, check as never)).toBe(false)
+  })
+})
+
+describe('roleFitsInline (a role whose permissions can ride in the token)', () => {
+  const keys = (n: number, key: (i: number) => string) =>
+    Array.from({ length: n }, (_, i) => key(i))
+
+  test('a role of at most the inline cap, within the budget, fits', () => {
+    expect(roleFitsInline('member', [])).toBe(true)
+    expect(
+      roleFitsInline(
+        'billing',
+        keys(32, (i) => `org:feature${i}:read`)
+      )
+    ).toBe(true)
+  })
+
+  test('one permission over the inline cap does not', () => {
+    expect(
+      roleFitsInline(
+        'billing',
+        keys(33, (i) => `org:feature${i}:read`)
+      )
+    ).toBe(false)
+  })
+
+  test('a role under the cap but over the byte budget does not (judged with a maximal id, version and hash)', () => {
+    const long = keys(32, (i) => `org:${'f'.repeat(31)}${i % 10}:${'a'.repeat(31)}${i % 10}`)
+    expect(roleFitsInline(`r${'x'.repeat(31)}`, long)).toBe(true)
+    expect(
+      roleFitsInline(`r${'x'.repeat(31)}`, [
+        ...long.slice(1),
+        `org:sys:${'f'.repeat(32)}:${'a'.repeat(32)}`,
+      ])
+    ).toBe(true)
+    expect(
+      roleFitsInline(
+        `r${'x'.repeat(31)}`,
+        keys(32, (i) => `org:sys:${'f'.repeat(31)}${i % 10}:${'a'.repeat(31)}${i % 10}xxxx`)
+      )
+    ).toBe(false)
   })
 })

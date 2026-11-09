@@ -1819,8 +1819,8 @@ describe('custom organization roles', () => {
     ])
   })
 
-  test('more than 32 permissions on a role are refused', () => {
-    const permissions = Array.from({ length: 33 }, (_, index) => `org:feature${index}:read`)
+  test('more than 1000 permissions on a role are refused', () => {
+    const permissions = Array.from({ length: 1001 }, (_, index) => `org:feature${index}:read`)
     const error = refusal(() =>
       defineConfig({ environments: { dev: { organizationRoles: [{ ...billing, permissions }] } } })
     )
