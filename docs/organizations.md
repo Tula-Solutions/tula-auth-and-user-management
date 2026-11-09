@@ -403,6 +403,16 @@ app.use('/invoices/*', async (c, next) => {
 ```
 <!-- /snippet -->
 
+#### Closing the window with webhooks
+
+If you receive Tula's [webhooks](webhooks.md), the checker can end access sooner than the token's
+life. Verify the signature of a delivery first, then pass the event to `access.apply(event)`:
+`organization_membership.removed`, `organization_membership.role_changed`, `session.revoked`
+and `organization_role.updated` are the ones it acts on, and it ignores any other or malformed
+event. A removed permission, member or session is denied at once and for one token life at
+most; a permission a role gained still waits for the user's next refresh. A lost webhook costs
+nothing but the old window.
+
 ### How fresh the claims are
 
 A role is copied into the token when the token is issued. So a change reaches a signed-in user

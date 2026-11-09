@@ -237,8 +237,9 @@ lets a verifier close it sooner with the webhooks it already receives:
   intersection only removes. A lost or late webhook falls back to the token's life; a forged
   one, if a signature check were skipped, could only deny.
 - Removed members and revoked sessions are kept in a deny list for one token life, by id only.
-- Reading the latest version needs a credential the resource server does not hold today. Open
-  question below.
+- Reading the latest version needs no new credential: the checker asks
+  `GET /v1/client/me/organizations/active/permissions/latest` with the user's own token (see
+  "Decided" below).
 
 ## Security
 
@@ -337,10 +338,14 @@ new state a pre-ADR verifier can meet (a large-role token) is read as no organiz
 
 ## Open questions
 
-- **The phase 5 read credential.** Narrowing needs the latest version of a role, which the
-  token-only lookup does not give. Options: a key kind that may read role versions and nothing
-  else, or the webhook payload carrying the new hash and the verifier fetching it with any
-  token of that hash. Decide with phase 5.
+- **Decided: the phase 5 read credential.** There is none. Narrowing reads the newest version
+  of the caller's own role with the user's own token, input-free:
+  `GET /v1/client/me/organizations/active/permissions/latest` (`getLatestActiveOrganizationPermissions`).
+  It has the same auth, device proof, limits and uniform 404 `organization.permissions_unavailable`
+  as the lookup by hash, answers `{role, version, permissions, hash}`, requires the membership to
+  still exist and sends `Cache-Control: no-store`. `organization_role.updated` carries the role key,
+  the new version and the new hash, never a permission key. `access.apply(event)` takes an event
+  that is already verified: the caller checks the signature first.
 - **Built-in role versions.** `admin` and `member` are versioned by `ensureBuiltInRoles` only;
   confirm their snapshots never need an audit entry beyond ADR 0012's exception.
 - **The cache's default bound.** 8 MB is a guess sized for 100 large roles; measure it.

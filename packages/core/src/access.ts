@@ -77,8 +77,7 @@ export interface AccessChecker {
   check(token: string, permission: string): Promise<AccessDecision>
 
   /**
-   * Take in a webhook event so that a removal takes effect before the tokens it concerns expire
-   * ([ADR 0068](../../../docs/adr/0068-role-permission-snapshots.md), section 9).
+   * Take in a webhook event so that a removal takes effect before the tokens it concerns expire.
    *
    * The caller verifies the webhook's signature first (`verifyWebhook`): this takes the event as
    * trusted. It can only narrow what `check` allows, never widen it: a removed membership, a

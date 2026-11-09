@@ -1782,6 +1782,8 @@ export interface Schemas {
     role: Schemas['OrganizationRoleKey']
     changed: ('name' | 'permissions')[]
     permissions: number
+    version: number
+    hash: string
     weakened?: true
   }
   OrganizationRoleVersion: {
