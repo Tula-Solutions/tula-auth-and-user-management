@@ -195,6 +195,56 @@ describe('startJobs', () => {
     expect(finished).toBe(true)
   })
 
+  test.each([
+    ['retention', () => spyOn(Retention, 'run')],
+    ['domain_reminders', () => spyOn(DomainReminders, 'run')],
+  ] as const)(
+    'finishing waits for a %s round under way, so the pool is not closed under it',
+    async (job, spy) => {
+      let release: () => void = () => undefined
+      const gate = new Promise<null>((resolve) => {
+        release = () => resolve(null)
+      })
+      spies.push(spy().mockImplementation(() => gate))
+      const { timers } = fakeTimers()
+      const jobs = startJobs(createTestDeps(), [job], timers)
+      let finished = false
+      const finishing = jobs.finish().then(() => {
+        finished = true
+      })
+      await settle()
+      expect(finished).toBe(false)
+      release()
+      await finishing
+      expect(finished).toBe(true)
+    }
+  )
+
+  test.each([
+    ['retention', () => spyOn(Retention, 'run')],
+    ['domain_reminders', () => spyOn(DomainReminders, 'run')],
+  ] as const)('finishing aborts the signal a %s round was given', async (job, spy) => {
+    let seen: AbortSignal | undefined
+    let release: () => void = () => undefined
+    const gate = new Promise<null>((resolve) => {
+      release = () => resolve(null)
+    })
+    spies.push(
+      spy().mockImplementation((_deps, signal) => {
+        seen = signal
+        return gate
+      })
+    )
+    const { timers } = fakeTimers()
+    const jobs = startJobs(createTestDeps(), [job], timers)
+    expect(seen?.aborted).toBe(false)
+    const finishing = jobs.finish()
+    await settle()
+    expect(seen?.aborted).toBe(true)
+    release()
+    await finishing
+  })
+
   test('after finishing, a timer that fires late starts nothing', async () => {
     const { delivery, retention } = stubs()
     const { timers, started } = fakeTimers()

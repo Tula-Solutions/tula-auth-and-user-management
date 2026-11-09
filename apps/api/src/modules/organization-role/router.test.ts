@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   BUILT_IN_ROLES,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -9,9 +9,11 @@ import {
   type OrganizationMembership,
   type OrganizationRole,
   type OrganizationRoleList,
+  permissionsHash,
   type User,
 } from '@tula-tech/contract'
 import { createApp } from '~/index'
+import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 import { comparable } from '~/testing/comparable'
 
@@ -24,12 +26,16 @@ let deps: TestDeps
 let app: ReturnType<typeof createApp>
 
 /** Switch organizations on (or off) for an environment. */
-function enable(environmentId: string = TEST_TENANT.environmentId, enabled = true) {
+function enable(
+  environmentId: string = TEST_TENANT.environmentId,
+  enabled = true,
+  largeRoles = false
+) {
   deps.environmentSettings.seed(environmentId, {
     revision: 1,
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
-      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled },
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled, largeRoles },
     },
   })
 }
@@ -195,6 +201,18 @@ describe('GET /v1/admin/organization-roles', () => {
   })
 })
 
+describe('the role history routes', () => {
+  test('an unknown role or version is a 404 with resource.not_found', async () => {
+    await define()
+    for (const path of ['/nobody/versions', '/nobody/versions/1', '/billing/versions/9']) {
+      const res = await roles('GET', path)
+      expect(res.status).toBe(404)
+      expect(await json<{ code: string }>(res)).toMatchObject({ code: 'resource.not_found' })
+    }
+    expect((await roles('GET', '/billing/versions/1')).status).toBe(200)
+  })
+})
+
 describe('POST /v1/admin/organization-roles', () => {
   test('defines a role at version 1 with sorted permissions and records it', async () => {
     const created = await define({
@@ -279,7 +297,8 @@ describe('POST /v1/admin/organization-roles', () => {
     expect(roleActions()).toEqual([])
   })
 
-  test('holds at most 32 permissions', async () => {
+  test('holds at most 1000 permissions, with large roles on', async () => {
+    enable(TEST_TENANT.environmentId, true, true)
     const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
     expect(
       (
@@ -297,6 +316,46 @@ describe('POST /v1/admin/organization-roles', () => {
     })
     expect(res.status).toBe(422)
     expect(roleActions()).toEqual(['organization_role.created'])
+  })
+
+  test('refuses a role too large for a token while large roles are off', async () => {
+    const keys = (n: number) => Array.from({ length: n }, (_, i) => `org:feature${i}:read`)
+    const res = await roles('POST', '', { ...BILLING, key: 'big', permissions: keys(33) })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('organization.role_too_large')
+    expect(roleActions()).toEqual([])
+    const small = await define({ ...BILLING, key: 'small' })
+    const update = await roles(
+      'PATCH',
+      '/small',
+      { permissions: keys(33) },
+      SK,
+      ifMatch(small.version)
+    )
+    expect(update.status).toBe(422)
+    expect(await code(update)).toBe('organization.role_too_large')
+    expect(roleActions()).toEqual(['organization_role.created'])
+  })
+
+  test('judges size on settings read past the cache', async () => {
+    const store: EnvironmentSettingsStore = deps.environmentSettings
+    const real = store.get.bind(store)
+    spyOn(store, 'get').mockImplementation(async (id, fresh) => {
+      const stored = await real(id, fresh)
+      return fresh || !stored
+        ? stored
+        : {
+            ...stored,
+            settings: {
+              ...stored.settings,
+              organizations: { ...stored.settings.organizations, largeRoles: true },
+            },
+          }
+    })
+    const keys = Array.from({ length: 33 }, (_, i) => `org:feature${i}:read`)
+    const res = await roles('POST', '', { ...BILLING, key: 'big', permissions: keys })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('organization.role_too_large')
   })
 
   test('refuses the 51st custom role, and a deleted one makes room', async () => {
@@ -370,6 +429,8 @@ describe('PATCH /v1/admin/organization-roles/:key', () => {
       role: 'billing',
       changed: ['name', 'permissions'],
       permissions: 2,
+      version: 2,
+      hash: await permissionsHash(['org:billing:read', 'org:billing:write']),
       weakened: true,
     })
     const text = JSON.stringify(entry)
@@ -384,12 +445,16 @@ describe('PATCH /v1/admin/organization-roles/:key', () => {
       role: 'billing',
       changed: ['permissions'],
       permissions: 1,
+      version: 2,
+      hash: await permissionsHash(['org:billing:read']),
     })
     await roles('PATCH', '/billing', { name: 'Renamed' }, SK, ifMatch(2))
     expect(roleEntries().at(-1)?.data).toEqual({
       role: 'billing',
       changed: ['name'],
       permissions: 1,
+      version: 3,
+      hash: await permissionsHash(['org:billing:read']),
     })
     await roles(
       'PATCH',

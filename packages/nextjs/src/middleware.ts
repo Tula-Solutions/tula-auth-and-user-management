@@ -3,12 +3,18 @@ import {
   type OrganizationCheck,
   readOrganizationClaims,
 } from '@tula-tech/contract/custom-claims'
+import { readOrganizationTokenClaims } from '@tula-tech/contract/organization-lookup'
 import {
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
 } from '@tula-tech/contract/organization-permissions'
+import {
+  type AccessChecker,
+  AccessUnavailableError,
+  createAccessChecker,
+} from '@tula-tech/core/access'
 import { type NextRequest, NextResponse } from 'next/server'
-import { configFor, type TulaServerOptions } from './config'
+import { configFor, type TulaConfig, type TulaServerOptions } from './config'
 import { REDIRECT_PARAM, safeRedirectPath } from './paths'
 import { AUTH_HEADER, resolveSession } from './session'
 
@@ -155,6 +161,45 @@ function compile(matcher: RouteMatcher | undefined): (pathname: string) => boole
     return (pathname: string) => pattern.test(pathname)
   })
   return (pathname) => tests.some((test) => test(pathname))
+}
+
+const checkers = new WeakMap<TulaConfig, AccessChecker>()
+
+/**
+ * Whether the session's active organization grants a check. Claims answer it offline, except
+ * a permission of a large role: that goes through one checker per
+ * configuration, which looks the list up once per hash. A lookup that fails throws
+ * `AccessUnavailableError`: it is never read as granted, and the middleware answers it with a 503.
+ */
+async function grants(
+  config: TulaConfig,
+  session: { claims: unknown; token: string | null } | null,
+  check: OrganizationCheck
+): Promise<boolean> {
+  const found = readOrganizationTokenClaims(session?.claims)
+  if (found.kind !== 'lookup') {
+    return hasOrganizationAccess(readOrganizationClaims(session?.claims), check)
+  }
+  const { permission, role } = check as { permission?: string; role?: string }
+  if (permission === undefined) {
+    return role !== undefined && role !== '' && found.orgRole === role
+  }
+  if (!session?.token || role !== undefined || permission === '') {
+    return false
+  }
+  let checker = checkers.get(config)
+  if (!checker) {
+    checker = createAccessChecker({
+      apiUrl: config.apiUrl,
+      environmentId: config.environmentId,
+      publishableKey: config.publishableKey,
+      // The checker only ever calls `fetch(url: string, init)`; `preconnect` is Bun's extra.
+      fetch: ((url: string, init?: RequestInit) =>
+        config.fetch(new Request(url, init))) as typeof fetch,
+    })
+    checkers.set(config, checker)
+  }
+  return (await checker.check(session.token, permission)).allowed
 }
 
 /** One rule of `access`, validated and compiled: the same check as `auth().has()`. */
@@ -312,9 +357,37 @@ export function tulaMiddleware(
     const { session, setCookies, requestHeaders } = await resolveSession(request, config)
     let response: NextResponse
     const applicable = session ? rulesFor(pathname) : []
-    const organization = applicable.length > 0 ? readOrganizationClaims(session?.claims) : null
-    const denied = applicable.some((rule) => !hasOrganizationAccess(organization, rule.check))
-    if (session && denied) {
+    let denied = false
+    let unavailable = false
+    if (applicable.length > 0) {
+      try {
+        denied = !(
+          await Promise.all(applicable.map((rule) => grants(config, session, rule.check)))
+        ).every(Boolean)
+      } catch (error) {
+        if (!(error instanceof AccessUnavailableError)) {
+          throw error
+        }
+        unavailable = true
+      }
+    }
+    if (unavailable) {
+      // Never read a failed lookup as granted, and never let the handler run.
+      response =
+        isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')
+          ? NextResponse.json(
+              {
+                status: 503,
+                code: 'service.unavailable',
+                detail: 'Access could not be checked right now. Try again.',
+              },
+              { status: 503, headers: { 'cache-control': 'no-store' } }
+            )
+          : new NextResponse('Service Unavailable', {
+              status: 503,
+              headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+            })
+    } else if (session && denied) {
       if (isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')) {
         response = NextResponse.json(
           {

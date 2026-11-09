@@ -863,3 +863,25 @@ describe('the nonce', () => {
     expect(await serverNonce()).not.toBe(now)
   })
 })
+
+describe('a proof at a resource route', () => {
+  const at = async (request: DeviceBinding.ProofRequest) =>
+    DeviceBinding.atResource(deps, tenant, await jwkThumbprint(key.publicJwk), request)
+
+  test('a good proof passes, once', async () => {
+    const request = await prove()
+    await at(request)
+    expect((await rejection(at(request))).code).toBe('device.proof_invalid')
+  })
+
+  test('a right proof without the server nonce is asked for it, not refused', async () => {
+    const err = await rejection(at(await prove(key, { nonce: null })))
+    expect(err).toBeInstanceOf(NonceRequiredError)
+    expect(err.code).toBe('device.nonce_required')
+  })
+
+  test('no proof and another key are refused', async () => {
+    expect((await rejection(at(header(undefined)))).code).toBe('device.proof_invalid')
+    expect((await rejection(at(await prove(otherKey)))).code).toBe('device.proof_invalid')
+  })
+})

@@ -1,5 +1,11 @@
 # @tula-tech/example-react-vite
 
+## 0.0.7
+
+### Patch Changes
+
+- @tula-tech/react@0.4.0
+
 ## 0.0.6
 
 ### Patch Changes

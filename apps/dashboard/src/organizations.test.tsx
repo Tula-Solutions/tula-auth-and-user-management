@@ -630,16 +630,16 @@ describe('the roles screen', () => {
     }
   })
 
-  test('more than 32 permissions are refused before anything is sent', async () => {
+  test('more than 1000 permissions are refused before anything is sent', async () => {
     const { user, api } = start(`${DEV_PATH}/roles`, { api: arranged() })
     await user.click(await screen.findByRole('button', { name: 'Create role' }))
     await user.type(within(dialog()).getByLabelText('Name'), 'Big')
     await user.type(within(dialog()).getByLabelText('Key'), 'big')
-    const many = Array.from({ length: 33 }, (_, index) => `org:feature:action_${index}`).join(' ')
+    const many = Array.from({ length: 1001 }, (_, index) => `org:feature:action_${index}`).join(' ')
     await user.click(within(dialog()).getByLabelText('Your own permissions'))
     await user.paste(many)
     await user.click(button('Create role'))
-    await waitFor(() => expect(alerts()[0]).toMatch(/at most 32 permissions; this one has 33/))
+    await waitFor(() => expect(alerts()[0]).toMatch(/at most 1000 permissions; this one has 1001/))
     expect(sent(api, 'POST', '/v1/admin/organization-roles')).toHaveLength(0)
   })
 

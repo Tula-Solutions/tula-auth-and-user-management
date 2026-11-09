@@ -32,6 +32,7 @@ them while production stays as it is.
 | `creatorRole` | `string` | no | `admin` | The role a creator gets in the organization they create. |
 | `defaultRole` | `string` | no | `member` | The role of someone who joins without being given one. Used by [invitations and verified domains](#invitations-and-verified-domains). |
 | `personalAccount` | `boolean` | no | `true` | Whether a user may work outside any organization. With `false`, clearing the active organization is refused with `organization.personal_account_disabled` (409). |
+| `largeRoles` | `boolean` | no | `false` | Whether a role may hold up to 1000 permissions, its token then carrying none when they do not fit. Turn it on only once every service that checks tokens runs an SDK with the access checker ([roles and permissions](roles-and-permissions.md#large-roles)). |
 
 :::
 
@@ -161,6 +162,8 @@ The errors you will meet:
 | `organization.member_exists` | 409 | The user is already a member. |
 | `organization.role_unknown` | 422 | The role named does not exist. |
 | `organization.personal_account_disabled` | 409 | The user cleared the active organization where `personalAccount` is off. |
+| `organization.role_too_large` | 422 | A role's permissions do not fit in a token and `largeRoles` is off. |
+| `organization.large_roles_in_use` | 409 | `largeRoles` was switched off while a role is too big for a token. |
 | `organization.last_manager` | 409 | The change would leave an organization with nobody who can manage its members. |
 | `user.last_organization_manager` | 409 | Deleting the user would do the same. |
 
@@ -344,6 +347,7 @@ export async function handleInvoices(request: Request): Promise<Response> {
   }
   return Response.json({ organizationId: organization?.orgId, invoices: [] })
 }
+
 ```
 <!-- /snippet -->
 
@@ -353,6 +357,70 @@ dependencies, so it adds nothing to a bundle. A language other than TypeScript d
 hand: verify, then look for `org_id`, `org_role` and `org_perms`.
 
 :::
+
+#### Roles with many permissions
+
+A role with more permissions than fit in a token (32 inline) is carried as `org_rv` and `org_ph`
+(its version and the hash of its permissions) and no `org_perms`. `readOrganizationClaims` is
+`null` for such a token, and `hasOrganizationAccess` answers `false`: the synchronous checks
+fail closed. The Next.js SDK's middleware `access` rules resolve a permission of such a role
+for you; `auth().has()` is synchronous and stays `false` for it (a role check still works in
+the middleware). Elsewhere, use one `@tula-tech/core/access` checker, which verifies the token
+and fetches the list once per hash. When the list cannot be fetched it throws
+`AccessUnavailableError`: answer 503, never allow.
+
+A session bound to a device (its token has `cnf`) needs a DPoP proof on that lookup. The checker
+cannot make one, so give it a `headers` option that returns the proof's headers for the request
+(`{ url, method, token }`). Without it, a bound token throws `AccessUnavailableError` with
+`reason: 'device_proof_required'` and the API is not called; other failures have
+`reason: 'lookup_failed'`.
+
+<!-- snippet: examples/docs-snippets/web/backend.ts#backend-access-checker -->
+```ts
+import { AccessUnavailableError, createAccessChecker } from '@tula-tech/core/access'
+import { Hono } from 'hono'
+
+// One checker for the process: it verifies the token, and fetches a large role's permission
+// list once per hash (a role change is a new hash, so the cache cannot go stale).
+const access = createAccessChecker({
+  apiUrl: 'https://auth.example.com',
+  environmentId,
+  publishableKey: 'tula_pk_prod_...',
+})
+
+const app = new Hono()
+
+app.use('/invoices/*', async (c, next) => {
+  const token = c.req.header('authorization')?.replace(/^Bearer /, '')
+  if (!token) {
+    return c.json({ code: 'auth.unauthorized' }, 401)
+  }
+  try {
+    const decision = await access.check(token, 'org:invoices:read')
+    if (!decision.allowed) {
+      return c.json({ code: 'auth.forbidden' }, decision.reason === 'invalid_token' ? 401 : 403)
+    }
+  } catch (error) {
+    if (error instanceof AccessUnavailableError) {
+      // The list could not be fetched: not allowed, and not a "no" either.
+      return c.json({ code: 'service.unavailable' }, 503)
+    }
+    throw error
+  }
+  await next()
+})
+```
+<!-- /snippet -->
+
+#### Closing the window with webhooks
+
+If you receive Tula's [webhooks](webhooks.md), the checker can end access sooner than the token's
+life. Verify the signature of a delivery first, then pass the event to `access.apply(event)`:
+`organization_membership.removed`, `organization_membership.role_changed`, `session.revoked`
+and `organization_role.updated` are the ones it acts on, and it ignores any other or malformed
+event. A removed permission, member or session is denied at once and for one token life at
+most; a permission a role gained still waits for the user's next refresh. A lost webhook costs
+nothing but the old window.
 
 ### How fresh the claims are
 

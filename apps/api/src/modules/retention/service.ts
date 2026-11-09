@@ -131,6 +131,8 @@ export interface RetentionCounts {
   instanceAuditLogs: number
   /** Environments' audit entries older than their own `audit.retentionDays`. */
   auditLogs: number
+  /** Role snapshots a later version replaced, older than the environment's `audit.retentionDays`. */
+  roleVersions: number
   /** Webhook deliveries that ended, with their attempts, past {@link ENDED_DELIVERY_RETENTION}. */
   webhookDeliveries: number
   /** Outbox events settled more than {@link SETTLED_EVENT_RETENTION} ago. */
@@ -157,7 +159,10 @@ export interface RetentionCounts {
 export interface RetentionReport extends RetentionCounts {
   /** Environments visited. */
   environments: number
-  /** Purges that failed (an environment's, or the instance audit log's); retried next run. */
+  /**
+   * Purges that failed (one kind of one environment, an environment's test users, or the
+   * instance audit log); each is retried next run.
+   */
   failed: number
 }
 
@@ -259,6 +264,41 @@ async function purgeAudit(
 }
 
 /**
+ * Delete one environment's superseded role snapshots (ADR 0068) older than its
+ * `audit.retentionDays`: an audit entry can name a version, so a snapshot lives as long as the
+ * entries that could refer to it. A role's current version is never deleted.
+ *
+ * The period is read past the settings cache and a null or invalid one deletes nothing, for the
+ * reasons {@link purgeAudit} gives.
+ *
+ * @param deps - The settings store, config and the organizations.
+ * @param environmentId - The environment.
+ * @param now - The run's time.
+ * @returns How many snapshots were deleted.
+ */
+async function purgeRoleVersions(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'organizations'>,
+  environmentId: string,
+  now: Date
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const before = auditCutoff(settings.audit?.retentionDays, now)
+  if (!before) {
+    return 0
+  }
+  const deleted = await drain((limit) =>
+    deps.organizations.purgeSupersededRoleVersions(environmentId, before, limit)
+  )
+  if (deleted > 0) {
+    logger.info('superseded role snapshots past the retention period deleted', {
+      environmentId,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
  * Delete the previous passwords an environment no longer keeps (ADR 0038): what a lowered
  * `password.history` left with users who have not changed their password since. A user who
  * does change it loses the surplus in that transaction; this is for everyone else, so that an
@@ -342,9 +382,11 @@ async function purgePasswordHistory(
  * one environment's purge cannot touch another's rows.
  *
  * @param deps - Environments, the stores, the settings store and the clock.
+ * @param signal - When aborted (shutdown), no further environment or kind is started; the
+ *   batch under way finishes, since each is one delete.
  * @returns What was deleted. Counts from an environment that failed part-way are included.
  */
-export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
+export async function purge(deps: RetentionDeps, signal?: AbortSignal): Promise<RetentionReport> {
   const now = deps.clock.now()
   const tokensBefore = new Date(now.getTime() - durationToMs(EXPIRED_VERIFICATION_TOKEN_RETENTION))
   const sessionsBefore = new Date(now.getTime() - durationToMs(ENDED_SESSION_RETENTION))
@@ -370,6 +412,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     passkeyChallenges: 0,
     instanceAuditLogs: 0,
     auditLogs: 0,
+    roleVersions: 0,
     webhookDeliveries: 0,
     events: 0,
     smsCodeCounts: 0,
@@ -395,61 +438,76 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   }
   const testUsersBefore = new Date(now.getTime() - durationToMs(TEST_USER_RETENTION))
   for (const { id, projectId } of await deps.environments.listAll()) {
-    report.environments += 1
-    try {
-      report.flowAttempts += await drain((limit) => deps.flowAttempts.deleteExpired(id, now, limit))
-      report.verificationTokens += await drain((limit) =>
-        deps.verificationTokens.deleteExpired(id, tokensBefore, limit)
-      )
-      report.sessions += await drain((limit) =>
-        deps.sessions.deleteEnded(id, sessionsBefore, limit)
-      )
-      // The same grace as tokens: a confirmation in flight when the enrolment lapses still
-      // finds the row and answers `mfa.enrolment_expired` rather than racing the purge.
-      report.pendingFactors += await drain((limit) =>
-        deps.factors.deleteExpiredPending(id, tokensBefore, limit)
-      )
-      // A WebAuthn challenge is dead the moment it expires: nothing reads one afterwards.
-      report.passkeyChallenges += await drain((limit) =>
-        deps.passkeys.deleteExpiredChallenges(id, now, limit)
-      )
-      // Last, and the only step whose rows did not end by themselves: the environment chose
-      // how long its audit entries are kept. One that cannot be read, or purged, keeps them.
-      report.auditLogs += await purgeAudit(deps, id, now)
-      // The webhook worker's leavings. The delivery log first, then the events: neither
-      // depends on the other (a delivery keeps its event's id and type, not a reference).
-      report.webhookDeliveries += await drain((limit) =>
-        deps.webhookDeliveries.deleteEndedBefore(id, deliveriesBefore, limit)
-      )
-      report.events += await drain((limit) =>
-        deps.webhookDeliveries.deleteSettledEvents(id, eventsBefore, limit)
-      )
-      report.smsCodeCounts += await drain((limit) =>
-        deps.smsUsage.deleteBefore(id, smsCountsBefore, limit)
-      )
-      report.passwordHistory += await purgePasswordHistory(deps, id)
-      report.proposals += await drain((limit) =>
-        deps.proposals.deleteExpiredBefore(id, proposalsBefore, limit)
-      )
-      report.hookCallCounts += await drain((limit) =>
-        deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
-      )
-      report.domainClaims += await drain((limit) =>
-        deps.organizationDomains.purgeExpiredPending(id, domainClaimsBefore, limit)
-      )
-      report.invitations += await drain((limit) =>
-        deps.organizations.deleteExpiredInvitations(id, invitationsBefore, limit)
-      )
-      report.setupLinks += await drain((limit) =>
-        deps.setupLinks.deleteExpiredBefore(id, setupLinksBefore, limit)
-      )
-    } catch (error) {
-      report.failed += 1
-      logger.warn('retention failed in one environment', {
-        environmentId: id,
-        err: errorReason(error),
-      })
+    if (signal?.aborted) {
+      break
     }
+    report.environments += 1
+    // Each kind in a `try` of its own: one that throws every round (a bad row, a permission)
+    // must not keep the kinds after it, the environment's audit entries among them, for ever.
+    const step = async (kind: keyof RetentionCounts, work: () => Promise<number>) => {
+      if (signal?.aborted) {
+        return
+      }
+      try {
+        report[kind] += await work()
+      } catch (error) {
+        report.failed += 1
+        logger.warn('retention failed in one environment', {
+          environmentId: id,
+          kind,
+          err: errorReason(error),
+        })
+      }
+    }
+    await step('flowAttempts', () =>
+      drain((limit) => deps.flowAttempts.deleteExpired(id, now, limit))
+    )
+    await step('verificationTokens', () =>
+      drain((limit) => deps.verificationTokens.deleteExpired(id, tokensBefore, limit))
+    )
+    await step('sessions', () =>
+      drain((limit) => deps.sessions.deleteEnded(id, sessionsBefore, limit))
+    )
+    // The same grace as tokens: a confirmation in flight when the enrolment lapses still
+    // finds the row and answers `mfa.enrolment_expired` rather than racing the purge.
+    await step('pendingFactors', () =>
+      drain((limit) => deps.factors.deleteExpiredPending(id, tokensBefore, limit))
+    )
+    // A WebAuthn challenge is dead the moment it expires: nothing reads one afterwards.
+    await step('passkeyChallenges', () =>
+      drain((limit) => deps.passkeys.deleteExpiredChallenges(id, now, limit))
+    )
+    // The only step whose rows did not end by themselves: the environment chose how long its
+    // audit entries are kept. One that cannot be read, or purged, keeps them.
+    await step('auditLogs', () => purgeAudit(deps, id, now))
+    await step('roleVersions', () => purgeRoleVersions(deps, id, now))
+    // The webhook worker's leavings. The delivery log first, then the events: neither
+    // depends on the other (a delivery keeps its event's id and type, not a reference).
+    await step('webhookDeliveries', () =>
+      drain((limit) => deps.webhookDeliveries.deleteEndedBefore(id, deliveriesBefore, limit))
+    )
+    await step('events', () =>
+      drain((limit) => deps.webhookDeliveries.deleteSettledEvents(id, eventsBefore, limit))
+    )
+    await step('smsCodeCounts', () =>
+      drain((limit) => deps.smsUsage.deleteBefore(id, smsCountsBefore, limit))
+    )
+    await step('passwordHistory', () => purgePasswordHistory(deps, id))
+    await step('proposals', () =>
+      drain((limit) => deps.proposals.deleteExpiredBefore(id, proposalsBefore, limit))
+    )
+    await step('hookCallCounts', () =>
+      drain((limit) => deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit))
+    )
+    await step('domainClaims', () =>
+      drain((limit) => deps.organizationDomains.purgeExpiredPending(id, domainClaimsBefore, limit))
+    )
+    await step('invitations', () =>
+      drain((limit) => deps.organizations.deleteExpiredInvitations(id, invitationsBefore, limit))
+    )
+    await step('setupLinks', () =>
+      drain((limit) => deps.setupLinks.deleteExpiredBefore(id, setupLinksBefore, limit))
+    )
     // What a sign-in test could not delete itself (ADR 0058). The one purge here that is
     // recorded: a user is going, and the log says who removed every other one. In a `try` of
     // its own, after the others': it is the safety net of a run whose deletion failed, and an
@@ -483,13 +541,15 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
  * job lock lets one of them through. Logs one line per run, with counts only.
  *
  * @param deps - Everything {@link purge} needs, plus the job lock.
+ * @param signal - Passed to {@link purge}: aborted at shutdown, it ends the run between batches.
  * @returns The run's report, or `null` when another instance held the lock (nothing is logged).
  * @throws When the lock or the list of environments cannot be read (the database is down).
  */
 export async function run(
-  deps: RetentionDeps & Pick<Deps, 'jobLock'>
+  deps: RetentionDeps & Pick<Deps, 'jobLock'>,
+  signal?: AbortSignal
 ): Promise<RetentionReport | null> {
-  const outcome = await deps.jobLock.runExclusive('retention', () => purge(deps))
+  const outcome = await deps.jobLock.runExclusive('retention', () => purge(deps, signal))
   if (!outcome.ran) {
     return null
   }
@@ -498,8 +558,9 @@ export async function run(
   // sum: the log line is the only lasting trace of a deletion. `environments` and `failed` are not.
   const { environments: _environments, failed: _failed, ...counts } = report
   const removed = Object.values(counts).reduce((sum, count) => sum + count, 0)
-  // An idle run is routine; one that deleted something, or could not, is worth a line.
-  const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
-  log('retention run finished', { ...report })
+  const aborted = signal?.aborted === true
+  // An idle run is routine; one that deleted something, could not, or was cut short is worth a line.
+  const log = report.failed > 0 ? logger.warn : aborted || removed > 0 ? logger.info : logger.debug
+  log('retention run finished', { ...report, ...(aborted && { aborted }) })
   return report
 }

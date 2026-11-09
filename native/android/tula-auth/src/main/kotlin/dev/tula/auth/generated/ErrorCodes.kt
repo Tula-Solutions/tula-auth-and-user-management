@@ -360,6 +360,10 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.not_a_member"
     }
 
+    object OrganizationPermissionsUnavailable : ErrorCode() {
+        override val rawValue: String = "organization.permissions_unavailable"
+    }
+
     object OrganizationCreationDisabled : ErrorCode() {
         override val rawValue: String = "organization.creation_disabled"
     }
@@ -386,6 +390,14 @@ sealed class ErrorCode {
 
     object OrganizationRoleLimit : ErrorCode() {
         override val rawValue: String = "organization.role_limit"
+    }
+
+    object OrganizationRoleTooLarge : ErrorCode() {
+        override val rawValue: String = "organization.role_too_large"
+    }
+
+    object OrganizationLargeRolesInUse : ErrorCode() {
+        override val rawValue: String = "organization.large_roles_in_use"
     }
 
     object OrganizationPermissionRequired : ErrorCode() {
@@ -664,6 +676,7 @@ sealed class ErrorCode {
                 OrganizationLastManager,
                 OrganizationRoleUnknown,
                 OrganizationNotAMember,
+                OrganizationPermissionsUnavailable,
                 OrganizationCreationDisabled,
                 OrganizationLimitReached,
                 OrganizationPersonalAccountDisabled,
@@ -671,6 +684,8 @@ sealed class ErrorCode {
                 OrganizationRoleInUse,
                 OrganizationRoleBuiltIn,
                 OrganizationRoleLimit,
+                OrganizationRoleTooLarge,
+                OrganizationLargeRolesInUse,
                 OrganizationPermissionRequired,
                 OrganizationRoleNotAssignable,
                 OrganizationInvitationExists,
@@ -806,6 +821,7 @@ sealed class ErrorCode {
             "organization.last_manager" -> OrganizationLastManager
             "organization.role_unknown" -> OrganizationRoleUnknown
             "organization.not_a_member" -> OrganizationNotAMember
+            "organization.permissions_unavailable" -> OrganizationPermissionsUnavailable
             "organization.creation_disabled" -> OrganizationCreationDisabled
             "organization.limit_reached" -> OrganizationLimitReached
             "organization.personal_account_disabled" -> OrganizationPersonalAccountDisabled
@@ -813,6 +829,8 @@ sealed class ErrorCode {
             "organization.role_in_use" -> OrganizationRoleInUse
             "organization.role_built_in" -> OrganizationRoleBuiltIn
             "organization.role_limit" -> OrganizationRoleLimit
+            "organization.role_too_large" -> OrganizationRoleTooLarge
+            "organization.large_roles_in_use" -> OrganizationLargeRolesInUse
             "organization.permission_required" -> OrganizationPermissionRequired
             "organization.role_not_assignable" -> OrganizationRoleNotAssignable
             "organization.invitation_exists" -> OrganizationInvitationExists
@@ -1142,6 +1160,9 @@ object TulaErrorDefinitions {
     /** `organization.not_a_member` */
     val organizationNotAMember: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationNotAMember, 403, "You are not a member of that organization.")
 
+    /** `organization.permissions_unavailable` */
+    val organizationPermissionsUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPermissionsUnavailable, 404, "The permissions of that role are not available.")
+
     /** `organization.creation_disabled` */
     val organizationCreationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationCreationDisabled, 403, "Creating an organization is not allowed in this environment.")
 
@@ -1162,6 +1183,12 @@ object TulaErrorDefinitions {
 
     /** `organization.role_limit` */
     val organizationRoleLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleLimit, 409, "This environment has the most custom roles it can have.")
+
+    /** `organization.role_too_large` */
+    val organizationRoleTooLarge: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleTooLarge, 422, "This role has more permissions than an access token can carry.")
+
+    /** `organization.large_roles_in_use` */
+    val organizationLargeRolesInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationLargeRolesInUse, 409, "A role has more permissions than an access token can carry. Shorten it first.")
 
     /** `organization.permission_required` */
     val organizationPermissionRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPermissionRequired, 403, "Your role does not allow that.")
@@ -1385,6 +1412,7 @@ object TulaErrorDefinitions {
         organizationLastManager,
         organizationRoleUnknown,
         organizationNotAMember,
+        organizationPermissionsUnavailable,
         organizationCreationDisabled,
         organizationLimitReached,
         organizationPersonalAccountDisabled,
@@ -1392,6 +1420,8 @@ object TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationRoleTooLarge,
+        organizationLargeRolesInUse,
         organizationPermissionRequired,
         organizationRoleNotAssignable,
         organizationInvitationExists,

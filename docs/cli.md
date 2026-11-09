@@ -15,6 +15,7 @@ repository run `bun run tula -- <command>`, and see
 | [`tula mcp`](#tula-mcp) | The MCP server an AI assistant reads and proposes through. |
 | [`tula approve`](#tula-approve) | Approve a change an assistant proposed. |
 | [`tula import`](#tula-import) | Move users, with their password hashes, from Clerk, Auth0, Firebase, Supabase or better-auth. |
+| [`tula types`](#tula-types) | Write the environment's permission keys as TypeScript types. |
 | [`tula diff`, `tula apply`](config.md) | Settings as code. |
 
 ## Credentials are never arguments
@@ -510,3 +511,16 @@ A hook's secret cannot be rotated, so `--discard-secrets` means removing the hoo
 it again to get one. A plan that lets a hook's failures through, switches a hook off or
 removes one that is on is a weakening: with `--yes` it needs `--allow-weaker`. There is no
 option of its own for removing a hook.
+
+## `tula types`
+
+```sh
+tula types --out src/tula-types.gen.ts
+```
+
+Reads every role of the environment, the built-in ones included, and writes the distinct
+permission keys as `TulaPermission`, the role keys as `TulaRole` and the keys as the constant
+`TULA_PERMISSIONS`. A permission key typed in your code as `TulaPermission` that no role has
+fails to compile. The file defaults to `tula-types.gen.ts` in the current directory; run the
+command again after a role changes. It needs a secret key, like every admin call
+(`--env`, `--api-url`, `--secret-key-file` as in the other commands).

@@ -388,3 +388,7 @@ this file under "Area rules" and does not repeat it.
 - Decision (TULA-157, H-060): **recorded, no change**: the portal lists mappings to privileged
   roles as locked, which shows the group names. Moot once a setup-link token cannot apply a
   privileged role (TULA-156); until then the names are the holder's own directory's groups.
+
+## Large roles (`organizations.largeRoles`, ADR 0068 §6)
+
+`roleFitsInline` (`@tula-tech/contract`) is the one decision whether a role's permissions fit a token. A role that does not is refused (`organization.role_too_large`) unless `largeRoles` is on; switching it off is refused while one exists (`organization.large_roles_in_use`), under the `organization_roles` lock, the same one a role's create and update take (`organization-role/service.ts`), so a role cannot become large while the setting is being switched off. With it on, issuance omits `org_perms` for such a role (lookup claims). It is not a weakening. Docs say: turn it on only once every token-checking service runs the access checker.

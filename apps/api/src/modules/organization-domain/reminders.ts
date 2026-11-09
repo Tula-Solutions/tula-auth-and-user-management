@@ -84,13 +84,18 @@ function groupsOf(due: DueReminder[]): Map<string, DueReminder[]> {
  * A mailer failure never reaches a request: this runs on a timer.
  *
  * @param deps - Stores, settings, mailer, rate limiter and clock.
+ * @param signal - When aborted (shutdown), no further environment or group is started; a group
+ *   under way is finished, so a reminder is never marked sent and left unsent.
  * @returns What the run did.
  * @throws When the list of environments cannot be read (the database is down).
  */
-export async function remind(deps: RemindDeps): Promise<ReminderReport> {
+export async function remind(deps: RemindDeps, signal?: AbortSignal): Promise<ReminderReport> {
   const now = deps.clock.now()
   const report: ReminderReport = { environments: 0, domains: 0, emails: 0, retried: 0, failed: 0 }
   for (const { id } of await deps.environments.listAll()) {
+    if (signal?.aborted) {
+      break
+    }
     report.environments += 1
     try {
       const { organizations } = await Settings.current(deps, { environmentId: id })
@@ -104,6 +109,9 @@ export async function remind(deps: RemindDeps): Promise<ReminderReport> {
         REMINDER_BATCH_SIZE
       )
       for (const group of groupsOf(due).values()) {
+        if (signal?.aborted) {
+          break
+        }
         if ((await remindGroup(deps, id, group, report)) === 'limited') {
           break
         }
@@ -229,13 +237,15 @@ async function remindGroup(
  * (`startJobs`) calls.
  *
  * @param deps - What {@link remind} needs, and the job lock.
+ * @param signal - Passed to {@link remind}: aborted at shutdown, it ends the run between groups.
  * @returns The run's report, or `null` when another instance held the lock.
  * @throws When the lock or the list of environments cannot be read.
  */
 export async function run(
-  deps: RemindDeps & Pick<Deps, 'jobLock'>
+  deps: RemindDeps & Pick<Deps, 'jobLock'>,
+  signal?: AbortSignal
 ): Promise<ReminderReport | null> {
-  const outcome = await deps.jobLock.runExclusive('domain_reminders', () => remind(deps))
+  const outcome = await deps.jobLock.runExclusive('domain_reminders', () => remind(deps, signal))
   if (!outcome.ran) {
     return null
   }

@@ -3017,6 +3017,14 @@ describe('planOrganizationRoles', () => {
           : operation.kind
       )
 
+    test('organizations.largeRoles is planned as a settings change and is no weakening', () => {
+      const planned = plan({ settings: { organizations: { largeRoles: true } } })
+      expect(planned.settings).toEqual([
+        { path: 'organizations.largeRoles', kind: 'changed', before: false, after: true },
+      ])
+      expect(planned.weakened).toEqual([])
+    })
+
     test('roles come last, after the settings that switch organizations on', () => {
       const planned = plan(
         {

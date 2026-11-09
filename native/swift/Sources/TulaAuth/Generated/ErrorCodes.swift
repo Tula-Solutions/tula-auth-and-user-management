@@ -91,6 +91,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationLastManager
     case organizationRoleUnknown
     case organizationNotAMember
+    case organizationPermissionsUnavailable
     case organizationCreationDisabled
     case organizationLimitReached
     case organizationPersonalAccountDisabled
@@ -98,6 +99,8 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationRoleInUse
     case organizationRoleBuiltIn
     case organizationRoleLimit
+    case organizationRoleTooLarge
+    case organizationLargeRolesInUse
     case organizationPermissionRequired
     case organizationRoleNotAssignable
     case organizationInvitationExists
@@ -233,6 +236,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationLastManager,
         .organizationRoleUnknown,
         .organizationNotAMember,
+        .organizationPermissionsUnavailable,
         .organizationCreationDisabled,
         .organizationLimitReached,
         .organizationPersonalAccountDisabled,
@@ -240,6 +244,8 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationRoleInUse,
         .organizationRoleBuiltIn,
         .organizationRoleLimit,
+        .organizationRoleTooLarge,
+        .organizationLargeRolesInUse,
         .organizationPermissionRequired,
         .organizationRoleNotAssignable,
         .organizationInvitationExists,
@@ -375,6 +381,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.last_manager": self = .organizationLastManager
         case "organization.role_unknown": self = .organizationRoleUnknown
         case "organization.not_a_member": self = .organizationNotAMember
+        case "organization.permissions_unavailable": self = .organizationPermissionsUnavailable
         case "organization.creation_disabled": self = .organizationCreationDisabled
         case "organization.limit_reached": self = .organizationLimitReached
         case "organization.personal_account_disabled": self = .organizationPersonalAccountDisabled
@@ -382,6 +389,8 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.role_in_use": self = .organizationRoleInUse
         case "organization.role_built_in": self = .organizationRoleBuiltIn
         case "organization.role_limit": self = .organizationRoleLimit
+        case "organization.role_too_large": self = .organizationRoleTooLarge
+        case "organization.large_roles_in_use": self = .organizationLargeRolesInUse
         case "organization.permission_required": self = .organizationPermissionRequired
         case "organization.role_not_assignable": self = .organizationRoleNotAssignable
         case "organization.invitation_exists": self = .organizationInvitationExists
@@ -519,6 +528,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationLastManager: return "organization.last_manager"
         case .organizationRoleUnknown: return "organization.role_unknown"
         case .organizationNotAMember: return "organization.not_a_member"
+        case .organizationPermissionsUnavailable: return "organization.permissions_unavailable"
         case .organizationCreationDisabled: return "organization.creation_disabled"
         case .organizationLimitReached: return "organization.limit_reached"
         case .organizationPersonalAccountDisabled: return "organization.personal_account_disabled"
@@ -526,6 +536,8 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationRoleInUse: return "organization.role_in_use"
         case .organizationRoleBuiltIn: return "organization.role_built_in"
         case .organizationRoleLimit: return "organization.role_limit"
+        case .organizationRoleTooLarge: return "organization.role_too_large"
+        case .organizationLargeRolesInUse: return "organization.large_roles_in_use"
         case .organizationPermissionRequired: return "organization.permission_required"
         case .organizationRoleNotAssignable: return "organization.role_not_assignable"
         case .organizationInvitationExists: return "organization.invitation_exists"
@@ -860,6 +872,9 @@ public enum TulaErrorDefinitions {
     /// `organization.not_a_member`
     public static let organizationNotAMember = TulaErrorDefinition(code: .organizationNotAMember, status: 403, message: "You are not a member of that organization.")
 
+    /// `organization.permissions_unavailable`
+    public static let organizationPermissionsUnavailable = TulaErrorDefinition(code: .organizationPermissionsUnavailable, status: 404, message: "The permissions of that role are not available.")
+
     /// `organization.creation_disabled`
     public static let organizationCreationDisabled = TulaErrorDefinition(code: .organizationCreationDisabled, status: 403, message: "Creating an organization is not allowed in this environment.")
 
@@ -880,6 +895,12 @@ public enum TulaErrorDefinitions {
 
     /// `organization.role_limit`
     public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
+
+    /// `organization.role_too_large`
+    public static let organizationRoleTooLarge = TulaErrorDefinition(code: .organizationRoleTooLarge, status: 422, message: "This role has more permissions than an access token can carry.")
+
+    /// `organization.large_roles_in_use`
+    public static let organizationLargeRolesInUse = TulaErrorDefinition(code: .organizationLargeRolesInUse, status: 409, message: "A role has more permissions than an access token can carry. Shorten it first.")
 
     /// `organization.permission_required`
     public static let organizationPermissionRequired = TulaErrorDefinition(code: .organizationPermissionRequired, status: 403, message: "Your role does not allow that.")
@@ -1103,6 +1124,7 @@ public enum TulaErrorDefinitions {
         organizationLastManager,
         organizationRoleUnknown,
         organizationNotAMember,
+        organizationPermissionsUnavailable,
         organizationCreationDisabled,
         organizationLimitReached,
         organizationPersonalAccountDisabled,
@@ -1110,6 +1132,8 @@ public enum TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationRoleTooLarge,
+        organizationLargeRolesInUse,
         organizationPermissionRequired,
         organizationRoleNotAssignable,
         organizationInvitationExists,

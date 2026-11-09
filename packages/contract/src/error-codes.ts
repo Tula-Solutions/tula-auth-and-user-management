@@ -411,6 +411,12 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'You are not a member of that organization.',
   },
+  // One answer for every refusal of the permissions lookup (no organization in the token, no
+  // snapshot, a hash that does not match), so the route is no oracle for roles (ADR 0068).
+  'organization.permissions_unavailable': {
+    status: 404,
+    message: 'The permissions of that role are not available.',
+  },
   'organization.creation_disabled': {
     status: 403,
     message: 'Creating an organization is not allowed in this environment.',
@@ -442,6 +448,17 @@ export const ERROR_DEFINITIONS = {
   'organization.role_limit': {
     status: 409,
     message: 'This environment has the most custom roles it can have.',
+  },
+  // `role_too_large`: the role's permissions would not fit a token and the environment has
+  // not turned on `organizations.largeRoles`. `large_roles_in_use`: that setting cannot be
+  // turned off while a role is over what a token carries.
+  'organization.role_too_large': {
+    status: 422,
+    message: 'This role has more permissions than an access token can carry.',
+  },
+  'organization.large_roles_in_use': {
+    status: 409,
+    message: 'A role has more permissions than an access token can carry. Shorten it first.',
   },
   // Invitations to an organization. `permission_required`: the signed-in
   // user is a member but their role lacks the permission the route needs (`params.permission`).

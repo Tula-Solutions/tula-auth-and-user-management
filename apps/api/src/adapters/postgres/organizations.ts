@@ -4,6 +4,7 @@ import {
   organizationInvitations,
   organizationMemberships,
   organizationRoles,
+  organizationRoleVersions,
   organizations,
   type Transaction,
   users,
@@ -18,6 +19,7 @@ import {
   eq,
   gt,
   inArray,
+  lt,
   lte,
   ne,
   or,
@@ -29,6 +31,7 @@ import {
   isForeignKeyViolation,
   isUniqueViolation,
 } from '~/adapters/postgres/errors'
+import { roleSnapshot } from '~/adapters/role-snapshot'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AcceptInvitationOutcome,
@@ -42,6 +45,7 @@ import type {
   OrganizationChanges,
   OrganizationRecord,
   OrganizationRoleRecord,
+  OrganizationRoleVersionRecord,
   OrganizationStore,
   OwnedOrganization,
   Page,
@@ -659,10 +663,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
           organization: organizationColumns,
           membership: membershipColumns,
           permissions: organizationRoles.permissions,
+          snapshot: organizationRoleVersions,
         })
         .from(organizationMemberships)
         .innerJoin(organizationRoles, joinedToRole)
         .innerJoin(organizations, joinedToOrganization)
+        .leftJoin(
+          organizationRoleVersions,
+          and(
+            eq(organizationRoleVersions.environmentId, organizationRoles.environmentId),
+            eq(organizationRoleVersions.roleId, organizationRoles.id),
+            eq(organizationRoleVersions.version, organizationRoles.version)
+          )
+        )
         .where(
           and(
             eq(organizationMemberships.environmentId, environmentId),
@@ -672,7 +685,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
         )
         .limit(1)
     )
-    return row ?? null
+    return row
+      ? {
+          ...row,
+          snapshot: row.snapshot && {
+            roleId: row.snapshot.roleId,
+            roleKey: row.snapshot.roleKey,
+            version: row.snapshot.version,
+            permissions: row.snapshot.permissions,
+            permissionsHash: row.snapshot.permissionsHash,
+            createdAt: row.snapshot.createdAt,
+          },
+        }
+      : null
   }
 
   /** @inheritdoc */
@@ -800,6 +825,11 @@ export class PostgresOrganizationStore implements OrganizationStore {
     try {
       return await withTenant(this.db, record.environmentId, async (tx) => {
         const [row] = await tx.insert(organizationRoles).values(record).returning(roleColumns)
+        await tx.insert(organizationRoleVersions).values({
+          projectId: record.projectId,
+          environmentId: record.environmentId,
+          ...(await roleSnapshot(record)),
+        })
         await recordActivity(tx, activity ? [activity] : [])
         // An insert that did not throw returns its row.
         return row as OrganizationRoleRecord
@@ -870,6 +900,12 @@ export class PostgresOrganizationStore implements OrganizationStore {
           ? ({ outcome: 'stale', version: now.version } as const)
           : ({ outcome: 'not_found' } as const)
       }
+      // The version the row now has, as written: the snapshot a token's `org_rv` names.
+      await tx.insert(organizationRoleVersions).values({
+        projectId: row.projectId,
+        environmentId,
+        ...(await roleSnapshot(row)),
+      })
       await recordActivity(tx, activity ? [activity] : [])
       return { outcome: 'updated', record: row } as const
     })
@@ -1217,18 +1253,144 @@ export class PostgresOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
+  async purgeSupersededRoleVersions(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(organizationRoleVersions)
+        .where(
+          and(
+            eq(organizationRoleVersions.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              organizationRoleVersions.id,
+              tx
+                .select({ id: organizationRoleVersions.id })
+                .from(organizationRoleVersions)
+                .innerJoin(
+                  organizationRoles,
+                  and(
+                    eq(organizationRoles.environmentId, organizationRoleVersions.environmentId),
+                    eq(organizationRoles.id, organizationRoleVersions.roleId)
+                  )
+                )
+                .where(
+                  and(
+                    eq(organizationRoleVersions.environmentId, environmentId),
+                    lt(organizationRoleVersions.createdAt, before),
+                    // Only what a later version replaced: the current one has no row here.
+                    lt(organizationRoleVersions.version, organizationRoles.version)
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: organizationRoleVersions.id })
+    )
+    return rows.length
+  }
+
+  /** @inheritdoc */
   async ensureBuiltInRoles(roles: readonly OrganizationRoleRecord[]): Promise<void> {
     // One environment at a time: a row is only visible and writable inside its own.
     for (const environmentId of new Set(roles.map((role) => role.environmentId))) {
-      await withTenant(this.db, environmentId, (tx) =>
-        tx
+      await withTenant(this.db, environmentId, async (tx) => {
+        const ours = roles.filter((role) => role.environmentId === environmentId)
+        await tx
           .insert(organizationRoles)
-          .values(roles.filter((role) => role.environmentId === environmentId))
+          .values(ours)
           // Two instances creating an environment's roles at once: the first wins, both are fine.
           .onConflictDoNothing({
             target: [organizationRoles.environmentId, organizationRoles.key],
           })
-      )
+        // Snapshot what the environment has (a role that existed before keeps its own id and
+        // version); a version already snapshotted is left alone.
+        const have = await tx
+          .select(roleColumns)
+          .from(organizationRoles)
+          .where(
+            and(
+              eq(organizationRoles.environmentId, environmentId),
+              inArray(
+                organizationRoles.key,
+                ours.map((role) => role.key)
+              )
+            )
+          )
+        await tx
+          .insert(organizationRoleVersions)
+          .values(
+            await Promise.all(
+              (have as OrganizationRoleRecord[]).map(async (role) => ({
+                projectId: role.projectId,
+                environmentId,
+                ...(await roleSnapshot(role)),
+              }))
+            )
+          )
+          .onConflictDoNothing()
+      })
     }
+  }
+
+  /** @inheritdoc */
+  async findRoleVersion(
+    environmentId: string,
+    roleId: string,
+    version: number
+  ): Promise<OrganizationRoleVersionRecord | null> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(organizationRoleVersions)
+        .where(
+          and(
+            eq(organizationRoleVersions.environmentId, environmentId),
+            eq(organizationRoleVersions.roleId, roleId),
+            eq(organizationRoleVersions.version, version)
+          )
+        )
+      return row
+        ? {
+            roleId: row.roleId,
+            roleKey: row.roleKey,
+            version: row.version,
+            permissions: row.permissions,
+            permissionsHash: row.permissionsHash,
+            createdAt: row.createdAt,
+          }
+        : null
+    })
+  }
+
+  /** @inheritdoc */
+  async listRoleVersions(
+    environmentId: string,
+    roleId: string
+  ): Promise<OrganizationRoleVersionRecord[]> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(organizationRoleVersions)
+        .where(
+          and(
+            eq(organizationRoleVersions.environmentId, environmentId),
+            eq(organizationRoleVersions.roleId, roleId)
+          )
+        )
+        .orderBy(asc(organizationRoleVersions.version))
+      return rows.map((row) => ({
+        roleId: row.roleId,
+        roleKey: row.roleKey,
+        version: row.version,
+        permissions: row.permissions,
+        permissionsHash: row.permissionsHash,
+        createdAt: row.createdAt,
+      }))
+    })
   }
 }

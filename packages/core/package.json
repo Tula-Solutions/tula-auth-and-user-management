@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/core",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "license": "Apache-2.0",
   "author": "Tula Solutions",
   "type": "module",
@@ -26,13 +26,18 @@
   },
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./access": "./src/access.ts"
   },
   "publishConfig": {
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./access": {
+        "types": "./dist/access.d.ts",
+        "default": "./dist/access.js"
       },
       "./package.json": "./package.json"
     }

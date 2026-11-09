@@ -13,20 +13,28 @@ Run the rounds below in order. Keep a findings ledger in the conversation
 - `~/.claude/skills/otterbot-review` exists. If it doesn't, stop and tell the user to install it:
   `git clone https://github.com/otternaut/otterbot ~/tools/otterbot && ~/tools/otterbot/scripts/install`.
 - You know the scope: uncommitted changes, otherwise the branch against `develop`.
+- You know the spec, if there is one (a Linear issue or a file, and its tickets): Ollie checks
+  the change against it as well as against the standards.
+- You know whether the change is **security-sensitive**: it touches a path `AGENTS.md` lists
+  under "Security rules" as security-sensitive. That decides how much each later round reviews.
 
 ## Each round (max 4)
 
-1. **Gate.** Run the `verify` skill until `bun run verify` is green. Don't spend a review on red
-   code.
+1. **Gate.** `bun run verify` must be green before a review: don't spend one on red code. When
+   the branch has a pull request, its CI is the gate: push, wait for the checks without reading
+   their logs, and read only the log of a job that fails. Without a pull request, run the
+   `verify` skill.
 2. **Review.** Spawn the `ollie-reviewer` subagent (it is pinned to `claude-sonnet-5-5`). Prompt:
    (Project agents register at session start. If `ollie-reviewer` is "not found" in a session
    where `.claude/agents/ollie-reviewer.md` was just created, spawn `general-purpose` with
    `model: sonnet`, tell it to read that file and follow it, and to invoke the `otterbot-review`
    skill.)
    - Round 1: "Round 1. Review the local changes in this repo (uncommitted, else branch vs
-     develop). Return the structured output from your instructions."
+     develop). Spec: <link, or 'none'>; also report what it asks for that the change misses or
+     gets wrong. Return the structured output from your instructions."
    - Round N>1: "Round N re-review. Previous findings: <paste ledger rows>. Check each, then
-     review the interdiff since round N-1."
+     review the interdiff since round N-1 together with the whole of every file it touches."
+     For a **security-sensitive** change, review the whole branch again instead.
 3. **Triage** every finding against the code yourself. Ollie verifies before reporting, but you own
    the change:
    - 🔴 / 🟠: must fix.
@@ -39,7 +47,7 @@ Run the rounds below in order. Keep a findings ledger in the conversation
    1. Write a regression test that reproduces the finding and **watch it fail**.
    2. Make the smallest fix that makes it pass.
    3. Run the affected package's tests.
-5. **Exit check:** `bun run verify` is green **and** Ollie's verdict is `no blocking findings` with
+5. **Exit check:** `bun run verify` is green (locally, or the pull request's CI) **and** Ollie's verdict is `no blocking findings` with
    no unresolved 🔴/🟠 and every 🟡 fixed or deferred → exit the loop. Otherwise start the next
    round.
 

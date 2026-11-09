@@ -1,5 +1,13 @@
 # @tula-tech/example-nextjs
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [673501e]
+  - @tula-tech/nextjs@0.4.0
+  - @tula-tech/react@0.4.0
+
 ## 0.0.6
 
 ### Patch Changes
