@@ -73,12 +73,20 @@ export function startJobs(
 ): RunningJobs {
   const started: unknown[] = []
   let stopped = false
-  const deliveryStop = new AbortController()
+  const stop = new AbortController()
   let deliveryRound: Promise<void> | null = null
+  // Every round under way, delivery's too: `finish` waits for them all before the pool closes.
+  const underWay = new Set<Promise<void>>()
+
+  function track(round: Promise<void>): Promise<void> {
+    underWay.add(round)
+    void round.finally(() => underWay.delete(round))
+    return round
+  }
 
   async function runRetention() {
     try {
-      await Retention.run(deps)
+      await Retention.run(deps, stop.signal)
     } catch (error) {
       logger.warn('could not run the retention job', { err: errorReason(error) })
     }
@@ -86,7 +94,7 @@ export function startJobs(
 
   async function runDomainReminders() {
     try {
-      await DomainReminders.run(deps)
+      await DomainReminders.run(deps, stop.signal)
     } catch (error) {
       logger.warn('could not run the domain reminder job', { err: errorReason(error) })
     }
@@ -94,16 +102,21 @@ export function startJobs(
 
   async function runDelivery() {
     try {
-      await Webhooks.run(deps, deliveryStop.signal)
+      await Webhooks.run(deps, stop.signal)
     } catch (error) {
       logger.warn('could not run the webhook delivery job', { err: errorReason(error) })
     }
   }
 
   function startDelivery() {
-    deliveryRound ??= runDelivery().finally(() => {
-      deliveryRound = null
-    })
+    if (deliveryRound) {
+      return
+    }
+    deliveryRound = track(
+      runDelivery().finally(() => {
+        deliveryRound = null
+      })
+    )
   }
 
   /** Run a job now and on its interval, unless the process is stopping. */
@@ -118,10 +131,10 @@ export function startJobs(
   }
 
   if (jobs.includes('retention')) {
-    schedule(() => void runRetention(), Retention.RETENTION_INTERVAL_MS)
+    schedule(() => void track(runRetention()), Retention.RETENTION_INTERVAL_MS)
   }
   if (jobs.includes('domain_reminders')) {
-    schedule(() => void runDomainReminders(), DomainReminders.DOMAIN_REMINDER_INTERVAL_MS)
+    schedule(() => void track(runDomainReminders()), DomainReminders.DOMAIN_REMINDER_INTERVAL_MS)
   }
   if (jobs.includes('webhook_delivery')) {
     schedule(startDelivery, Webhooks.WEBHOOK_DELIVERY_INTERVAL_MS)
@@ -140,8 +153,10 @@ export function startJobs(
       stopTimers()
       // A delivery that was sent and not yet recorded would be sent again by the next round:
       // the round under way finishes the requests it is making, records them and stops.
-      deliveryStop.abort()
-      await deliveryRound
+      stop.abort()
+      // Retention and reminder rounds see the same signal and end between batches or groups,
+      // so waiting for them is short and a reminder marked sent is still sent.
+      await Promise.all(underWay)
     },
   }
 }

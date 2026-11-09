@@ -84,6 +84,9 @@ object TulaOperations {
     /** Finish registering a passkey (`POST /v1/client/me/passkeys`). Body: [PasskeyRegisterRequest]. Answers [Passkey]. */
     val finishPasskeyRegistration: TulaOperation = TulaOperation("finishPasskeyRegistration", "POST", "/v1/client/me/passkeys", true)
 
+    /** Read the permissions of the token's role version (`GET /v1/client/me/organizations/active/permissions`). No body. Answers [ActiveOrganizationPermissions]. */
+    val getActiveOrganizationPermissions: TulaOperation = TulaOperation("getActiveOrganizationPermissions", "GET", "/v1/client/me/organizations/active/permissions", true)
+
     /** Client configuration (`GET /v1/client/config`). No body. Answers [ClientConfig]. */
     val getClientConfig: TulaOperation = TulaOperation("getClientConfig", "GET", "/v1/client/config", false)
 
@@ -360,6 +363,7 @@ object TulaOperations {
         exchangeIdentityLinkTicket,
         exchangeOAuthTicket,
         finishPasskeyRegistration,
+        getActiveOrganizationPermissions,
         getClientConfig,
         getMe,
         getMyFactors,

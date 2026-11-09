@@ -433,6 +433,46 @@ describe('POST /v1/client/sessions/refresh for a bound session', () => {
   })
 })
 
+describe('GET /v1/client/me/organizations/active/permissions for a bound session', () => {
+  const PERMISSIONS = '/me/organizations/active/permissions'
+  const getProof = async (signer: DeviceKey) =>
+    proofFor(signer, {
+      now: deps.clock.now(),
+      path: `/v1/client${PERMISSIONS}`,
+      method: 'GET',
+      nonce: await serverNonce(),
+    })
+  const lookup = async (dpop?: string) => {
+    const { session } = await completed(await signUp(key))
+    const headers: Record<string, string> = {
+      'x-tula-publishable-key': PK,
+      authorization: `Bearer ${session.accessToken}`,
+    }
+    if (dpop !== undefined) {
+      headers[DPOP_HEADER] = dpop
+    }
+    return app.request(`/v1/client${PERMISSIONS}`, { headers })
+  }
+
+  test('without a proof: 401 device.proof_invalid, as at a refresh', async () => {
+    const res = await lookup()
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('device.proof_invalid')
+  })
+
+  test('a wrong key: 401 device.proof_invalid', async () => {
+    const res = await lookup(await getProof(otherKey))
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('device.proof_invalid')
+  })
+
+  test('the session’s key passes the proof check (this token names no role: the uniform 404)', async () => {
+    const res = await lookup(await getProof(key))
+    expect(res.status).toBe(404)
+    expect(await code(res)).toBe('organization.permissions_unavailable')
+  })
+})
+
 describe('CORS', () => {
   test('a preflight may send DPoP, and a page may read DPoP-Nonce', async () => {
     const preflight = await app.request('/v1/client/sessions/refresh', {

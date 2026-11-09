@@ -7931,6 +7931,7 @@
           "organization.last_manager",
           "organization.role_unknown",
           "organization.not_a_member",
+          "organization.permissions_unavailable",
           "organization.creation_disabled",
           "organization.limit_reached",
           "organization.personal_account_disabled",
@@ -14638,6 +14639,34 @@
           "organizationId"
         ],
         "additionalProperties": false
+      },
+      "ActiveOrganizationPermissions": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "version",
+          "permissions",
+          "hash"
+        ]
       },
       "OrganizationDomainMode": {
         "type": "string",
@@ -36010,6 +36039,97 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SetActiveOrganizationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/organizations/active/permissions": {
+      "get": {
+        "operationId": "getActiveOrganizationPermissions",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Read the permissions of the token's role version",
+        "description": "The permissions behind the `org_role`, `org_rv` and `org_ph` claims of the access token, for a token that carries a hash and not the list. Answers only while the stored snapshot's hash is the token's; every other case (no active organization, no snapshot, a hash that does not match) is the same `organization.permissions_unavailable` (404). The answer never changes for that hash, so it is cached for good and revalidated with `If-None-Match` (304). A device-bound session sends a DPoP proof, as at a refresh. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role version's permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveOrganizationPermissions"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The client's copy (its `ETag`) is current."
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }

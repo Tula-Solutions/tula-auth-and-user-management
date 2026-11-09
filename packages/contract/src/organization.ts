@@ -244,6 +244,20 @@ export const ActiveOrganizationSchema = z
   .meta({ ref: 'ActiveOrganization' })
 
 /**
+ * The permissions of the role version an access token names (`org_role`, `org_rv`), with the
+ * hash the token carries as `org_ph`. Immutable for that hash, so a client caches it for good.
+ */
+export const ActiveOrganizationPermissionsSchema = z
+  .object({
+    role: z.string(),
+    version: z.number().int().min(1),
+    /** Sorted by code point, each once: the list `hash` is over. */
+    permissions: z.array(z.string()),
+    hash: z.string(),
+  })
+  .meta({ ref: 'ActiveOrganizationPermissions' })
+
+/**
  * A member of an organization as another member sees them: who they are
  * and the key of their role. The name and the address are shown so that a member list can be
  * read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
@@ -338,6 +352,8 @@ export type UserOrganization = z.infer<typeof UserOrganizationSchema>
 export type UserOrganizationList = z.infer<typeof UserOrganizationListSchema>
 /** The body that sets or clears the active organization. */
 export type SetActiveOrganizationRequest = z.infer<typeof SetActiveOrganizationRequestSchema>
+/** The permissions of the role version the session's token names. */
+export type ActiveOrganizationPermissions = z.infer<typeof ActiveOrganizationPermissionsSchema>
 /** The session after its active organization changed. */
 export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
 

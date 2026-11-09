@@ -360,6 +360,10 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.not_a_member"
     }
 
+    object OrganizationPermissionsUnavailable : ErrorCode() {
+        override val rawValue: String = "organization.permissions_unavailable"
+    }
+
     object OrganizationCreationDisabled : ErrorCode() {
         override val rawValue: String = "organization.creation_disabled"
     }
@@ -672,6 +676,7 @@ sealed class ErrorCode {
                 OrganizationLastManager,
                 OrganizationRoleUnknown,
                 OrganizationNotAMember,
+                OrganizationPermissionsUnavailable,
                 OrganizationCreationDisabled,
                 OrganizationLimitReached,
                 OrganizationPersonalAccountDisabled,
@@ -816,6 +821,7 @@ sealed class ErrorCode {
             "organization.last_manager" -> OrganizationLastManager
             "organization.role_unknown" -> OrganizationRoleUnknown
             "organization.not_a_member" -> OrganizationNotAMember
+            "organization.permissions_unavailable" -> OrganizationPermissionsUnavailable
             "organization.creation_disabled" -> OrganizationCreationDisabled
             "organization.limit_reached" -> OrganizationLimitReached
             "organization.personal_account_disabled" -> OrganizationPersonalAccountDisabled
@@ -1154,6 +1160,9 @@ object TulaErrorDefinitions {
     /** `organization.not_a_member` */
     val organizationNotAMember: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationNotAMember, 403, "You are not a member of that organization.")
 
+    /** `organization.permissions_unavailable` */
+    val organizationPermissionsUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPermissionsUnavailable, 404, "The permissions of that role are not available.")
+
     /** `organization.creation_disabled` */
     val organizationCreationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationCreationDisabled, 403, "Creating an organization is not allowed in this environment.")
 
@@ -1403,6 +1412,7 @@ object TulaErrorDefinitions {
         organizationLastManager,
         organizationRoleUnknown,
         organizationNotAMember,
+        organizationPermissionsUnavailable,
         organizationCreationDisabled,
         organizationLimitReached,
         organizationPersonalAccountDisabled,

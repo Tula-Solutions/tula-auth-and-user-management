@@ -866,8 +866,54 @@ describe('purge', () => {
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
     expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
       environmentId: tenant.environmentId,
+      kind: 'flowAttempts',
       err: expect.anything(),
     })
+  })
+
+  test('a purge that fails every round does not stop the purges after it in that environment', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    spies.push(
+      spyOn(deps.sessions, 'deleteEnded').mockRejectedValue(new Error('permission denied'))
+    )
+    const day = (ms: number) => from(ms).toISOString().slice(0, 10)
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+1', 1_000_000, deps.clock.now())
+    const report = await Retention.purge(deps)
+    // One failure per environment's failing purge; every later purge still ran.
+    expect(report).toMatchObject({ failed: 2, smsCodeCounts: 1 })
+    expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+      environmentId: tenant.environmentId,
+      kind: 'sessions',
+      err: expect.anything(),
+    })
+  })
+
+  test('an aborted signal ends the purge between kinds: nothing is deleted after it', async () => {
+    const expired = await flowAttempt(tenant, from(1))
+    deps.clock.advance('1m')
+    const stop = new AbortController()
+    stop.abort()
+    const report = await Retention.purge(deps, stop.signal)
+    expect(report.flowAttempts).toBe(0)
+    expect(await deps.flowAttempts.findById(tenant.environmentId, expired)).not.toBeNull()
+  })
+
+  test('a signal aborted after the first kind stops the later kinds', async () => {
+    await flowAttempt(tenant, from(1))
+    deps.clock.advance('1m')
+    const stop = new AbortController()
+    const first = spyOn(deps.flowAttempts, 'deleteExpired').mockImplementation(async () => {
+      stop.abort()
+      return 1
+    })
+    const later = spyOn(deps.sessions, 'deleteEnded')
+    spies.push(first, later)
+    const report = await Retention.purge(deps, stop.signal)
+    expect(report.flowAttempts).toBe(1)
+    expect(later).not.toHaveBeenCalled()
+    // `run` passes the signal on.
+    expect(await Retention.run(deps, stop.signal)).toMatchObject({ flowAttempts: 0 })
   })
 
   test('deletes in batches until a short one comes back', async () => {
@@ -1059,25 +1105,26 @@ describe('audit retention', () => {
       const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
       spies.push(deleteAudit)
       deps.clock.advance(4_000 * DAY)
-      // The other environment is purged as ever.
+      // The other environment is purged as ever. Three kinds of this one read its settings
+      // (the audit entries, the role snapshots and the password history), and each fails on its own.
       expect(await Retention.purge(deps)).toMatchObject({
         environments: 2,
-        failed: 1,
+        failed: 3,
         auditLogs: 1,
-        smsCodeCounts: 1,
+        smsCodeCounts: 2,
       })
       expect(auditIds(tenant)).toEqual([entry])
       expect(auditIds(otherTenant)).toEqual([])
-      // A known limitation, TULA-79: the purges after the audit purge are not reached for the
-      // environment whose settings cannot be read, so its old count is still there. When
-      // that is fixed this is 0 and `smsCodeCounts` above is 2.
-      expect((await deps.smsUsage.summary(tenant.environmentId, day, 10)).sent).toBe(1)
+      // TULA-79: the purges after the audit purge still run for the environment whose
+      // settings cannot be read, so its old count is gone too.
+      expect((await deps.smsUsage.summary(tenant.environmentId, day, 10)).sent).toBe(0)
       expect((await deps.smsUsage.summary(otherTenant.environmentId, day, 10)).sent).toBe(0)
       expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
         otherTenant.environmentId,
       ])
       expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
         environmentId: tenant.environmentId,
+        kind: 'auditLogs',
         err: expect.anything(),
       })
     }
@@ -1144,6 +1191,20 @@ describe('audit retention', () => {
     expect(purge.mock.calls.some(([id]) => id === otherTenant.environmentId)).toBe(false)
   })
 
+  test('a failing role snapshot purge is counted and does not stop the kinds after it', async () => {
+    spies.push(spyOn(logger, 'warn').mockImplementation(() => undefined))
+    keepAuditFor(tenant, 30)
+    spies.push(
+      spyOn(deps.organizations, 'purgeSupersededRoleVersions').mockRejectedValue(
+        new Error('the role store refused')
+      )
+    )
+    const after = spyOn(deps.hooks, 'deleteCallCountsBefore')
+    spies.push(after)
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, roleVersions: 0 })
+    expect(after).toHaveBeenCalled()
+  })
+
   test('reads the period from the source, past this instance’s settings cache', async () => {
     // A period lengthened on another instance must not be undercut by a stale copy here:
     // unlike every other setting, acting on an old value destroys something.
@@ -1181,7 +1242,8 @@ describe('audit retention', () => {
     )
     const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
     spies.push(deleteAudit)
-    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 1, auditLogs: 1 })
+    // The role snapshots and the password history read the same settings and fail on their own too.
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 3, auditLogs: 1 })
     expect(auditIds(tenant)).toEqual([kept])
     expect(auditIds(otherTenant)).toEqual([])
     expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
@@ -1189,6 +1251,7 @@ describe('audit retention', () => {
     ])
     expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
       environmentId: tenant.environmentId,
+      kind: 'auditLogs',
       err: expect.anything(),
     })
   })
@@ -1217,7 +1280,7 @@ describe('audit retention', () => {
     expect(auditIds(otherTenant)).toEqual([])
   })
 
-  test('an environment whose pass failed before its audit purge is finished by the next run', async () => {
+  test('a purge that fails before the audit purge does not hold the audit purge back', async () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
     spies.push(warn)
     keepAuditFor(tenant, 1)
@@ -1226,8 +1289,8 @@ describe('audit retention', () => {
     spies.push(
       spyOn(deps.sessions, 'deleteEnded').mockRejectedValueOnce(new Error('sessions store is down'))
     )
-    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, auditLogs: 0 })
-    expect(await Retention.purge(deps)).toMatchObject({ failed: 0, auditLogs: 1 })
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, auditLogs: 1 })
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 0, auditLogs: 0 })
   })
 
   test('deletes in batches, and stops at the run’s ceiling', async () => {
@@ -1353,6 +1416,18 @@ describe('run', () => {
     await Retention.run(deps)
     expect(info).toHaveBeenCalledTimes(1)
     expect(debug.mock.calls.map(([message]) => message)).toEqual(['retention run finished'])
+  })
+
+  test('a run that shutdown cut short is logged at info with aborted: true', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info)
+    const stop = new AbortController()
+    stop.abort()
+    await Retention.run(deps, stop.signal)
+    expect(info).toHaveBeenCalledWith(
+      'retention run finished',
+      expect.objectContaining({ aborted: true })
+    )
   })
 
   test('a run in which an environment failed is logged as a warning', async () => {
@@ -1772,9 +1847,10 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
       await expect(deps.environmentSettings.get(tenant.environmentId)).rejects.toThrow()
       const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
       spies.push(purge)
+      // The audit purge reads the same settings and fails on its own too.
       expect(await Retention.purge(deps)).toMatchObject({
         environments: 2,
-        failed: 1,
+        failed: 3,
         passwordHistory: 4,
       })
       expect(purge.mock.calls.map(([environmentId]) => environmentId)).toEqual([
@@ -1784,6 +1860,7 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
       expect(await previous(otherTenant, purged)).toEqual([])
       expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
         environmentId: tenant.environmentId,
+        kind: 'passwordHistory',
         err: expect.anything(),
       })
     }
@@ -1826,7 +1903,8 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
         return get(environmentId)
       })
     )
-    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, passwordHistory: 3 })
+    // The audit purge reads the same settings and fails on its own too.
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 3, passwordHistory: 3 })
     expect(await previous(tenant, kept)).toHaveLength(3)
     expect(await previous(otherTenant, purged)).toEqual([])
   })

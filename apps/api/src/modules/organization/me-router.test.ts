@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   type AccessTokenClaims,
   type ActiveOrganization,
+  type ActiveOrganizationPermissions,
   type CurrentUser,
   DEFAULT_ENVIRONMENT_SETTINGS,
   EVENT_SCHEMAS,
@@ -94,6 +95,7 @@ interface CallOptions {
   cookie?: string
   secret?: string
   ip?: string
+  headers?: Record<string, string>
 }
 
 async function call(method: string, path: string, body?: unknown, options: CallOptions = {}) {
@@ -119,6 +121,7 @@ async function call(method: string, path: string, body?: unknown, options: CallO
   if (options.ip) {
     headers['x-forwarded-for'] = options.ip
   }
+  Object.assign(headers, options.headers)
   return app.request(`/v1/client${path}`, {
     method,
     headers,
@@ -698,6 +701,75 @@ describe('a stateful browser session', () => {
       await call('GET', '/me/organizations', undefined, { client: 'web', cookie })
     )
     expect(ok.activeOrganizationId).toBeNull()
+  })
+})
+
+describe('the permissions lookup', () => {
+  const PATH = '/me/organizations/active/permissions'
+
+  async function acting() {
+    const maya = await signUp()
+    const acme = await organization('acme', [[maya.userId, 'admin']])
+    const active = await json<ActiveOrganization>(await activate(maya.accessToken, acme.id))
+    return { token: String(active.accessToken), claims: decodeJwt(String(active.accessToken)) }
+  }
+
+  test('answers the snapshot the token names, cached for good', async () => {
+    const { token, claims } = await acting()
+    const res = await call('GET', PATH, undefined, { token })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+    expect(res.headers.get('etag')).toBe(`"${claims.org_ph}"`)
+    const body = await json<ActiveOrganizationPermissions>(res)
+    expect(body).toEqual({
+      role: 'admin',
+      version: claims.org_rv as number,
+      permissions: (claims.org_perms as string[]).slice().sort(),
+      hash: claims.org_ph as string,
+    })
+  })
+
+  test('a matching If-None-Match is a 304 with no body', async () => {
+    const { token, claims } = await acting()
+    const res = await call('GET', PATH, undefined, {
+      token,
+      headers: { 'if-none-match': `"${claims.org_ph}"` },
+    })
+    expect(res.status).toBe(304)
+    expect(await res.text()).toBe('')
+  })
+
+  test('no active organization answers the uniform 404', async () => {
+    const maya = await signUp()
+    const res = await call('GET', PATH, undefined, { token: maya.accessToken })
+    expect(res.status).toBe(404)
+    expect(await codeOf(res)).toBe('organization.permissions_unavailable')
+  })
+
+  test('a missing snapshot and a hash that does not match answer the same 404', async () => {
+    const { token } = await acting()
+    const find = spyOn(deps.organizations, 'findRoleVersion')
+    find.mockResolvedValueOnce(null)
+    const gone = await call('GET', PATH, undefined, { token })
+    const real = await (async () => {
+      find.mockRestore()
+      return deps.organizations.findRoleVersion
+    })()
+    const other = spyOn(deps.organizations, 'findRoleVersion').mockImplementation(async (...a) => {
+      const v = await real.apply(deps.organizations, a)
+      return v && { ...v, permissionsHash: 'sha256:other' }
+    })
+    const changed = await call('GET', PATH, undefined, { token })
+    other.mockRestore()
+    expect(gone.status).toBe(404)
+    expect(changed.status).toBe(404)
+    const first = await json<{ code: string }>(gone)
+    expect(first).toEqual(await json(changed))
+    expect(first.code).toBe('organization.permissions_unavailable')
+  })
+
+  test('needs a signed-in session', async () => {
+    expect((await call('GET', PATH)).status).toBe(401)
   })
 })
 

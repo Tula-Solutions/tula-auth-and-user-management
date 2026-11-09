@@ -1,20 +1,25 @@
 import {
+  ActiveOrganizationPermissionsSchema,
   ActiveOrganizationSchema,
   CreateOrganizationRequestSchema,
+  DPOP_HEADER,
   OrganizationPageQuerySchema,
   SetActiveOrganizationRequestSchema,
   UserOrganizationListSchema,
   UserOrganizationSchema,
 } from '@tula-tech/contract'
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
-import type { AppEnv } from '~/dependencies'
+import type { AppEnv, SessionVariables } from '~/dependencies'
+import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { userActor } from '~/lib/actor'
+import { timingSafeEqual } from '~/lib/crypto'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Me from '~/modules/organization/me-service'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as openapi from '~/openapi'
 
 /** Requests per minute from one IP to the route that lists the signed-in user's organizations. */
@@ -185,6 +190,91 @@ router.put(
           c.req.valid('json').organizationId
         )
       )
+    )
+  }
+)
+
+router.get(
+  '/active/permissions',
+  describeRoute({
+    operationId: 'getActiveOrganizationPermissions',
+    tags: ['Organizations'],
+    summary: "Read the permissions of the token's role version",
+    description:
+      'The permissions behind the `org_role`, `org_rv` and `org_ph` claims of the access token, ' +
+      'for a token that carries a hash and not the list. Answers only while the stored ' +
+      "snapshot's hash is the token's; every other case (no active organization, no snapshot, " +
+      'a hash that does not match) is the same `organization.permissions_unavailable` (404). ' +
+      'The answer never changes for that hash, so it is cached for good and revalidated with ' +
+      '`If-None-Match` (304). A device-bound session sends a DPoP proof, as at a refresh. ' +
+      disabled,
+    security: openapi.security.session,
+    responses: {
+      200: {
+        description: "The role version's permissions.",
+        content: json(ActiveOrganizationPermissionsSchema),
+      },
+      304: { description: "The client's copy (its `ETag`) is current." },
+      404: openapi.responses[404],
+      ...errors,
+    },
+  }),
+  rateLimit({
+    name: 'my_organizations_permissions',
+    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  rateLimit({
+    name: 'my_organizations_permissions_session',
+    limit: MY_ORGANIZATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    // `rateLimit`'s context is the bare `AppEnv`; `sessionAuth()` has set `session` by now.
+    key: (c) => {
+      const { sid } = (c as unknown as Context<AppEnv & { Variables: SessionVariables }>).get(
+        'session'
+      )
+      return `sid:${sid}`
+    },
+  }),
+  async (c) => {
+    const claims = c.get('session')
+    const deps = c.get('deps')
+    const tenant = c.get('tenant')
+    if (claims.cnf) {
+      await DeviceBinding.atResource(deps, tenant, claims.cnf.jkt, {
+        proof: c.req.header(DPOP_HEADER),
+        method: c.req.method,
+        path: c.req.path,
+      })
+    }
+    const unavailable = new AuthError('organization.permissions_unavailable')
+    const role = claims.org_role
+    const version = claims.org_rv
+    const hash = claims.org_ph
+    if (!role || version === undefined || !hash) {
+      throw unavailable
+    }
+    const found = await deps.organizations.findRole(tenant.environmentId, role)
+    const snapshot =
+      found && (await deps.organizations.findRoleVersion(tenant.environmentId, found.id, version))
+    if (!snapshot || !timingSafeEqual(snapshot.permissionsHash, hash)) {
+      throw unavailable
+    }
+    c.header('Cache-Control', 'private, max-age=31536000, immutable')
+    c.header('ETag', `"${hash}"`)
+    if (c.req.header('if-none-match') === `"${hash}"`) {
+      return c.body(null, 304)
+    }
+    return c.json(
+      ActiveOrganizationPermissionsSchema.parse({
+        role,
+        version,
+        permissions: snapshot.permissions,
+        hash,
+      })
     )
   }
 )

@@ -305,6 +305,27 @@ The session after its active organization changed.
 export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
 ```
 
+### `ActiveOrganizationPermissions`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The permissions of the role version the session's token names.
+
+```ts
+export type ActiveOrganizationPermissions = z.infer<typeof ActiveOrganizationPermissionsSchema>
+```
+
+### `ActiveOrganizationPermissionsSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permissions of the role version an access token names (`org_role`, `org_rv`), with the
+hash the token carries as `org_ph`. Immutable for that hash, so a client caches it for good.
+
+```ts
+const ActiveOrganizationPermissionsSchema
+```
+
 ### `ActiveOrganizationSchema`
 
 _constant_, defined in `packages/contract/src/organization.ts`
