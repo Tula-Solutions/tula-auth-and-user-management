@@ -3604,6 +3604,7 @@ export const ErrorCode = {
   organizationlast_manager: 'organization.last_manager',
   organizationrole_unknown: 'organization.role_unknown',
   organizationnot_a_member: 'organization.not_a_member',
+  organizationpermissions_unavailable: 'organization.permissions_unavailable',
   organizationcreation_disabled: 'organization.creation_disabled',
   organizationlimit_reached: 'organization.limit_reached',
   organizationpersonal_account_disabled: 'organization.personal_account_disabled',
@@ -6485,6 +6486,17 @@ export interface ActiveOrganization {
 
 export interface SetActiveOrganizationRequest {
   organizationId: string | null;
+}
+
+export interface ActiveOrganizationPermissions {
+  role: string;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  permissions: string[];
+  hash: string;
 }
 
 export type OrganizationDomainMode = typeof OrganizationDomainMode[keyof typeof OrganizationDomainMode];

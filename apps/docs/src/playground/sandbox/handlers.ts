@@ -446,6 +446,7 @@ export const HANDLERS: Handlers = {
   submitSignInNewPassword: () => unsupported('submitSignInNewPassword'),
   startIdTokenSignIn: () => unsupported('startIdTokenSignIn'),
   startSsoSignIn: () => unsupported('startSsoSignIn'),
+  getActiveOrganizationPermissions: () => unsupported('getActiveOrganizationPermissions'),
   listMyOrganizationSsoConnections: () => unsupported('listMyOrganizationSsoConnections'),
   createMyOrganizationSsoConnection: () => unsupported('createMyOrganizationSsoConnection'),
   getMyOrganizationSsoConnection: () => unsupported('getMyOrganizationSsoConnection'),

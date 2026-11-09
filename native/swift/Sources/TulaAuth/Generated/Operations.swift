@@ -84,6 +84,9 @@ public enum TulaOperations {
     /// Finish registering a passkey (`POST /v1/client/me/passkeys`). Body: `PasskeyRegisterRequest`. Answers `Passkey`.
     public static let finishPasskeyRegistration = TulaOperation(id: "finishPasskeyRegistration", method: "POST", path: "/v1/client/me/passkeys", requiresSession: true)
 
+    /// Read the permissions of the token's role version (`GET /v1/client/me/organizations/active/permissions`). No body. Answers `ActiveOrganizationPermissions`.
+    public static let getActiveOrganizationPermissions = TulaOperation(id: "getActiveOrganizationPermissions", method: "GET", path: "/v1/client/me/organizations/active/permissions", requiresSession: true)
+
     /// Client configuration (`GET /v1/client/config`). No body. Answers `ClientConfig`.
     public static let getClientConfig = TulaOperation(id: "getClientConfig", method: "GET", path: "/v1/client/config", requiresSession: false)
 
@@ -360,6 +363,7 @@ public enum TulaOperations {
         exchangeIdentityLinkTicket,
         exchangeOAuthTicket,
         finishPasskeyRegistration,
+        getActiveOrganizationPermissions,
         getClientConfig,
         getMe,
         getMyFactors,
