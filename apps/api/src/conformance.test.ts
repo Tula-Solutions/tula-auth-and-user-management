@@ -82,6 +82,7 @@ describe('conformance scenarios, in process', () => {
       'sso managed account cannot change its password from the client',
       'sso a used connection is deleted once disabled and its users sign in another way',
       "a person rejects an agent's proposal, once, and an approved one cannot be rejected",
+      'a large role is read through the permissions lookup',
       'passwordless sign-up',
       'two-step enrolment and sign-in',
       'second factor lockout',
