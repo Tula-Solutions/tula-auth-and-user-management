@@ -131,6 +131,8 @@ export interface RetentionCounts {
   instanceAuditLogs: number
   /** Environments' audit entries older than their own `audit.retentionDays`. */
   auditLogs: number
+  /** Role snapshots a later version replaced, older than the environment's `audit.retentionDays`. */
+  roleVersions: number
   /** Webhook deliveries that ended, with their attempts, past {@link ENDED_DELIVERY_RETENTION}. */
   webhookDeliveries: number
   /** Outbox events settled more than {@link SETTLED_EVENT_RETENTION} ago. */
@@ -259,6 +261,41 @@ async function purgeAudit(
 }
 
 /**
+ * Delete one environment's superseded role snapshots (ADR 0068) older than its
+ * `audit.retentionDays`: an audit entry can name a version, so a snapshot lives as long as the
+ * entries that could refer to it. A role's current version is never deleted.
+ *
+ * The period is read past the settings cache and a null or invalid one deletes nothing, for the
+ * reasons {@link purgeAudit} gives.
+ *
+ * @param deps - The settings store, config and the organizations.
+ * @param environmentId - The environment.
+ * @param now - The run's time.
+ * @returns How many snapshots were deleted.
+ */
+async function purgeRoleVersions(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'organizations'>,
+  environmentId: string,
+  now: Date
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const before = auditCutoff(settings.audit?.retentionDays, now)
+  if (!before) {
+    return 0
+  }
+  const deleted = await drain((limit) =>
+    deps.organizations.purgeSupersededRoleVersions(environmentId, before, limit)
+  )
+  if (deleted > 0) {
+    logger.info('superseded role snapshots past the retention period deleted', {
+      environmentId,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
  * Delete the previous passwords an environment no longer keeps (ADR 0038): what a lowered
  * `password.history` left with users who have not changed their password since. A user who
  * does change it loses the surplus in that transaction; this is for everyone else, so that an
@@ -370,6 +407,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     passkeyChallenges: 0,
     instanceAuditLogs: 0,
     auditLogs: 0,
+    roleVersions: 0,
     webhookDeliveries: 0,
     events: 0,
     smsCodeCounts: 0,
@@ -416,6 +454,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       // Last, and the only step whose rows did not end by themselves: the environment chose
       // how long its audit entries are kept. One that cannot be read, or purged, keeps them.
       report.auditLogs += await purgeAudit(deps, id, now)
+      report.roleVersions += await purgeRoleVersions(deps, id, now)
       // The webhook worker's leavings. The delivery log first, then the events: neither
       // depends on the other (a delivery keeps its event's id and type, not a reference).
       report.webhookDeliveries += await drain((limit) =>

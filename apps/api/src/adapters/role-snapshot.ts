@@ -17,5 +17,6 @@ export async function roleSnapshot(role: OrganizationRoleRecord) {
     version: role.version,
     permissions,
     permissionsHash: await permissionsHash(permissions),
+    createdAt: role.updatedAt,
   }
 }

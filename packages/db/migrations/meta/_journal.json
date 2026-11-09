@@ -414,6 +414,13 @@
       "when": 1794181282426,
       "tag": "0062_organization_role_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794182337794,
+      "tag": "0063_organization_role_versions_retention",
+      "breakpoints": true
     }
   ]
 }

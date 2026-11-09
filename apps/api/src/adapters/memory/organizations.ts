@@ -374,7 +374,13 @@ export class MemoryOrganizationStore implements OrganizationStore {
     if (!organization || !role) {
       return null
     }
-    return structuredClone({ organization, membership, permissions: role.permissions })
+    const snapshot = this.#versions.get(`${role.environmentId}/${role.id}/${role.version}`)
+    return structuredClone({
+      organization,
+      membership,
+      permissions: role.permissions,
+      snapshot: snapshot ?? null,
+    })
   }
 
   /** @inheritdoc */
@@ -879,6 +885,28 @@ export class MemoryOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
+  async purgeSupersededRoleVersions(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const due = [...this.#versions.entries()]
+      .filter(([, one]) => {
+        const role = this.#roles.get(one.roleId)
+        return (
+          role?.environmentId === environmentId &&
+          one.version < role.version &&
+          one.createdAt.getTime() < before.getTime()
+        )
+      })
+      .slice(0, limit)
+    for (const [key] of due) {
+      this.#versions.delete(key)
+    }
+    return due.length
+  }
+
+  /** @inheritdoc */
   async listRoleVersions(
     environmentId: string,
     roleId: string
@@ -895,7 +923,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
   async #snapshot(role: OrganizationRoleRecord): Promise<void> {
     const key = `${role.environmentId}/${role.id}/${role.version}`
     if (!this.#versions.has(key)) {
-      this.#versions.set(key, { ...(await roleSnapshot(role)), createdAt: role.updatedAt })
+      this.#versions.set(key, await roleSnapshot(role))
     }
   }
 }

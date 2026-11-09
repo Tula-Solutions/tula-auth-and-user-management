@@ -8981,6 +8981,14 @@
               "type": "string"
             }
           },
+          "org_rv": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "org_ph": {
+            "type": "string"
+          },
           "ext": {
             "type": "object",
             "propertyNames": {

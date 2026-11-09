@@ -111,6 +111,6 @@ describe('the old reader is unchanged', () => {
   })
 
   test('the budget', () => {
-    expect(MAX_ORGANIZATION_CLAIMS_BYTES).toBe(2560)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES).toBe(2656)
   })
 })

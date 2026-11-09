@@ -1141,6 +1141,46 @@ export function describeOrganizationStore(
       ).toEqual(['org:billing:read'])
     })
 
+    test('purgeSupersededRoleVersions deletes old versions only, never a role’s current one', async () => {
+      // Long ago on purpose: the database keeps a snapshot of the last day
+      // (`organization_role_versions_retention_floor`); these tests are about the cutoff.
+      const long = new Date('2001-01-01T00:00:00.000Z')
+      const role = await storedRole(ctx.a)
+      for (const version of [1, 2, 3]) {
+        await ctx.store.updateRole(
+          ctx.a.environmentId,
+          role.id,
+          version,
+          { permissions: [`org:v${version + 1}:read`] },
+          long,
+          activity(ctx.a, 'organization_role.updated', role.id)
+        )
+      }
+      const foreign = await storedRole(ctx.b)
+      await ctx.store.updateRole(
+        ctx.b.environmentId,
+        foreign.id,
+        1,
+        { permissions: ['org:other:read'] },
+        long,
+        activity(ctx.b, 'organization_role.updated', foreign.id)
+      )
+      const cutoff = new Date('2002-01-01T00:00:00.000Z')
+      // Version 1 is fresh (the role was just made), 2 and 3 are old and superseded, 4 is current.
+      expect(await ctx.store.purgeSupersededRoleVersions(ctx.a.environmentId, cutoff, 1)).toBe(1)
+      expect(await ctx.store.purgeSupersededRoleVersions(ctx.a.environmentId, cutoff, 10)).toBe(1)
+      expect(await ctx.store.purgeSupersededRoleVersions(ctx.a.environmentId, cutoff, 10)).toBe(0)
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 1)).not.toBeNull()
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 2)).toBeNull()
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 3)).toBeNull()
+      expect(await ctx.store.findRoleVersion(ctx.a.environmentId, role.id, 4)).not.toBeNull()
+      // Another environment's rows are untouched, and a cutoff before the rows deletes nothing.
+      expect(await ctx.store.findRoleVersion(ctx.b.environmentId, foreign.id, 1)).not.toBeNull()
+      expect(
+        await ctx.store.purgeSupersededRoleVersions(ctx.b.environmentId, new Date(0), 10)
+      ).toBe(0)
+    })
+
     test('a rename bumps the version and snapshots the unchanged permissions', async () => {
       const role = await storedRole(ctx.a)
       await ctx.store.updateRole(
@@ -1611,6 +1651,8 @@ export function describeOrganizationStore(
         organization: input.organization,
         membership: input.membership,
         permissions: admin.permissions,
+        // The role's current version, read in the same statement as the membership.
+        snapshot: await ctx.store.findRoleVersion(ctx.a.environmentId, admin.id, admin.version),
       })
       expect(await ctx.recorded()).toEqual([
         'organization.created',

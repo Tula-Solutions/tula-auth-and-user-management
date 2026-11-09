@@ -4043,6 +4043,12 @@ export interface AccessTokenClaims {
   sso_conn?: string;
   org_role?: string;
   org_perms?: string[];
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  org_rv?: number;
+  org_ph?: string;
   ext?: AccessTokenClaimsExt;
 }
 

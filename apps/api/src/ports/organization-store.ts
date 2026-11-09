@@ -147,6 +147,12 @@ export interface UserMembershipRecord {
   membership: MembershipRecord
   /** The permission keys of the membership's role. */
   permissions: string[]
+  /**
+   * The snapshot of the role's current version, read in the same statement as the membership
+   * so that a token's `org_rv` and `org_ph` can never disagree with its `org_perms`
+   * (ADR 0068). `null` when the role has none; absent where a read does not ask for it.
+   */
+  snapshot?: OrganizationRoleVersionRecord | null
 }
 
 /** What creating an organization for a user, as its first member, came to. */
@@ -456,6 +462,18 @@ export interface OrganizationStore {
     roleId: string,
     version: number
   ): Promise<OrganizationRoleVersionRecord | null>
+
+  /**
+   * Delete role snapshots older than a cutoff that a later version of their role has replaced,
+   * at most `limit` of them (the retention job's batch). A role's current version is never
+   * deleted, whatever its age: a token minted now carries it.
+   *
+   * @param environmentId - The environment whose snapshots are purged.
+   * @param before - The cutoff: snapshots created earlier go.
+   * @param limit - The most rows to delete.
+   * @returns How many were deleted.
+   */
+  purgeSupersededRoleVersions(environmentId: string, before: Date, limit: number): Promise<number>
 
   /**
    * @param environmentId - The environment to look in.

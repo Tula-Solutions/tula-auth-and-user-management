@@ -19,6 +19,7 @@ import {
   eq,
   gt,
   inArray,
+  lt,
   lte,
   ne,
   or,
@@ -662,10 +663,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
           organization: organizationColumns,
           membership: membershipColumns,
           permissions: organizationRoles.permissions,
+          snapshot: organizationRoleVersions,
         })
         .from(organizationMemberships)
         .innerJoin(organizationRoles, joinedToRole)
         .innerJoin(organizations, joinedToOrganization)
+        .leftJoin(
+          organizationRoleVersions,
+          and(
+            eq(organizationRoleVersions.environmentId, organizationRoles.environmentId),
+            eq(organizationRoleVersions.roleId, organizationRoles.id),
+            eq(organizationRoleVersions.version, organizationRoles.version)
+          )
+        )
         .where(
           and(
             eq(organizationMemberships.environmentId, environmentId),
@@ -675,7 +685,19 @@ export class PostgresOrganizationStore implements OrganizationStore {
         )
         .limit(1)
     )
-    return row ?? null
+    return row
+      ? {
+          ...row,
+          snapshot: row.snapshot && {
+            roleId: row.snapshot.roleId,
+            roleKey: row.snapshot.roleKey,
+            version: row.snapshot.version,
+            permissions: row.snapshot.permissions,
+            permissionsHash: row.snapshot.permissionsHash,
+            createdAt: row.snapshot.createdAt,
+          },
+        }
+      : null
   }
 
   /** @inheritdoc */
@@ -1226,6 +1248,48 @@ export class PostgresOrganizationStore implements OrganizationStore {
           )
         )
         .returning({ id: organizationInvitations.id })
+    )
+    return rows.length
+  }
+
+  /** @inheritdoc */
+  async purgeSupersededRoleVersions(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(organizationRoleVersions)
+        .where(
+          and(
+            eq(organizationRoleVersions.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              organizationRoleVersions.id,
+              tx
+                .select({ id: organizationRoleVersions.id })
+                .from(organizationRoleVersions)
+                .innerJoin(
+                  organizationRoles,
+                  and(
+                    eq(organizationRoles.environmentId, organizationRoleVersions.environmentId),
+                    eq(organizationRoles.id, organizationRoleVersions.roleId)
+                  )
+                )
+                .where(
+                  and(
+                    eq(organizationRoleVersions.environmentId, environmentId),
+                    lt(organizationRoleVersions.createdAt, before),
+                    // Only what a later version replaced: the current one has no row here.
+                    lt(organizationRoleVersions.version, organizationRoles.version)
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: organizationRoleVersions.id })
     )
     return rows.length
   }

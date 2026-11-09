@@ -22,6 +22,7 @@ const PURGES: Array<[file: string, method: string]> = [
   ['hooks.ts', 'deleteCallCountsBefore'],
   ['organization-domains.ts', 'purgeExpiredPending'],
   ['organizations.ts', 'deleteExpiredInvitations'],
+  ['organizations.ts', 'purgeSupersededRoleVersions'],
   ['setup-links.ts', 'deleteExpiredBefore'],
 ]
 
