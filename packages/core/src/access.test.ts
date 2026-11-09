@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { permissionsHash } from '@tula-tech/contract/custom-claims'
 import { environmentIssuer } from '@tula-tech/contract/issuer'
-import { AccessUnavailableError, createAccessChecker } from './access'
+import { permissionsHash } from '@tula-tech/contract/organization-lookup'
+import { type AccessCheckerOptions, AccessUnavailableError, createAccessChecker } from './access'
 
 const API = 'https://auth.example.com'
 const ENV = 'env_1'
@@ -59,6 +59,7 @@ function setup(
     reply?: Reply
     cacheBytes?: number
     timeoutMs?: number
+    headers?: AccessCheckerOptions['headers']
   } = {}
 ) {
   const calls: { url: string; init?: RequestInit }[] = []
@@ -86,6 +87,7 @@ function setup(
     fetch: fetchFake,
     cacheBytes: opts.cacheBytes,
     timeoutMs: opts.timeoutMs,
+    headers: opts.headers,
   })
   const lookups = () => calls.filter((c) => c.url.includes('/permissions'))
   return { access, calls, lookups }
@@ -134,6 +136,43 @@ describe('createAccessChecker', () => {
     const headers = lookups()[0]?.init?.headers as Record<string, string>
     expect(headers.authorization).toBe(`Bearer ${token}`)
     expect(headers['x-tula-publishable-key']).toBe('tula_pk_dev_x')
+  })
+
+  test('a device-bound token with no headers hook is unavailable and calls nothing', async () => {
+    const { access, lookups } = setup()
+    const token = await mint({
+      org_id: ORG,
+      org_role: 'iso_manager',
+      org_rv: 7,
+      org_ph: await permissionsHash(PERMS),
+      cnf: { jkt: 'thumb' },
+    })
+    const error = await access.check(token, 'org:leads:view').catch((e) => e)
+    expect(error).toBeInstanceOf(AccessUnavailableError)
+    expect(error.reason).toBe('device_proof_required')
+    expect(lookups()).toHaveLength(0)
+  })
+
+  test('a device-bound token with a headers hook sends its headers and succeeds', async () => {
+    const seen: unknown[] = []
+    const { access, lookups } = setup({
+      headers: (request) => {
+        seen.push(request)
+        return { dpop: 'proof' }
+      },
+    })
+    const token = await mint({
+      org_id: ORG,
+      org_role: 'iso_manager',
+      org_rv: 7,
+      org_ph: await permissionsHash(PERMS),
+      cnf: { jkt: 'thumb' },
+    })
+    expect((await access.check(token, 'org:leads:view')).allowed).toBe(true)
+    expect((lookups()[0]?.init?.headers as Record<string, string> | undefined)?.dpop).toBe('proof')
+    expect(seen).toEqual([
+      { url: `${API}/v1/client/me/organizations/active/permissions`, method: 'GET', token },
+    ])
   })
 
   test('concurrent checks share one request', async () => {
@@ -326,7 +365,7 @@ describe('access.apply: closing the window with webhooks', () => {
 
   /** A checker whose `/latest` answers with `latest`; the other lookup answers with `PERMS`. */
   function withLatest(
-    latest: { version: number; permissions: string[] } | 'fail',
+    latest: { version: number; permissions: string[] } | 'fail' | 404,
     cacheBytes?: number
   ) {
     const calls: string[] = []
@@ -337,8 +376,8 @@ describe('access.apply: closing the window with webhooks', () => {
         return Response.json({ keys: [jwk] })
       }
       if (url.endsWith('/latest')) {
-        if (latest === 'fail') {
-          return new Response(null, { status: 503 })
+        if (latest === 'fail' || latest === 404) {
+          return new Response(null, { status: latest === 404 ? 404 : 503 })
         }
         return Response.json({
           role: 'iso_manager',
@@ -414,6 +453,31 @@ describe('access.apply: closing the window with webhooks', () => {
     expect(await access.check(expired, 'org:leads:edit')).toEqual({
       allowed: false,
       reason: 'invalid_token',
+    })
+  })
+
+  test('an inline token below the latest known version is narrowed to it', async () => {
+    const { access, latestCalls } = withLatest({ version: 8, permissions: ['org:leads:view'] })
+    const token = await mint({
+      org_id: ORG,
+      org_role: 'iso_manager',
+      org_rv: 7,
+      org_perms: PERMS,
+    })
+    expect((await access.check(token, 'org:leads:edit')).allowed).toBe(true)
+    access.apply(roleUpdated(8))
+    expect((await access.check(token, 'org:leads:edit')).allowed).toBe(false)
+    expect((await access.check(token, 'org:leads:view')).allowed).toBe(true)
+    expect(latestCalls()).toHaveLength(1)
+  })
+
+  test('a 404 from latest means the membership is gone: not_granted, not unavailable', async () => {
+    const { access } = withLatest(404)
+    const token = await lookupToken()
+    access.apply(roleUpdated(8))
+    expect(await access.check(token, 'org:leads:view')).toEqual({
+      allowed: false,
+      reason: 'not_granted',
     })
   })
 

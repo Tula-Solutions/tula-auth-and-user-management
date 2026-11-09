@@ -369,6 +369,12 @@ the middleware). Elsewhere, use one `@tula-tech/core/access` checker, which veri
 and fetches the list once per hash. When the list cannot be fetched it throws
 `AccessUnavailableError`: answer 503, never allow.
 
+A session bound to a device (its token has `cnf`) needs a DPoP proof on that lookup. The checker
+cannot make one, so give it a `headers` option that returns the proof's headers for the request
+(`{ url, method, token }`). Without it, a bound token throws `AccessUnavailableError` with
+`reason: 'device_proof_required'` and the API is not called; other failures have
+`reason: 'lookup_failed'`.
+
 <!-- snippet: examples/docs-snippets/web/backend.ts#backend-access-checker -->
 ```ts
 import { AccessUnavailableError, createAccessChecker } from '@tula-tech/core/access'

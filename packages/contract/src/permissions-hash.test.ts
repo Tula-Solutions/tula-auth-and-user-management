@@ -5,12 +5,14 @@ import {
   MAX_ORGANIZATION_CLAIMS_BYTES,
   ORGANIZATION_PERMISSIONS_HASH_CLAIM,
   ORGANIZATION_ROLE_VERSION_CLAIM,
-  permissionsHash,
   RESERVED_CLAIM_NAMES,
   readOrganizationClaims,
+} from './custom-claims'
+import {
+  permissionsHash,
   readOrganizationTokenClaims,
   verifyPermissionsHash,
-} from './custom-claims'
+} from './organization-lookup'
 import vectors from './permissions-hash-vectors.json'
 
 /** The ADR's rule, written out independently with node:crypto. */
@@ -65,7 +67,12 @@ describe('readOrganizationTokenClaims', () => {
     })
     expect(r).toEqual({
       kind: 'inline',
-      claims: { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] },
+      claims: {
+        orgId: 'o1',
+        orgRole: 'admin',
+        orgPermissions: ['org:sys:memberships:read'],
+        roleVersion: 1,
+      },
     })
   })
 
