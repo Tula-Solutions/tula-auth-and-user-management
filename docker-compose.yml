@@ -121,7 +121,7 @@ services:
 
   # Local inbox for verification emails: SMTP on 1025, web UI on http://localhost:8025
   mailpit:
-    image: axllent/mailpit:v1.32.0@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     ports: ['127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']
 
   # Applies pending migrations as the schema owner, then exits. The API waits for it.
